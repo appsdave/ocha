@@ -47,25 +47,13 @@ export async function runCoordinator(task, opts) {
 
   let enhancedTask = task;
   {
-    const startMs = Date.now();
-    const spinner = startSpinner('🧠 Coordinator analyzing project and enhancing prompt…');
-    const timer = setInterval(() => {
-      const secs = Math.floor((Date.now() - startMs) / 1000);
-      spinner.text = `🧠 Coordinator analyzing project and enhancing prompt… (${secs}s)`;
-    }, 1000);
-    try {
-      enhancedTask = await enhanceTask(task, projectDir);
-      clearInterval(timer);
-      if (enhancedTask !== task) {
-        const preview = enhancedTask.replace(/\s+/g, ' ').slice(0, 120);
-        succeedSpinner(`🧠 Prompt enhanced (${Math.floor((Date.now() - startMs) / 1000)}s)`);
-        console.log(chalk.gray(`   ${preview}${enhancedTask.length > 120 ? '…' : ''}`));
-      } else {
-        succeedSpinner('🧠 Enhancement skipped — using original prompt');
-      }
-    } catch (err) {
-      clearInterval(timer);
-      failSpinner(`🧠 Enhancement failed: ${err.message} — using original prompt`);
+    enhancedTask = await enhanceTask(task, projectDir);
+    if (enhancedTask !== task) {
+      const preview = enhancedTask.replace(/\s+/g, ' ').slice(0, 120);
+      console.log(chalk.green('✔ 🧠 Prompt enhanced with project context'));
+      console.log(chalk.gray(`   ${preview}${enhancedTask.length > 120 ? '…' : ''}`));
+    } else {
+      console.log(chalk.yellow('⚠ 🧠 No project context found — using original prompt'));
     }
   }
 
