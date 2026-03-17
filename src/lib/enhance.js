@@ -75,10 +75,10 @@ function runJunieEnhance(task, outputFile, projectDir) {
       '--brave',
     ], { stdio: 'pipe' });
 
-    let output = '';
+    let stdout = '';
     const handleData = (d) => {
       const text = d.toString();
-      output += text;
+      stdout += text;
       for (const line of text.split('\n')) {
         const t = line.trim();
         if (!t) continue;
@@ -102,16 +102,27 @@ function runJunieEnhance(task, outputFile, projectDir) {
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
+      // 1. Try the dedicated output file first
       if (existsSync(outputFile)) {
         try {
           const data = JSON.parse(readFileSync(outputFile, 'utf-8'));
-          resolve(data);
-        } catch {
-          reject(new Error('Failed to parse enhancement output'));
-        }
-      } else {
-        reject(new Error('No enhancement output'));
+          if (data && data.enhancedTask) return resolve(data);
+        } catch {}
       }
+      // 2. Scan stdout for the first JSON object containing enhancedTask
+      const jsonMatch = stdout.match(/\{[\s\S]*?"enhancedTask"[\s\S]*?\}/);
+      if (jsonMatch) {
+        try {
+          const data = JSON.parse(jsonMatch[0]);
+          if (data && data.enhancedTask) return resolve(data);
+        } catch {}
+      }
+      // 3. If Junie wrote a plain-text result (TASK RESULT: ...), use that
+      const taskResultMatch = stdout.match(/TASK RESULT:\s*([\s\S]+)/);
+      if (taskResultMatch) {
+        return resolve({ enhancedTask: taskResultMatch[1].trim() });
+      }
+      reject(new Error(`No enhancement output (exit ${code})`));
     });
 
     proc.on('error', (err) => {

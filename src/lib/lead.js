@@ -65,10 +65,10 @@ function runJunieLead(task, outputFile, projectDir) {
       '--brave',
     ], { stdio: 'pipe' });
 
-    let output = '';
+    let stdout = '';
     const handleData = (d) => {
       const text = d.toString();
-      output += text;
+      stdout += text;
       for (const line of text.split('\n')) {
         const t = line.trim();
         if (!t) continue;
@@ -92,16 +92,22 @@ function runJunieLead(task, outputFile, projectDir) {
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
+      // 1. Try the dedicated output file first
       if (existsSync(outputFile)) {
         try {
           const data = JSON.parse(readFileSync(outputFile, 'utf-8'));
-          resolve(data);
-        } catch {
-          reject(new Error('Failed to parse lead output'));
-        }
-      } else {
-        reject(new Error('No lead output file'));
+          if (data && data.tasks) return resolve(data);
+        } catch {}
       }
+      // 2. Scan stdout for JSON containing tasks array
+      const jsonMatch = stdout.match(/\{[\s\S]*?"tasks"[\s\S]*?\}/);
+      if (jsonMatch) {
+        try {
+          const data = JSON.parse(jsonMatch[0]);
+          if (data && data.tasks) return resolve(data);
+        } catch {}
+      }
+      reject(new Error(`No lead output (exit ${code})`));
     });
 
     proc.on('error', (err) => {
