@@ -17,7 +17,7 @@ import { enhanceTask } from './enhance.js';
 import { runLeadAgent } from './lead.js';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
-import { stopSpinner, logWithSpinner } from './spinner.js';
+import { startSpinner, succeedSpinner, failSpinner, stopSpinner, logWithSpinner } from './spinner.js';
 import {
   initTree,
   setLeadNode,
@@ -44,33 +44,56 @@ export async function runCoordinator(task, opts) {
 
   // ── Step 1: Coordinator enhances the prompt ──────────────────────────────
   initTree(task);
-  console.log(chalk.blue('\n🧠 Coordinator analyzing project and enhancing prompt…\n'));
 
   let enhancedTask = task;
-  try {
-    enhancedTask = await enhanceTask(task, projectDir);
-    if (enhancedTask !== task) {
-      console.log(chalk.green('  ✓ Prompt enhanced with project context'));
-    } else {
-      console.log(chalk.yellow('  ⚠ Using original prompt (enhancement skipped)'));
+  {
+    const startMs = Date.now();
+    const spinner = startSpinner('🧠 Coordinator analyzing project and enhancing prompt…');
+    const timer = setInterval(() => {
+      const secs = Math.floor((Date.now() - startMs) / 1000);
+      spinner.text = `🧠 Coordinator analyzing project and enhancing prompt… (${secs}s)`;
+    }, 1000);
+    try {
+      enhancedTask = await enhanceTask(task, projectDir);
+      clearInterval(timer);
+      if (enhancedTask !== task) {
+        const preview = enhancedTask.replace(/\s+/g, ' ').slice(0, 120);
+        succeedSpinner(`🧠 Prompt enhanced (${Math.floor((Date.now() - startMs) / 1000)}s)`);
+        console.log(chalk.gray(`   ${preview}${enhancedTask.length > 120 ? '…' : ''}`));
+      } else {
+        succeedSpinner('🧠 Enhancement skipped — using original prompt');
+      }
+    } catch (err) {
+      clearInterval(timer);
+      failSpinner(`🧠 Enhancement failed: ${err.message} — using original prompt`);
     }
-  } catch (err) {
-    console.log(chalk.yellow(`  ⚠ Enhancement failed: ${err.message} — using original prompt`));
   }
 
   // ── Step 2: Lead agent analyzes project and produces task plan ────────────
-  console.log(chalk.blue('\n👔 Lead agent analyzing project and planning tasks…\n'));
   setLeadNode('running', 'Analyzing project & planning tasks');
 
   let tasks;
-  try {
-    tasks = await runLeadAgent(enhancedTask, projectDir);
-    setLeadNode('completed', `Planned ${tasks.length} task(s)`);
-    console.log(chalk.green(`  ✓ Lead produced ${tasks.length} task(s)`));
-  } catch (err) {
-    setLeadNode('failed', 'Planning failed — using fallback');
-    console.log(chalk.yellow(`  ⚠ Lead agent failed: ${err.message} — falling back to single task`));
-    tasks = [{ description: enhancedTask, role: 'builder', branch: 'ocha/main-task' }];
+  {
+    const leadStart = Date.now();
+    const leadSpinner = startSpinner('👔 Lead agent analyzing project and planning tasks…');
+    const leadTimer = setInterval(() => {
+      const secs = Math.floor((Date.now() - leadStart) / 1000);
+      leadSpinner.text = `👔 Lead agent analyzing project and planning tasks… (${secs}s)`;
+    }, 1000);
+    try {
+      tasks = await runLeadAgent(enhancedTask, projectDir);
+      clearInterval(leadTimer);
+      setLeadNode('completed', `Planned ${tasks.length} task(s)`);
+      succeedSpinner(`👔 Lead planned ${tasks.length} task(s) (${Math.floor((Date.now() - leadStart) / 1000)}s)`);
+      for (const t of tasks) {
+        console.log(chalk.gray(`   • [${t.branch}] ${t.description.split('\n')[0].slice(0, 80)}${t.description.length > 80 ? '…' : ''}`));
+      }
+    } catch (err) {
+      clearInterval(leadTimer);
+      setLeadNode('failed', 'Planning failed — using fallback');
+      failSpinner(`👔 Lead agent failed: ${err.message} — falling back to single task`);
+      tasks = [{ description: enhancedTask, role: 'builder', branch: 'ocha/main-task' }];
+    }
   }
 
   // ── Step 3: Write initial status ─────────────────────────────────────────
