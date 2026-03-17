@@ -46,4 +46,25 @@ program
   .option('--no-merge', 'Skip auto-merge after completion')
   .action(ochaDev);
 
+program
+  .command('self-update')
+  .description('Update ocha to the latest version from git')
+  .action(async () => {
+    const { execSync } = await import('child_process');
+    const { dirname, resolve } = await import('path');
+    const { fileURLToPath } = await import('url');
+    const chalk = (await import('chalk')).default;
+
+    const installDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+    console.log(chalk.blue('🔄 Updating ocha...'));
+    try {
+      const out = execSync('git pull origin main', { cwd: installDir, encoding: 'utf-8' });
+      console.log(chalk.gray(`   ${out.trim()}`));
+      execSync('npm install --production', { cwd: installDir, stdio: 'pipe' });
+      console.log(chalk.green('✅ ocha updated!'));
+    } catch (err) {
+      console.log(chalk.red(`✗ Update failed: ${err.message}`));
+    }
+  });
+
 program.parse();
