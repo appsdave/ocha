@@ -23,8 +23,11 @@ import { ensureAuthenticated } from '../lib/agent.js';
  * @param {string} opts.maxAgents - Maximum parallel agents.
  */
 export async function cordStart(opts) {
+  // Support comma-separated multiple tasks
+  const taskList = opts.task.split(',').map(t => t.trim()).filter(Boolean);
+
   console.log(chalk.blue('🚀 ocha cord start'));
-  console.log(chalk.gray(`   Task: ${opts.task}`));
+  console.log(chalk.gray(`   Task${taskList.length > 1 ? 's' : ''}: ${taskList.join(', ')}`));
   console.log(chalk.gray(`   Base: ${opts.baseBranch}`));
 
   // Auto-init if needed
@@ -46,13 +49,18 @@ export async function cordStart(opts) {
     process.exit(1);
   }
 
-  // Decompose the task into subtasks (analysis only, no code changes)
+  // Decompose each task into subtasks (analysis only, no code changes)
   console.log(chalk.blue('\n📋 Decomposing task into subtasks...'));
-  const tasks = await decomposeTask(opts.task);
-  console.log(chalk.green(`   Found ${tasks.length} subtask(s)`));
-  for (const t of tasks) {
+  let allTasks = [];
+  for (const taskItem of taskList) {
+    const subtasks = await decomposeTask(taskItem);
+    allTasks.push(...subtasks);
+  }
+  console.log(chalk.green(`   Found ${allTasks.length} subtask(s)`));
+  for (const t of allTasks) {
     console.log(chalk.gray(`     └─ [${t.role}] ${t.description}`));
   }
+  const tasks = allTasks;
 
   // Create initial status
   const status = createInitialStatus(opts.task, tasks);
