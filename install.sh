@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# ocha installer — clone to ~/.ocha-cli and link the command globally
+# ocha installer — clone to ~/.ocha and link the command globally
 set -e
 
-INSTALL_DIR="${OCHA_HOME:-$HOME/.ocha-cli}"
+INSTALL_DIR="${OCHA_HOME:-$HOME/.ocha}"
 REPO_URL="https://github.com/appsdave/ocha.git"
 BIN_NAME="ocha"
 
