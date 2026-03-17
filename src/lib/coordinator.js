@@ -10,52 +10,55 @@ export async function runCoordinator(opts) {
   const status = readStatus();
   if (!status) throw new Error('No status file found');
 
-  const pending = () => status.tasks.filter(t => t.state === 'pending');
-  const running = () => status.tasks.filter(t => t.state === 'running');
-
   console.log(chalk.blue(`\n🎯 Coordinator starting with ${status.tasks.length} tasks (max ${maxAgents} parallel)\n`));
 
-  while (pending().length > 0 || running().length > 0) {
-    // Launch agents up to max concurrency
-    while (pending().length > 0 && running().length < maxAgents) {
-      const task = pending()[0];
-      console.log(chalk.yellow(`▶ Spawning ${task.role} agent for ${task.id}: ${task.description}`));
+  const agentPromises = [];
+
+  for (let i = 0; i < status.tasks.length; i += maxAgents) {
+    const batch = status.tasks.slice(i, i + maxAgents);
+    const batchPromises = [];
+
+    for (const task of batch) {
+      if (task.state !== 'pending') continue;
+
+      console.log(chalk.yellow(`  ▶ [${task.id}] Spawning ${task.role}: ${task.description}`));
 
       const worktreePath = createWorktree(task.branch, baseBranch);
       task.state = 'running';
       writeStatus(status);
 
-      spawnAgent(task, worktreePath, task.role)
+      const p = spawnAgent(task, worktreePath, task.role)
         .then(({ code, taskId }) => {
           if (code === 0) {
-            console.log(chalk.green(`✓ ${taskId} completed successfully`));
+            console.log(chalk.green(`  ✓ [${taskId}] Done`));
           } else {
-            console.log(chalk.red(`✗ ${taskId} failed with exit code ${code}`));
+            console.log(chalk.red(`  ✗ [${taskId}] Failed (exit ${code})`));
           }
         })
         .catch(err => {
-          console.log(chalk.red(`✗ ${task.id} error: ${err.message}`));
+          console.log(chalk.red(`  ✗ [${task.id}] Error: ${err.message}`));
         });
 
-      // Small delay to avoid race conditions on status file
-      await sleep(1000);
+      batchPromises.push(p);
     }
 
-    // Poll until a slot opens or all done
-    await sleep(3000);
-
-    // Re-read status from disk (agents update it)
-    const fresh = readStatus();
-    if (fresh) {
-      status.tasks = fresh.tasks;
-    }
+    // Wait for this batch to complete before starting next
+    await Promise.all(batchPromises);
   }
 
+  // Re-read final status
+  const finalStatus = readStatus() || status;
+
   // Final summary
-  printSummary(status);
-  status.session.state = 'completed';
-  status.session.completedAt = new Date().toISOString();
-  writeStatus(status);
+  printSummary(finalStatus);
+  finalStatus.session.state = 'completed';
+  finalStatus.session.completedAt = new Date().toISOString();
+  writeStatus(finalStatus);
+}
+
+function shortDesc(description) {
+  const words = description.split(/\s+/);
+  return words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : '');
 }
 
 function printSummary(status) {
@@ -66,26 +69,16 @@ function printSummary(status) {
   const completed = status.tasks.filter(t => t.state === 'completed');
   const failed = status.tasks.filter(t => t.state === 'failed');
 
-  console.log(`Total tasks: ${status.tasks.length}`);
-  console.log(chalk.green(`Completed:   ${completed.length}`));
-  if (failed.length) console.log(chalk.red(`Failed:      ${failed.length}`));
-
-  console.log('\nBranches created:');
-  for (const task of status.tasks) {
-    const icon = task.state === 'completed' ? '✓' : '✗';
-    const color = task.state === 'completed' ? chalk.green : chalk.red;
-    console.log(color(`  ${icon} ${task.branch} — ${task.description}`));
-  }
+  console.log(`  Total:     ${status.tasks.length}`);
+  console.log(chalk.green(`  Completed: ${completed.length}`));
+  if (failed.length) console.log(chalk.red(`  Failed:    ${failed.length}`));
 
   if (completed.length > 0) {
-    console.log(chalk.blue('\nTo merge branches back into main:'));
+    console.log(chalk.blue('\n  To merge branches back into main:'));
     for (const task of completed) {
-      console.log(`  git merge ${task.branch}`);
+      const desc = shortDesc(task.description);
+      console.log(chalk.gray(`    git merge ${task.branch}`) + chalk.white(`  # ${desc}`));
     }
   }
   console.log();
-}
-
-function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
 }

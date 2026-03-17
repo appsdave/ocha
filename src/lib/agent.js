@@ -3,6 +3,7 @@ import { resolve } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { OCHA_DIR } from './paths.js';
 import { updateTask } from './status.js';
+import chalk from 'chalk';
 
 const runningAgents = new Map();
 
@@ -15,8 +16,9 @@ export function spawnAgent(task, worktreePath, role) {
     '--project', worktreePath,
     '--task', fullTask,
     '--json-output-file', outputFile,
+    '--brave',
   ], {
-    stdio: 'inherit',
+    stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
   });
 
@@ -30,7 +32,34 @@ export function spawnAgent(task, worktreePath, role) {
     pid: proc.pid,
   });
 
-  return new Promise((resolve, reject) => {
+  const prefix = chalk.gray(`  │ [${task.id}] `);
+
+  // Show only key lines from agent output (nested, filtered)
+  const handleData = (data) => {
+    const lines = data.toString().split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      // Show only important lines: task results, thinking, errors, commits
+      if (
+        trimmed.startsWith('● TASK RESULT:') ||
+        trimmed.startsWith('● Thinking') ||
+        trimmed.startsWith('TASK RESULT:') ||
+        trimmed.includes('error') ||
+        trimmed.includes('Error') ||
+        trimmed.startsWith('Authenticated') ||
+        trimmed.includes('committed') ||
+        trimmed.includes('commit ')
+      ) {
+        console.log(prefix + trimmed);
+      }
+    }
+  };
+
+  proc.stdout.on('data', handleData);
+  proc.stderr.on('data', handleData);
+
+  return new Promise((resolveP, reject) => {
     proc.on('close', (code) => {
       runningAgents.delete(task.id);
       const result = readAgentOutput(outputFile);
@@ -40,7 +69,7 @@ export function spawnAgent(task, worktreePath, role) {
         exitCode: code,
         result,
       });
-      resolve({ code, result, taskId: task.id });
+      resolveP({ code, result, taskId: task.id });
     });
     proc.on('error', (err) => {
       runningAgents.delete(task.id);
@@ -74,8 +103,10 @@ function loadRolePrompt(role) {
 export function killAllAgents() {
   for (const [taskId, { proc }] of runningAgents) {
     try {
-      proc.kill('SIGTERM');
-    } catch {}
+      process.kill(-proc.pid, 'SIGTERM');
+    } catch {
+      try { proc.kill('SIGTERM'); } catch {}
+    }
     runningAgents.delete(taskId);
   }
 }
