@@ -180,37 +180,44 @@ async function runBuilderWithReview(task, status, baseBranch) {
   try {
     const { code: reviewCode } = await spawnAgent(reviewTask, worktreePath, 'reviewer');
 
-    if (reviewCode === 0) {
+    const reviewPassed = reviewCode === 0;
+    if (reviewPassed) {
       setReviewerNode(task.id, 'completed');
       logWithSpinner(chalk.green(`  ✓ Review passed: ${cleanDesc}`));
-      try {
-        stopSpinner();
-        execSync(`git stash --include-untracked 2>/dev/null || true`, { stdio: 'pipe' });
-        execSync(`git merge ${task.branch}`, { stdio: 'pipe' });
-        execSync(`git stash pop 2>/dev/null || true`, { stdio: 'pipe' });
-        console.log(chalk.green(`  ✓ Merged ${task.branch} → ${baseBranch}`));
-        try {
-          execSync(`git push origin ${baseBranch}`, { stdio: 'pipe' });
-          console.log(chalk.green(`  ✓ Pushed ${baseBranch} to origin`));
-        } catch {
-          console.log(chalk.yellow(`  ⚠ Could not push ${baseBranch} (push manually)`));
-        }
-        task.merged = true;
-      } catch {
-        console.log(chalk.yellow(`  ⚠ Merge conflict for ${task.branch} — creating PR`));
-        try {
-          execSync(`gh pr create --base ${baseBranch} --head ${task.branch} --title "ocha: ${shortDesc(cleanDesc)}" --body "Reviewed and approved by ocha reviewer.\n\nTask: ${cleanDesc}" 2>&1`, { stdio: 'pipe' });
-          console.log(chalk.green(`  ✓ PR created for ${task.branch}`));
-        } catch {}
-      }
     } else {
       setReviewerNode(task.id, 'failed');
       logWithSpinner(chalk.yellow(`  ⚠ Review flagged issues: ${cleanDesc}`));
+    }
+
+    // Always push branch and open a PR — never auto-merge
+    try {
+      execSync(`cd "${worktreePath}" && git push -u origin ${task.branch} --force`, { stdio: 'pipe' });
+      console.log(chalk.green(`  ✓ Pushed branch ${task.branch} to origin`));
+    } catch (pushErr) {
+      console.log(chalk.yellow(`  ⚠ Could not push ${task.branch}: ${pushErr.message}`));
+    }
+
+    try {
+      const prTitle = `ocha: ${shortDesc(cleanDesc)}`;
+      const prBody = reviewPassed
+        ? `✅ Reviewed and approved by ocha reviewer.\n\nTask: ${cleanDesc}`
+        : `⚠️ Reviewer flagged issues — needs manual review.\n\nTask: ${cleanDesc}`;
+      const prLabel = reviewPassed ? '' : '--label "needs-review"';
+      const prUrl = execSync(
+        `gh pr create --base ${baseBranch} --head ${task.branch} --title "${prTitle}" --body "${prBody}" 2>&1`,
+        { stdio: 'pipe' }
+      ).toString().trim();
+      task.prUrl = prUrl;
+      console.log(chalk.cyan(`  🔗 PR created: ${prUrl}`));
+    } catch (prErr) {
+      // PR may already exist — try to get the URL
       try {
-        execSync(`cd "${worktreePath}" && git push -u origin ${task.branch} --force`, { stdio: 'pipe' });
-        execSync(`gh pr create --base ${baseBranch} --head ${task.branch} --title "ocha: ${shortDesc(cleanDesc)}" --body "⚠️ Reviewer flagged issues — needs manual review.\n\nTask: ${cleanDesc}" 2>&1`, { stdio: 'pipe' });
-        console.log(chalk.yellow(`  ✓ PR created (needs review): ${task.branch}`));
-      } catch {}
+        const prUrl = execSync(`gh pr view ${task.branch} --json url -q .url 2>&1`, { stdio: 'pipe' }).toString().trim();
+        task.prUrl = prUrl;
+        console.log(chalk.cyan(`  🔗 PR already exists: ${prUrl}`));
+      } catch {
+        console.log(chalk.yellow(`  ⚠ Could not create PR for ${task.branch} — push manually`));
+      }
     }
   } catch (reviewErr) {
     setReviewerNode(task.id, 'failed');
