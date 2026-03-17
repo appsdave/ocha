@@ -5,6 +5,7 @@
  * the coordinator loop to spawn parallel agents.
  */
 import chalk from 'chalk';
+import { execSync } from 'node:child_process';
 import { ensureDir, pathExists } from '../lib/files.js';
 import { OCHA_DIR, ROLES_DIR } from '../lib/paths.js';
 import { createInitialStatus, writeStatus } from '../lib/status.js';
@@ -37,6 +38,35 @@ export async function cordStart(opts) {
     installRolePrompts();
     console.log(chalk.gray('   Initialized .ocha/'));
   }
+
+  // Check git repo is set up properly for worktrees
+  console.log(chalk.blue('\n🔍 Checking git setup...'));
+  try {
+    execSync('git rev-parse --is-inside-work-tree', { stdio: 'pipe' });
+  } catch {
+    console.log(chalk.red('   ✗ Not a git repository'));
+    console.log(chalk.yellow('\n   To fix this, run:'));
+    console.log(chalk.white('     git init'));
+    console.log(chalk.white('     git add .'));
+    console.log(chalk.white('     git commit -m "initial commit"'));
+    console.log(chalk.yellow('\n   Then add a remote (optional but recommended):'));
+    console.log(chalk.white('     git remote add origin git@github.com:user/repo.git'));
+    console.log(chalk.white('     git branch -M main'));
+    console.log(chalk.white('     git push -u origin main'));
+    process.exit(1);
+  }
+
+  // Check that the base branch exists
+  try {
+    execSync(`git rev-parse --verify ${opts.baseBranch}`, { stdio: 'pipe' });
+  } catch {
+    console.log(chalk.red(`   ✗ Branch "${opts.baseBranch}" does not exist`));
+    console.log(chalk.yellow(`\n   Make sure you have at least one commit on "${opts.baseBranch}":`));
+    console.log(chalk.white('     git add .'));
+    console.log(chalk.white(`     git commit -m "initial commit"`));
+    process.exit(1);
+  }
+  console.log(chalk.green('   ✓ Git repository ready'));
 
   // Ensure authentication is valid before doing anything
   console.log(chalk.blue('\n🔐 Checking authentication...'));
