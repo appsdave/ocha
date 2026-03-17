@@ -31,11 +31,13 @@ export function createWorktree(branch, baseBranch = 'main') {
       stdio: 'pipe',
     });
   } catch (err) {
-    // Branch may already exist — try adding without -b, or force if stale
+    // Branch already exists — delete it and recreate fresh from baseBranch
+    try { execSync(`git branch -D ${branch}`, { stdio: 'pipe' }); } catch (_) {}
     try {
-      execSync(`git worktree add "${worktreePath}" ${branch}`, { stdio: 'pipe' });
+      execSync(`git worktree add -b ${branch} "${worktreePath}" ${baseBranch}`, { stdio: 'pipe' });
     } catch (_) {
-      execSync(`git worktree add -f -b ${branch} "${worktreePath}" ${baseBranch}`, { stdio: 'pipe' });
+      // Last resort: reuse existing branch as-is
+      execSync(`git worktree add "${worktreePath}" ${branch}`, { stdio: 'pipe' });
     }
   }
   return worktreePath;
