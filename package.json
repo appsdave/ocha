@@ -1,7 +1,7 @@
 {
   "name": "ocha",
   "version": "1.0.0",
-  "description": "",
+  "description": "Multi-agent orchestration for Junie — decompose tasks, spawn AI coding agents in isolated git worktrees, and coordinate parallel work",
   "main": "src/index.js",
   "type": "module",
   "bin": {
@@ -14,7 +14,7 @@
     "type": "git",
     "url": "git+https://github.com/appsdave/ocha.git"
   },
-  "keywords": [],
+  "keywords": ["junie", "multi-agent", "orchestration", "git-worktree", "ai", "cli"],
   "author": "",
   "license": "ISC",
   "bugs": {

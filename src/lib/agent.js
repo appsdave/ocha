@@ -1,3 +1,8 @@
+/**
+ * @module agent
+ * Agent spawning, lifecycle management, and output handling.
+ * Each agent is a Junie child process running in an isolated git worktree.
+ */
 import { spawn } from 'child_process';
 import { resolve } from 'path';
 import { readFileSync, existsSync } from 'fs';
@@ -5,8 +10,19 @@ import { OCHA_DIR } from './paths.js';
 import { updateTask } from './status.js';
 import chalk from 'chalk';
 
+/** @type {Map<string, {proc: ChildProcess, outputFile: string, worktreePath: string}>} */
 const runningAgents = new Map();
 
+/**
+ * Spawns a Junie agent process for a given task.
+ * The agent runs in the specified worktree with the given role prompt.
+ * Updates the status file with running/completed/failed state.
+ *
+ * @param {object} task - The task object from status (must have id, description).
+ * @param {string} worktreePath - Absolute path to the git worktree.
+ * @param {string} role - Agent role name (e.g. "builder", "reviewer").
+ * @returns {Promise<{code: number, result: object|null, taskId: string}>} Resolves when the agent exits.
+ */
 export function spawnAgent(task, worktreePath, role) {
   const outputFile = resolve(OCHA_DIR, `${task.id}-output.json`);
   const rolePrompt = loadRolePrompt(role);
@@ -83,6 +99,11 @@ export function spawnAgent(task, worktreePath, role) {
   });
 }
 
+/**
+ * Reads and parses the JSON output file produced by a Junie agent.
+ * @param {string} outputFile - Path to the agent's output JSON file.
+ * @returns {object|null} Parsed output, or null if missing/invalid.
+ */
 function readAgentOutput(outputFile) {
   if (!existsSync(outputFile)) return null;
   try {
@@ -92,6 +113,12 @@ function readAgentOutput(outputFile) {
   }
 }
 
+/**
+ * Loads the markdown role prompt for a given agent role.
+ * Falls back to a generic prompt if the role file doesn't exist.
+ * @param {string} role - Role name (e.g. "builder").
+ * @returns {string} The role prompt content.
+ */
 function loadRolePrompt(role) {
   const rolePath = resolve(OCHA_DIR, 'roles', `${role}.md`);
   if (existsSync(rolePath)) {
@@ -100,6 +127,10 @@ function loadRolePrompt(role) {
   return `You are a ${role} agent. Complete the assigned task thoroughly.`;
 }
 
+/**
+ * Terminates all currently running agent processes via SIGTERM.
+ * Clears the internal running agents map.
+ */
 export function killAllAgents() {
   for (const [taskId, { proc }] of runningAgents) {
     try {
@@ -111,6 +142,10 @@ export function killAllAgents() {
   }
 }
 
+/**
+ * Returns the task IDs of all currently running agents.
+ * @returns {string[]} Array of task IDs.
+ */
 export function getRunningAgents() {
   return [...runningAgents.keys()];
 }

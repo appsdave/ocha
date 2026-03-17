@@ -1,3 +1,9 @@
+/**
+ * @module roles
+ * Agent role prompt definitions and installer.
+ * Each role has a markdown prompt that is written to .ocha/roles/ during init
+ * and prepended to agent task descriptions when spawned.
+ */
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { ROLES_DIR } from './paths.js';
@@ -60,6 +66,10 @@ Output your review as structured feedback. Flag blocking issues vs suggestions.
 Do not make code changes yourself — only review and report.`,
 };
 
+/**
+ * Writes all role prompt markdown files to the .ocha/roles/ directory.
+ * Creates one .md file per role (coordinator, lead, builder, reviewer).
+ */
 export function installRolePrompts() {
   for (const [role, content] of Object.entries(ROLES)) {
     writeFileSync(resolve(ROLES_DIR, `${role}.md`), content);

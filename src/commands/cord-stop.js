@@ -1,3 +1,8 @@
+/**
+ * @module commands/cord-stop
+ * Implements the `ocha cord stop` command.
+ * Stops all running agents, removes worktrees, and cleans up the .ocha/ directory.
+ */
 import { rmSync, existsSync } from 'fs';
 import chalk from 'chalk';
 import { OCHA_DIR, WORKTREES_DIR } from '../lib/paths.js';
@@ -5,6 +10,11 @@ import { killAllAgents } from '../lib/agent.js';
 import { readStatus, writeStatus } from '../lib/status.js';
 import { removeWorktree } from '../lib/worktree.js';
 
+/**
+ * Stops the ocha session: kills agent processes, removes worktrees,
+ * and deletes the .ocha/ and .ocha-worktrees/ directories.
+ * Safe to call from a different process than the one that started the session.
+ */
 export function cordStop() {
   console.log(chalk.blue('🛑 Stopping ocha session...'));
 

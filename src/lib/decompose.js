@@ -1,3 +1,9 @@
+/**
+ * @module decompose
+ * Task decomposition via Junie AI.
+ * Sends a high-level task to Junie for analysis-only decomposition into
+ * independent, parallelizable subtasks. Falls back to a single task on failure.
+ */
 import { spawn } from 'child_process';
 import { resolve } from 'path';
 import { existsSync, readFileSync, mkdtempSync } from 'fs';
@@ -19,6 +25,14 @@ Roles available: builder (writes code), reviewer (reviews code), lead (coordinat
 Keep subtasks focused and independent. Use descriptive branch names prefixed with "ocha/".
 Do NOT run any commands. Do NOT modify any files. ONLY output the JSON decomposition.`;
 
+/**
+ * Decomposes a high-level task into independent subtasks using Junie AI.
+ * Runs Junie in a temporary directory (read-only) with a decomposition prompt.
+ * Falls back to a single builder task if decomposition fails or times out.
+ *
+ * @param {string} task - The high-level task description to decompose.
+ * @returns {Promise<Array<{description: string, role: string, branch: string}>>} Array of subtask objects.
+ */
 export async function decomposeTask(task) {
   const outputFile = resolve(OCHA_DIR, 'decompose-output.json');
 
@@ -42,6 +56,15 @@ export async function decomposeTask(task) {
   }];
 }
 
+/**
+ * Runs Junie as a subprocess to decompose a task.
+ * Enforces a 2-minute timeout to prevent hanging.
+ *
+ * @param {string} task - The task description.
+ * @param {string} outputFile - Path where Junie writes its JSON output.
+ * @param {string} tempDir - Temporary directory for the Junie project context.
+ * @returns {Promise<object>} Parsed JSON output from Junie.
+ */
 function runJunieDecompose(task, outputFile, tempDir) {
   const fullPrompt = `${DECOMPOSE_PROMPT}\n\nTask to decompose:\n${task}`;
 

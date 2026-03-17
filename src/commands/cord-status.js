@@ -1,6 +1,15 @@
+/**
+ * @module commands/cord-status
+ * Implements the `ocha cord status` command.
+ * Reads and displays the current session status and all task states.
+ */
 import chalk from 'chalk';
 import { readStatus } from '../lib/status.js';
 
+/**
+ * Displays the current session status including task states, branches, and worktree paths.
+ * Shows a warning if no active session exists.
+ */
 export function cordStatus() {
   const status = readStatus();
   if (!status) {
