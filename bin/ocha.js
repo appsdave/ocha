@@ -31,7 +31,8 @@ cord
 cord
   .command('status')
   .description('Check coordinator progress')
-  .action(cordStatus);
+  .option('-w, --watch', 'Poll and redraw every 3 seconds until session ends')
+  .action((opts) => cordStatus(opts));
 
 cord
   .command('stop')

@@ -42,7 +42,7 @@ export function updateTask(taskId, updates) {
  * @returns {object} A status object with session metadata and task entries.
  */
 export function createInitialStatus(sessionTask, tasks) {
-  return {
+  const status = {
     session: {
       task: sessionTask,
       startedAt: new Date().toISOString(),
@@ -61,4 +61,6 @@ export function createInitialStatus(sessionTask, tasks) {
       completedAt: null,
     })),
   };
+  writeJSON(STATUS_FILE, status);
+  return status;
 }

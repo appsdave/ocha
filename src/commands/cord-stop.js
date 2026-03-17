@@ -54,14 +54,8 @@ export function cordStop() {
     writeStatus(status);
   }
 
-  // Remove worktrees directory
+  // Remove worktrees directory (temp working dirs only, not .ocha/)
   safeDelete(WORKTREES_DIR, { recursive: true });
 
-  // Remove .ocha directory
-  if (pathExists(OCHA_DIR)) {
-    safeDelete(OCHA_DIR, { recursive: true });
-    console.log(chalk.green('✓ Session stopped and cleaned up.'));
-  } else {
-    console.log(chalk.yellow('No active session found.'));
-  }
+  console.log(chalk.green('✓ Session stopped. Run "ocha cord status" to review, or "ocha init" to start fresh.'));
 }

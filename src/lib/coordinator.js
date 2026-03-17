@@ -1,162 +1,220 @@
 /**
  * @module coordinator
- * Batched parallel agent coordination.
- * Reads the task list from status, creates worktrees, spawns agents in
- * batches (up to maxAgents at a time), and prints a final summary.
+ * Full pipeline: enhance prompt → lead agent plans → builders execute → reviewer per builder.
+ *
+ * Flow:
+ *   1. enhanceTask()     — coordinator enriches the raw user prompt with project context
+ *   2. runLeadAgent()    — lead analyzes project, outputs a JSON task plan
+ *   3. createInitialStatus() — writes .ocha/status.json with the planned tasks
+ *   4. Rolling loop      — up to maxAgents concurrent, each task:
+ *        createWorktree → spawnAgent(builder, up to 2 retries) → spawnAgent(reviewer) → merge/PR
+ *   5. showDiffStats / cleanupWorktrees / printSummary
  */
 import { spawnAgent } from './agent.js';
 import { createWorktree, removeWorktree } from './worktree.js';
-import { readStatus, writeStatus } from './status.js';
+import { readStatus, writeStatus, createInitialStatus } from './status.js';
+import { enhanceTask } from './enhance.js';
+import { runLeadAgent } from './lead.js';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
-import { startSpinner, updateSpinner, stopSpinner, logWithSpinner, succeedSpinner, failSpinner } from './spinner.js';
+import { stopSpinner, logWithSpinner } from './spinner.js';
+import {
+  initTree,
+  setLeadNode,
+  setBuilderNode,
+  setReviewerNode,
+  setCoordinatorState,
+  finalizeTree,
+} from './tree.js';
 
 /**
- * Runs the coordinator loop — spawns agents in batches and waits for completion.
- * Each batch runs up to maxAgents tasks in parallel before starting the next batch.
+ * Runs the full coordinator pipeline.
  *
- * @param {object} opts - Command options.
- * @param {string} opts.maxAgents - Maximum number of parallel agents per batch.
- * @param {string} opts.baseBranch - Git branch to create worktrees from.
- * @param {boolean} [opts.noMerge] - Unused (kept for backward compat).
+ * @param {string} task    - Raw user task description.
+ * @param {object} opts    - Command options.
+ * @param {string} opts.maxAgents   - Maximum parallel builder agents.
+ * @param {string} opts.baseBranch  - Git branch to create worktrees from.
+ * @param {string} opts.projectDir  - Absolute path to the project root.
+ * @param {boolean} [opts.noMerge]  - Skip auto-merge (kept for compat).
  */
-export async function runCoordinator(opts) {
+export async function runCoordinator(task, opts) {
   const maxAgents = parseInt(opts.maxAgents, 10);
   const baseBranch = opts.baseBranch;
+  const projectDir = opts.projectDir || process.cwd();
 
-  const status = readStatus();
-  if (!status) throw new Error('No status file found');
+  // ── Step 1: Coordinator enhances the prompt ──────────────────────────────
+  initTree(task);
+  console.log(chalk.blue('\n🧠 Coordinator analyzing project and enhancing prompt…\n'));
 
-  // Lead step: coordinator refines task prompts before assigning to builders
-  console.log(chalk.blue(`\n👔 Lead reviewing ${status.tasks.length} task(s)...`));
-  for (const task of status.tasks) {
-    if (task.role === 'builder') {
-      task.description = `[Assigned by lead] ${task.description}\n\nContext: This task was reviewed and assigned by the lead agent. Work in your isolated worktree, commit all changes, and ensure tests pass.`;
+  let enhancedTask = task;
+  try {
+    enhancedTask = await enhanceTask(task, projectDir);
+    if (enhancedTask !== task) {
+      console.log(chalk.green('  ✓ Prompt enhanced with project context'));
+    } else {
+      console.log(chalk.yellow('  ⚠ Using original prompt (enhancement skipped)'));
     }
+  } catch (err) {
+    console.log(chalk.yellow(`  ⚠ Enhancement failed: ${err.message} — using original prompt`));
   }
-  writeStatus(status);
 
-  console.log(chalk.blue(`\n🎯 Coordinator starting with ${status.tasks.length} tasks (max ${maxAgents} parallel)\n`));
+  // ── Step 2: Lead agent analyzes project and produces task plan ────────────
+  console.log(chalk.blue('\n👔 Lead agent analyzing project and planning tasks…\n'));
+  setLeadNode('running', 'Analyzing project & planning tasks');
 
-  const agentPromises = [];
+  let tasks;
+  try {
+    tasks = await runLeadAgent(enhancedTask, projectDir);
+    setLeadNode('completed', `Planned ${tasks.length} task(s)`);
+    console.log(chalk.green(`  ✓ Lead produced ${tasks.length} task(s)`));
+  } catch (err) {
+    setLeadNode('failed', 'Planning failed — using fallback');
+    console.log(chalk.yellow(`  ⚠ Lead agent failed: ${err.message} — falling back to single task`));
+    tasks = [{ description: enhancedTask, role: 'builder', branch: 'ocha/main-task' }];
+  }
 
-  for (let i = 0; i < status.tasks.length; i += maxAgents) {
-    const batch = status.tasks.slice(i, i + maxAgents);
-    const batchPromises = [];
+  // ── Step 3: Write initial status ─────────────────────────────────────────
+  const status = createInitialStatus(enhancedTask, tasks);
 
-    const runningTasks = [];
+  console.log(chalk.blue(`\n🎯 Coordinator dispatching ${status.tasks.length} builder(s) (max ${maxAgents} parallel)\n`));
 
-    for (const task of batch) {
-      if (task.state !== 'pending') continue;
+  // ── Step 4: Rolling concurrency builder loop ──────────────────────────────
+  const pending = status.tasks.filter(t => t.state === 'pending');
+  let active = 0;
+  let idx = 0;
 
-      logWithSpinner(chalk.yellow(`  ▶ Lead assigning ${task.role}: ${task.description.split('\n')[0].replace('[Assigned by lead] ', '')}`));
-
-      const worktreePath = createWorktree(task.branch, baseBranch);
-      task.state = 'running';
-      writeStatus(status);
-      runningTasks.push(task);
-
-      const p = spawnAgent(task, worktreePath, task.role)
-        .then(async ({ code, taskId }) => {
-          const cleanDesc = task.description.split('\n')[0].replace('[Assigned by lead] ', '');
-          if (code === 0) {
-            logWithSpinner(chalk.green(`  ✓ Builder completed: ${cleanDesc}`));
-
-            // Spawn reviewer agent in the same worktree to review changes
-            logWithSpinner(chalk.magenta(`  🔍 Spawning reviewer for: ${cleanDesc}`));
-            const reviewTask = {
-              id: `${task.id}-review`,
-              description: `Review the changes made in this worktree against the base branch (${baseBranch}). Check for bugs, security issues, missing tests, and code quality. If the changes look good, report approval. If there are blocking issues, report them clearly.\n\nOriginal task: ${cleanDesc}`,
-              branch: task.branch,
-              role: 'reviewer',
-            };
-            try {
-              const { code: reviewCode } = await spawnAgent(reviewTask, worktreePath, 'reviewer');
-              if (reviewCode === 0) {
-                logWithSpinner(chalk.green(`  ✓ Review passed: ${cleanDesc}`));
-                // Push to main after successful review
-                try {
-                  stopSpinner();
-                  execSync(`git stash --include-untracked 2>/dev/null || true`, { stdio: 'pipe' });
-                  execSync(`git merge ${task.branch}`, { stdio: 'pipe' });
-                  execSync(`git stash pop 2>/dev/null || true`, { stdio: 'pipe' });
-                  console.log(chalk.green(`  ✓ Merged ${task.branch} into ${baseBranch}`));
-                  // Push main to origin
-                  try {
-                    execSync(`git push origin ${baseBranch}`, { stdio: 'pipe' });
-                    console.log(chalk.green(`  ✓ Pushed ${baseBranch} to origin`));
-                  } catch {
-                    console.log(chalk.yellow(`  ⚠ Could not push ${baseBranch} (push manually)`));
-                  }
-                  task.merged = true;
-                } catch {
-                  console.log(chalk.yellow(`  ⚠ Merge conflict for ${task.branch} — resolve manually`));
-                  // Fallback: create PR instead
-                  try {
-                    const desc6 = shortDesc(cleanDesc);
-                    execSync(`gh pr create --base ${baseBranch} --head ${task.branch} --title "ocha: ${desc6}" --body "Reviewed and approved by ocha reviewer agent.\n\nTask: ${cleanDesc}" 2>&1`, { stdio: 'pipe' });
-                    console.log(chalk.green(`  ✓ PR created for ${task.branch}`));
-                  } catch {}
-                }
-              } else {
-                logWithSpinner(chalk.yellow(`  ⚠ Review flagged issues: ${cleanDesc}`));
-                // Still create PR but note review issues
-                try {
-                  const desc6 = shortDesc(cleanDesc);
-                  execSync(`cd "${worktreePath}" && git push -u origin ${task.branch} --force`, { stdio: 'pipe' });
-                  execSync(`gh pr create --base ${baseBranch} --head ${task.branch} --title "ocha: ${desc6}" --body "⚠️ Reviewer flagged issues — needs manual review.\n\nTask: ${cleanDesc}" 2>&1`, { stdio: 'pipe' });
-                  console.log(chalk.yellow(`  ✓ PR created (needs review): ${task.branch}`));
-                } catch {}
-              }
-            } catch (reviewErr) {
-              logWithSpinner(chalk.yellow(`  ⚠ Review failed to run: ${reviewErr.message}`));
-            }
-          } else {
-            logWithSpinner(chalk.red(`  ✗ Failed: ${cleanDesc}`));
-          }
-          runningTasks.splice(runningTasks.indexOf(task), 1);
-          if (runningTasks.length > 0) {
-            updateSpinner(`Working on ${runningTasks.length} task(s): ${runningTasks.map(t => t.id).join(', ')}`);
-          }
-        })
-        .catch(err => {
-          runningTasks.splice(runningTasks.indexOf(task), 1);
-          logWithSpinner(chalk.red(`  ✗ Error: ${err.message}`));
+  await new Promise((resolveAll) => {
+    function tryStart() {
+      while (active < maxAgents && idx < pending.length) {
+        const task = pending[idx++];
+        active++;
+        runBuilderWithReview(task, status, baseBranch).finally(() => {
+          active--;
+          tryStart();
+          if (active === 0 && idx >= pending.length) resolveAll();
         });
-
-      batchPromises.push(p);
+      }
+      if (pending.length === 0) resolveAll();
     }
+    tryStart();
+  });
 
-    if (runningTasks.length > 0) {
-      startSpinner(`Working on ${runningTasks.length} task(s): ${runningTasks.map(t => t.id).join(', ')}`);
-    }
+  stopSpinner();
 
-    // Wait for this batch to complete before starting next
-    await Promise.all(batchPromises);
-    stopSpinner();
-  }
-
-  // Re-read final status
+  // ── Step 5: Wrap up ───────────────────────────────────────────────────────
   const finalStatus = readStatus() || status;
 
-  // Show diff stats for completed tasks that weren't merged inline
+  setCoordinatorState('completed');
+  finalizeTree();
+
   showDiffStats(finalStatus, baseBranch);
-
-  // Cleanup worktrees for all tasks
   cleanupWorktrees(finalStatus);
-
-  // Final summary
   printSummary(finalStatus);
+
   finalStatus.session.state = 'completed';
   finalStatus.session.completedAt = new Date().toISOString();
   writeStatus(finalStatus);
 }
 
+// ─── Builder + Reviewer runner (with retry) ───────────────────────────────────
+
+const MAX_RETRIES = 2;
+
+async function runBuilderWithReview(task, status, baseBranch) {
+  const cleanDesc = shortDesc(task.description.split('\n')[0]);
+  setBuilderNode(task.id, 'pending', cleanDesc);
+
+  const worktreePath = createWorktree(task.branch, baseBranch);
+  task.state = 'running';
+  writeStatus(status);
+  setBuilderNode(task.id, 'running', cleanDesc);
+
+  let code = -1;
+  for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
+    try {
+      ({ code } = await spawnAgent(task, worktreePath, 'builder'));
+    } catch (err) {
+      logWithSpinner(chalk.red(`  ✗ Builder error (attempt ${attempt}): ${err.message}`));
+      code = -1;
+    }
+    if (code === 0) break;
+    if (attempt <= MAX_RETRIES) {
+      logWithSpinner(chalk.yellow(`  ↺ Builder failed (attempt ${attempt}/${MAX_RETRIES + 1}), retrying: ${cleanDesc}`));
+      setBuilderNode(task.id, 'running', `${cleanDesc} [retry ${attempt}]`);
+    }
+  }
+
+  if (code !== 0) {
+    setBuilderNode(task.id, 'failed', cleanDesc);
+    logWithSpinner(chalk.red(`  ✗ Builder failed after ${MAX_RETRIES + 1} attempts: ${cleanDesc}`));
+    task.state = 'failed';
+    writeStatus(status);
+    return;
+  }
+
+  setBuilderNode(task.id, 'completed', cleanDesc);
+  logWithSpinner(chalk.green(`  ✓ Builder done: ${cleanDesc}`));
+
+  // ── Spawn reviewer ──────────────────────────────────────────────────────────
+  setReviewerNode(task.id, 'running');
+  logWithSpinner(chalk.magenta(`  🔍 Reviewer checking: ${cleanDesc}`));
+
+  const reviewTask = {
+    id: `${task.id}-review`,
+    description: `Review the changes made in this worktree against the base branch (${baseBranch}). Check for bugs, security issues, missing tests, and code quality. If the changes look good, report approval. If there are blocking issues, report them clearly.\n\nOriginal task: ${cleanDesc}`,
+    branch: task.branch,
+    role: 'reviewer',
+  };
+
+  try {
+    const { code: reviewCode } = await spawnAgent(reviewTask, worktreePath, 'reviewer');
+
+    if (reviewCode === 0) {
+      setReviewerNode(task.id, 'completed');
+      logWithSpinner(chalk.green(`  ✓ Review passed: ${cleanDesc}`));
+      try {
+        stopSpinner();
+        execSync(`git stash --include-untracked 2>/dev/null || true`, { stdio: 'pipe' });
+        execSync(`git merge ${task.branch}`, { stdio: 'pipe' });
+        execSync(`git stash pop 2>/dev/null || true`, { stdio: 'pipe' });
+        console.log(chalk.green(`  ✓ Merged ${task.branch} → ${baseBranch}`));
+        try {
+          execSync(`git push origin ${baseBranch}`, { stdio: 'pipe' });
+          console.log(chalk.green(`  ✓ Pushed ${baseBranch} to origin`));
+        } catch {
+          console.log(chalk.yellow(`  ⚠ Could not push ${baseBranch} (push manually)`));
+        }
+        task.merged = true;
+      } catch {
+        console.log(chalk.yellow(`  ⚠ Merge conflict for ${task.branch} — creating PR`));
+        try {
+          execSync(`gh pr create --base ${baseBranch} --head ${task.branch} --title "ocha: ${shortDesc(cleanDesc)}" --body "Reviewed and approved by ocha reviewer.\n\nTask: ${cleanDesc}" 2>&1`, { stdio: 'pipe' });
+          console.log(chalk.green(`  ✓ PR created for ${task.branch}`));
+        } catch {}
+      }
+    } else {
+      setReviewerNode(task.id, 'failed');
+      logWithSpinner(chalk.yellow(`  ⚠ Review flagged issues: ${cleanDesc}`));
+      try {
+        execSync(`cd "${worktreePath}" && git push -u origin ${task.branch} --force`, { stdio: 'pipe' });
+        execSync(`gh pr create --base ${baseBranch} --head ${task.branch} --title "ocha: ${shortDesc(cleanDesc)}" --body "⚠️ Reviewer flagged issues — needs manual review.\n\nTask: ${cleanDesc}" 2>&1`, { stdio: 'pipe' });
+        console.log(chalk.yellow(`  ✓ PR created (needs review): ${task.branch}`));
+      } catch {}
+    }
+  } catch (reviewErr) {
+    setReviewerNode(task.id, 'failed');
+    logWithSpinner(chalk.yellow(`  ⚠ Reviewer failed to run: ${reviewErr.message}`));
+  }
+
+  writeStatus(status);
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 function showDiffStats(status, baseBranch) {
   const completed = status.tasks.filter(t => t.state === 'completed');
-
   for (const task of completed) {
-    if (task.merged) continue; // Already shown during inline merge
+    if (task.merged) continue;
     try {
       const diff = execSync(`git diff ${baseBranch}..${task.branch} --stat`, { encoding: 'utf-8' }).trim();
       if (diff) {
@@ -175,21 +233,11 @@ function cleanupWorktrees(status) {
   }
 }
 
-/**
- * Truncates a description to its first 6 words for display.
- * @param {string} description - Full task description.
- * @returns {string} Shortened description with ellipsis if truncated.
- */
 function shortDesc(description) {
   const words = description.split(/\s+/);
   return words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : '');
 }
 
-/**
- * Prints the session summary with task counts and merge commands.
- * @param {object} status - The final session status object.
- * @param {boolean} noMerge - Whether auto-merge was skipped.
- */
 function printSummary(status) {
   console.log(chalk.blue('\n═══════════════════════════════════'));
   console.log(chalk.blue('       OCHA Session Summary'));
@@ -208,14 +256,14 @@ function printSummary(status) {
   if (merged.length > 0) {
     console.log(chalk.green('\n  Merged to main:'));
     for (const task of merged) {
-      const desc = shortDesc(task.description.split('\n')[0].replace('[Assigned by lead] ', ''));
+      const desc = shortDesc(task.description.split('\n')[0]);
       console.log(chalk.gray(`    ✓ ${task.branch} — ${desc}`));
     }
   }
   if (unmerged.length > 0) {
     console.log(chalk.yellow('\n  Needs manual merge/PR:'));
     for (const task of unmerged) {
-      const desc = shortDesc(task.description.split('\n')[0].replace('[Assigned by lead] ', ''));
+      const desc = shortDesc(task.description.split('\n')[0]);
       console.log(chalk.gray(`    ⚠ ${task.branch} — ${desc}`));
     }
   }
