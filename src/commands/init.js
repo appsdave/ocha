@@ -10,11 +10,12 @@ import { installRolePrompts } from '../lib/roles.js';
 
 /**
  * Initializes the .ocha/ directory with role prompt files.
- * Warns and exits if .ocha/ already exists.
+ * If .ocha/ already exists, requires --yes flag to reinitialize.
+ * @param {object} opts - Command options from commander.
  */
-export function ochaInit() {
-  if (pathExists(OCHA_DIR)) {
-    console.log(chalk.yellow('⚠ .ocha/ already exists. Remove it first or run "ocha cord stop".'));
+export function ochaInit(opts) {
+  if (pathExists(OCHA_DIR) && !opts.yes) {
+    console.log(chalk.yellow('⚠ .ocha/ already exists. Use "ocha init --yes" to reinitialize.'));
     return;
   }
 

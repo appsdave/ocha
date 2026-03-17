@@ -14,6 +14,7 @@ program
 program
   .command('init')
   .description('Initialize .ocha/ directory with role prompts and config')
+  .option('-y, --yes', 'Reinitialize even if .ocha/ already exists')
   .action(ochaInit);
 
 const cord = program.command('cord').description('Coordinator commands');
