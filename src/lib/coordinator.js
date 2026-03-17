@@ -9,6 +9,7 @@ import { createWorktree, removeWorktree } from './worktree.js';
 import { readStatus, writeStatus } from './status.js';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
+import { startSpinner, updateSpinner, stopSpinner, logWithSpinner, succeedSpinner, failSpinner } from './spinner.js';
 
 /**
  * Runs the coordinator loop — spawns agents in batches and waits for completion.
@@ -33,32 +34,45 @@ export async function runCoordinator(opts) {
     const batch = status.tasks.slice(i, i + maxAgents);
     const batchPromises = [];
 
+    const runningTasks = [];
+
     for (const task of batch) {
       if (task.state !== 'pending') continue;
 
-      console.log(chalk.yellow(`  ▶ Assigning ${task.role}: ${task.description}`));
+      logWithSpinner(chalk.yellow(`  ▶ Assigning ${task.role}: ${task.description}`));
 
       const worktreePath = createWorktree(task.branch, baseBranch);
       task.state = 'running';
       writeStatus(status);
+      runningTasks.push(task);
 
       const p = spawnAgent(task, worktreePath, task.role)
         .then(({ code, taskId }) => {
+          runningTasks.splice(runningTasks.indexOf(task), 1);
           if (code === 0) {
-            console.log(chalk.green(`  ✓ Completed: ${task.description}`));
+            logWithSpinner(chalk.green(`  ✓ Completed: ${task.description}`));
           } else {
-            console.log(chalk.red(`  ✗ Failed: ${task.description}`));
+            logWithSpinner(chalk.red(`  ✗ Failed: ${task.description}`));
+          }
+          if (runningTasks.length > 0) {
+            updateSpinner(`Working on ${runningTasks.length} task(s): ${runningTasks.map(t => t.id).join(', ')}`);
           }
         })
         .catch(err => {
-          console.log(chalk.red(`  ✗ Error: ${err.message}`));
+          runningTasks.splice(runningTasks.indexOf(task), 1);
+          logWithSpinner(chalk.red(`  ✗ Error: ${err.message}`));
         });
 
       batchPromises.push(p);
     }
 
+    if (runningTasks.length > 0) {
+      startSpinner(`Working on ${runningTasks.length} task(s): ${runningTasks.map(t => t.id).join(', ')}`);
+    }
+
     // Wait for this batch to complete before starting next
     await Promise.all(batchPromises);
+    stopSpinner();
   }
 
   // Re-read final status

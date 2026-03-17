@@ -9,6 +9,7 @@ import { readJSON, readText, pathExists } from './files.js';
 import { OCHA_DIR } from './paths.js';
 import { updateTask } from './status.js';
 import chalk from 'chalk';
+import { logWithSpinner } from './spinner.js';
 
 /** @type {Map<string, {proc: ChildProcess, outputFile: string, worktreePath: string}>} */
 const runningAgents = new Map();
@@ -79,7 +80,7 @@ export function spawnAgent(task, worktreePath, role) {
         lastSummary = summary;
         // Truncate long summaries
         const display = summary.length > 120 ? summary.slice(0, 117) + '...' : summary;
-        console.log(prefix + chalk.white(display));
+        logWithSpinner(prefix + chalk.white(display));
       }
     }
   };
