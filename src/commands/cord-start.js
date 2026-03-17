@@ -5,6 +5,7 @@ import { createInitialStatus, writeStatus } from '../lib/status.js';
 import { decomposeTask } from '../lib/decompose.js';
 import { runCoordinator } from '../lib/coordinator.js';
 import { installRolePrompts } from '../lib/roles.js';
+import { ensureAuthenticated } from '../lib/agent.js';
 
 export async function cordStart(opts) {
   console.log(chalk.blue('🚀 ocha cord start'));
@@ -17,6 +18,17 @@ export async function cordStart(opts) {
     mkdirSync(ROLES_DIR, { recursive: true });
     installRolePrompts();
     console.log(chalk.gray('   Initialized .ocha/'));
+  }
+
+  // Ensure authentication is valid before doing anything
+  console.log(chalk.blue('\n🔐 Checking authentication...'));
+  try {
+    await ensureAuthenticated();
+    console.log(chalk.green('   ✓ Authenticated successfully'));
+  } catch (err) {
+    console.log(chalk.red(`   ✗ Authentication failed: ${err.message}`));
+    console.log(chalk.yellow('   Run "junie" manually to log in first.'));
+    process.exit(1);
   }
 
   // Decompose the task into subtasks (analysis only, no code changes)

@@ -1,6 +1,7 @@
 import { spawnAgent } from './agent.js';
 import { createWorktree } from './worktree.js';
 import { readStatus, writeStatus } from './status.js';
+import { execSync } from 'child_process';
 import chalk from 'chalk';
 
 export async function runCoordinator(opts) {
@@ -74,10 +75,24 @@ function printSummary(status) {
   if (failed.length) console.log(chalk.red(`  Failed:    ${failed.length}`));
 
   if (completed.length > 0) {
-    console.log(chalk.blue('\n  To merge branches back into main:'));
+    console.log(chalk.blue('\n  Pull Requests:'));
     for (const task of completed) {
       const desc = shortDesc(task.description);
-      console.log(chalk.gray(`    git merge ${task.branch}`) + chalk.white(`  # ${desc}`));
+      try {
+        const prUrl = execSync(
+          `gh pr create --base main --head ${task.branch} --title "${desc}" --body "Auto-created by ocha for: ${task.description.replace(/"/g, '\\"')}" 2>&1`,
+          { encoding: 'utf-8', stdio: 'pipe' }
+        ).trim();
+        console.log(chalk.green(`    ✓ PR created: ${prUrl}`));
+      } catch (err) {
+        const msg = err.stdout || err.stderr || '';
+        if (msg.includes('already exists')) {
+          console.log(chalk.yellow(`    ⚠ PR already exists for ${task.branch}`));
+        } else {
+          console.log(chalk.yellow(`    ⚠ Could not create PR for ${task.branch}: ${msg.split('\n')[0]}`));
+          console.log(chalk.gray(`      Manual: git merge ${task.branch}  # ${desc}`));
+        }
+      }
     }
   }
   console.log();

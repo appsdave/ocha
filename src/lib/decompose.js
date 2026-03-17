@@ -54,8 +54,26 @@ function runJunieDecompose(task, outputFile, tempDir) {
     ], { stdio: 'pipe' });
 
     let output = '';
-    proc.stdout.on('data', (d) => { output += d; });
-    proc.stderr.on('data', (d) => { output += d; });
+    const handleData = (d) => {
+      const text = d.toString();
+      output += text;
+      // Show only key progress lines (filter out raw JSON, noise)
+      for (const line of text.split('\n')) {
+        const t = line.trim();
+        if (!t) continue;
+        // Skip raw JSON fragments leaking from Junie
+        if (t.startsWith('{') || t.startsWith('}') || t.startsWith('"') || t.startsWith('[') || t.startsWith(']')) continue;
+        if (
+          t.startsWith('● Thinking') ||
+          t.startsWith('● TASK RESULT') ||
+          t.startsWith('TASK RESULT')
+        ) {
+          process.stdout.write(`   ${t}\n`);
+        }
+      }
+    };
+    proc.stdout.on('data', handleData);
+    proc.stderr.on('data', handleData);
 
     const timeout = setTimeout(() => {
       proc.kill();

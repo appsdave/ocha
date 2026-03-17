@@ -13,7 +13,7 @@ export function cordStatus() {
   console.log(`State:   ${status.session.state}`);
   console.log(`Started: ${status.session.startedAt}\n`);
 
-  const stateIcon = { pending: '⏳', running: '🔄', completed: '✅', failed: '❌' };
+  const stateIcon = { pending: '⏳', running: '🔄', completed: '✅', failed: '❌', stopped: '🛑' };
 
   for (const task of status.tasks) {
     const icon = stateIcon[task.state] || '?';
