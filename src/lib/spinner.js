@@ -59,6 +59,17 @@ export function succeedSpinner(text) {
 }
 
 /**
+ * Stops the active spinner with a warning mark.
+ * @param {string} [text] - Optional final text to display.
+ */
+export function warnSpinner(text) {
+  if (activeSpinner) {
+    activeSpinner.warn(text);
+    activeSpinner = null;
+  }
+}
+
+/**
  * Stops the active spinner with a failure mark.
  * @param {string} [text] - Optional final text to display.
  */

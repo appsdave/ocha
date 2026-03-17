@@ -192,9 +192,9 @@ async function runBuilderWithReview(task, status, baseBranch) {
     // Always push branch and open a PR — never auto-merge
     try {
       execSync(`cd "${worktreePath}" && git push -u origin ${task.branch} --force`, { stdio: 'pipe' });
-      console.log(chalk.green(`  ✓ Pushed branch ${task.branch} to origin`));
+      logWithSpinner(chalk.green(`  ✓ Pushed branch ${task.branch} to origin`));
     } catch (pushErr) {
-      console.log(chalk.yellow(`  ⚠ Could not push ${task.branch}: ${pushErr.message}`));
+      logWithSpinner(chalk.yellow(`  ⚠ Could not push ${task.branch}: ${pushErr.message}`));
     }
 
     try {
@@ -202,21 +202,20 @@ async function runBuilderWithReview(task, status, baseBranch) {
       const prBody = reviewPassed
         ? `✅ Reviewed and approved by ocha reviewer.\n\nTask: ${cleanDesc}`
         : `⚠️ Reviewer flagged issues — needs manual review.\n\nTask: ${cleanDesc}`;
-      const prLabel = reviewPassed ? '' : '--label "needs-review"';
       const prUrl = execSync(
         `gh pr create --base ${baseBranch} --head ${task.branch} --title "${prTitle}" --body "${prBody}" 2>&1`,
         { stdio: 'pipe' }
       ).toString().trim();
       task.prUrl = prUrl;
-      console.log(chalk.cyan(`  🔗 PR created: ${prUrl}`));
+      logWithSpinner(chalk.cyan(`  🔗 PR created: ${prUrl}`));
     } catch (prErr) {
       // PR may already exist — try to get the URL
       try {
         const prUrl = execSync(`gh pr view ${task.branch} --json url -q .url 2>&1`, { stdio: 'pipe' }).toString().trim();
         task.prUrl = prUrl;
-        console.log(chalk.cyan(`  🔗 PR already exists: ${prUrl}`));
+        logWithSpinner(chalk.cyan(`  🔗 PR already exists: ${prUrl}`));
       } catch {
-        console.log(chalk.yellow(`  ⚠ Could not create PR for ${task.branch} — push manually`));
+        logWithSpinner(chalk.yellow(`  ⚠ Could not create PR for ${task.branch} — push manually`));
       }
     }
   } catch (reviewErr) {
@@ -257,33 +256,48 @@ function shortDesc(description) {
 }
 
 function printSummary(status) {
-  console.log(chalk.blue('\n═══════════════════════════════════'));
-  console.log(chalk.blue('       OCHA Session Summary'));
-  console.log(chalk.blue('═══════════════════════════════════\n'));
-
   const completed = status.tasks.filter(t => t.state === 'completed');
-  const failed = status.tasks.filter(t => t.state === 'failed');
+  const failed    = status.tasks.filter(t => t.state === 'failed');
+  const merged    = completed.filter(t => t.merged);
+  const unmerged  = completed.filter(t => !t.merged);
 
-  console.log(`  Total:     ${status.tasks.length}`);
-  console.log(chalk.green(`  Completed: ${completed.length}`));
-  if (failed.length) console.log(chalk.red(`  Failed:    ${failed.length}`));
+  console.log(chalk.bold.blue('\n┌─ 🏁  ocha session complete ────────────────────┐'));
+  console.log(`│  ${chalk.dim('Total    ')} ${status.tasks.length}`);
+  console.log(`│  ${chalk.dim('Completed')} ${chalk.green(completed.length)}`);
+  if (failed.length)  console.log(`│  ${chalk.dim('Failed   ')} ${chalk.red(failed.length)}`);
+  if (merged.length)  console.log(`│  ${chalk.dim('Merged   ')} ${chalk.green(merged.length)}`);
+  if (unmerged.length) console.log(`│  ${chalk.dim('Open PRs ')} ${chalk.cyan(unmerged.length)}`);
+  console.log(chalk.bold.blue('└' + '─'.repeat(49) + '┘'));
 
-  const merged = completed.filter(t => t.merged);
-  const unmerged = completed.filter(t => !t.merged);
+  if (unmerged.length > 0) {
+    console.log(chalk.cyan('\n  Open pull requests:'));
+    for (const task of unmerged) {
+      const desc = shortDesc(task.description.split('\n')[0]);
+      if (task.prUrl) {
+        console.log(chalk.cyan(`    🔗 ${task.prUrl}`));
+        console.log(chalk.dim(`       ${task.branch} — ${desc}`));
+      } else {
+        console.log(chalk.yellow(`    ⚠  ${task.branch} — ${desc}`));
+        console.log(chalk.dim(`       push manually and open a PR`));
+      }
+    }
+  }
+
+  if (failed.length > 0) {
+    console.log(chalk.red('\n  Failed tasks:'));
+    for (const task of failed) {
+      const desc = shortDesc(task.description.split('\n')[0]);
+      console.log(chalk.red(`    ✗  ${task.branch} — ${desc}`));
+    }
+  }
 
   if (merged.length > 0) {
     console.log(chalk.green('\n  Merged to main:'));
     for (const task of merged) {
       const desc = shortDesc(task.description.split('\n')[0]);
-      console.log(chalk.gray(`    ✓ ${task.branch} — ${desc}`));
+      console.log(chalk.green(`    ✓  ${task.branch} — ${desc}`));
     }
   }
-  if (unmerged.length > 0) {
-    console.log(chalk.yellow('\n  Needs manual merge/PR:'));
-    for (const task of unmerged) {
-      const desc = shortDesc(task.description.split('\n')[0]);
-      console.log(chalk.gray(`    ⚠ ${task.branch} — ${desc}`));
-    }
-  }
+
   console.log();
 }
