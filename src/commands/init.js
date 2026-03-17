@@ -1,16 +1,25 @@
-import { mkdirSync, existsSync } from 'fs';
+/**
+ * @module commands/init
+ * Implements the `ocha init` command.
+ * Creates the .ocha/ directory structure and installs agent role prompts.
+ */
 import chalk from 'chalk';
+import { ensureDir, pathExists } from '../lib/files.js';
 import { OCHA_DIR, ROLES_DIR } from '../lib/paths.js';
 import { installRolePrompts } from '../lib/roles.js';
 
+/**
+ * Initializes the .ocha/ directory with role prompt files.
+ * Warns and exits if .ocha/ already exists.
+ */
 export function ochaInit() {
-  if (existsSync(OCHA_DIR)) {
+  if (pathExists(OCHA_DIR)) {
     console.log(chalk.yellow('⚠ .ocha/ already exists. Remove it first or run "ocha cord stop".'));
     return;
   }
 
-  mkdirSync(OCHA_DIR, { recursive: true });
-  mkdirSync(ROLES_DIR, { recursive: true });
+  ensureDir(OCHA_DIR);
+  ensureDir(ROLES_DIR);
 
   installRolePrompts();
 

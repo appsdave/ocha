@@ -1,9 +1,23 @@
+/**
+ * @module coordinator
+ * Batched parallel agent coordination.
+ * Reads the task list from status, creates worktrees, spawns agents in
+ * batches (up to maxAgents at a time), and prints a final summary.
+ */
 import { spawnAgent } from './agent.js';
 import { createWorktree } from './worktree.js';
 import { readStatus, writeStatus } from './status.js';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
 
+/**
+ * Runs the coordinator loop — spawns agents in batches and waits for completion.
+ * Each batch runs up to maxAgents tasks in parallel before starting the next batch.
+ *
+ * @param {object} opts - Command options.
+ * @param {string} opts.maxAgents - Maximum number of parallel agents per batch.
+ * @param {string} opts.baseBranch - Git branch to create worktrees from.
+ */
 export async function runCoordinator(opts) {
   const maxAgents = parseInt(opts.maxAgents, 10);
   const baseBranch = opts.baseBranch;
@@ -57,11 +71,20 @@ export async function runCoordinator(opts) {
   writeStatus(finalStatus);
 }
 
+/**
+ * Truncates a description to its first 6 words for display.
+ * @param {string} description - Full task description.
+ * @returns {string} Shortened description with ellipsis if truncated.
+ */
 function shortDesc(description) {
   const words = description.split(/\s+/);
   return words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : '');
 }
 
+/**
+ * Prints the session summary with task counts and merge commands.
+ * @param {object} status - The final session status object.
+ */
 function printSummary(status) {
   console.log(chalk.blue('\n═══════════════════════════════════'));
   console.log(chalk.blue('       OCHA Session Summary'));
