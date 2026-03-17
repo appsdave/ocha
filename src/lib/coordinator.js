@@ -5,7 +5,7 @@
  * batches (up to maxAgents at a time), and prints a final summary.
  */
 import { spawnAgent } from './agent.js';
-import { createWorktree } from './worktree.js';
+import { createWorktree, removeWorktree } from './worktree.js';
 import { readStatus, writeStatus } from './status.js';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
@@ -36,7 +36,7 @@ export async function runCoordinator(opts) {
     for (const task of batch) {
       if (task.state !== 'pending') continue;
 
-      console.log(chalk.yellow(`  ▶ [${task.id}] Spawning ${task.role}: ${task.description}`));
+      console.log(chalk.yellow(`  ▶ Assigning ${task.role}: ${task.description}`));
 
       const worktreePath = createWorktree(task.branch, baseBranch);
       task.state = 'running';
@@ -45,13 +45,13 @@ export async function runCoordinator(opts) {
       const p = spawnAgent(task, worktreePath, task.role)
         .then(({ code, taskId }) => {
           if (code === 0) {
-            console.log(chalk.green(`  ✓ [${taskId}] Done`));
+            console.log(chalk.green(`  ✓ Completed: ${task.description}`));
           } else {
-            console.log(chalk.red(`  ✗ [${taskId}] Failed (exit ${code})`));
+            console.log(chalk.red(`  ✗ Failed: ${task.description}`));
           }
         })
         .catch(err => {
-          console.log(chalk.red(`  ✗ [${task.id}] Error: ${err.message}`));
+          console.log(chalk.red(`  ✗ Error: ${err.message}`));
         });
 
       batchPromises.push(p);
@@ -64,28 +64,112 @@ export async function runCoordinator(opts) {
   // Re-read final status
   const finalStatus = readStatus() || status;
 
+  // Merge completed branches back and cleanup worktrees
+  await mergeAndCleanup(finalStatus, baseBranch, opts.noMerge);
+
   // Final summary
-  printSummary(finalStatus);
+  printSummary(finalStatus, opts.noMerge);
   finalStatus.session.state = 'completed';
   finalStatus.session.completedAt = new Date().toISOString();
   writeStatus(finalStatus);
 }
 
+<<<<<<< Updated upstream
 /**
  * Truncates a description to its first 6 words for display.
  * @param {string} description - Full task description.
  * @returns {string} Shortened description with ellipsis if truncated.
  */
+=======
+async function mergeAndCleanup(status, baseBranch, noMerge) {
+  const completed = status.tasks.filter(t => t.state === 'completed');
+
+  for (const task of completed) {
+    // Show diff stats
+    try {
+      const diff = execSync(`git diff ${baseBranch}..${task.branch} --stat`, { encoding: 'utf-8' }).trim();
+      if (diff) {
+        console.log(chalk.blue(`\n  📋 Changes in ${task.branch}:`));
+        console.log(chalk.gray(diff.split('\n').map(l => `     ${l}`).join('\n')));
+      }
+    } catch {}
+
+    // Merge branch back into base
+    if (!noMerge) {
+      try {
+        // Stash any uncommitted local changes to avoid conflicts
+        let stashed = false;
+        try {
+          const stashOut = execSync('git stash --include-untracked', { encoding: 'utf-8' }).trim();
+          stashed = !stashOut.includes('No local changes');
+        } catch {}
+
+        try {
+          execSync(`git merge ${task.branch} -m "ocha: merge ${task.branch}"`, { stdio: 'pipe' });
+          console.log(chalk.green(`  ✓ Merged ${task.branch} into ${baseBranch}`));
+        } catch {
+          // Merge conflict — abort and try with theirs strategy
+          try { execSync('git merge --abort', { stdio: 'pipe' }); } catch {}
+          try {
+            execSync(`git merge -X theirs ${task.branch} -m "ocha: merge ${task.branch}"`, { stdio: 'pipe' });
+            console.log(chalk.green(`  ✓ Merged ${task.branch} into ${baseBranch} (auto-resolved)`));
+          } catch {
+            try { execSync('git merge --abort', { stdio: 'pipe' }); } catch {}
+            console.log(chalk.red(`  ✗ Merge conflict for ${task.branch} — resolve manually:`));
+            console.log(chalk.gray(`     git merge ${task.branch}`));
+          }
+        }
+
+        // Restore stashed changes
+        if (stashed) {
+          try { execSync('git stash pop', { stdio: 'pipe' }); } catch {
+            console.log(chalk.yellow(`  ⚠ Stashed changes could not be auto-restored: git stash pop`));
+          }
+        }
+      } catch {
+        console.log(chalk.red(`  ✗ Merge failed for ${task.branch}`));
+      }
+    }
+
+    // Cleanup worktree
+    if (task.worktree) {
+      try {
+        removeWorktree(task.worktree);
+      } catch {}
+    }
+
+    // Cleanup branch if merged
+    if (!noMerge) {
+      try {
+        execSync(`git branch -D ${task.branch}`, { stdio: 'pipe' });
+      } catch {}
+    }
+  }
+
+  // Also cleanup worktrees for failed tasks
+  const failed = status.tasks.filter(t => t.state === 'failed');
+  for (const task of failed) {
+    if (task.worktree) {
+      try { removeWorktree(task.worktree); } catch {}
+    }
+  }
+}
+
+>>>>>>> Stashed changes
 function shortDesc(description) {
   const words = description.split(/\s+/);
   return words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : '');
 }
 
+<<<<<<< Updated upstream
 /**
  * Prints the session summary with task counts and merge commands.
  * @param {object} status - The final session status object.
  */
 function printSummary(status) {
+=======
+function printSummary(status, noMerge) {
+>>>>>>> Stashed changes
   console.log(chalk.blue('\n═══════════════════════════════════'));
   console.log(chalk.blue('       OCHA Session Summary'));
   console.log(chalk.blue('═══════════════════════════════════\n'));
@@ -97,26 +181,14 @@ function printSummary(status) {
   console.log(chalk.green(`  Completed: ${completed.length}`));
   if (failed.length) console.log(chalk.red(`  Failed:    ${failed.length}`));
 
-  if (completed.length > 0) {
-    console.log(chalk.blue('\n  Pull Requests:'));
+  if (completed.length > 0 && noMerge) {
+    console.log(chalk.yellow('\n  Branches (not merged):'));
     for (const task of completed) {
       const desc = shortDesc(task.description);
-      try {
-        const prUrl = execSync(
-          `gh pr create --base main --head ${task.branch} --title "${desc}" --body "Auto-created by ocha for: ${task.description.replace(/"/g, '\\"')}" 2>&1`,
-          { encoding: 'utf-8', stdio: 'pipe' }
-        ).trim();
-        console.log(chalk.green(`    ✓ PR created: ${prUrl}`));
-      } catch (err) {
-        const msg = err.stdout || err.stderr || '';
-        if (msg.includes('already exists')) {
-          console.log(chalk.yellow(`    ⚠ PR already exists for ${task.branch}`));
-        } else {
-          console.log(chalk.yellow(`    ⚠ Could not create PR for ${task.branch}: ${msg.split('\n')[0]}`));
-          console.log(chalk.gray(`      Manual: git merge ${task.branch}  # ${desc}`));
-        }
-      }
+      console.log(chalk.gray(`    git merge ${task.branch}  # ${desc}`));
     }
+  } else if (completed.length > 0) {
+    console.log(chalk.green('\n  All completed branches merged into ' + status.tasks[0]?.branch?.split('/')[0] || 'main'));
   }
   console.log();
 }

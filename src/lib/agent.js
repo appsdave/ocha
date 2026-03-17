@@ -48,34 +48,38 @@ export function spawnAgent(task, worktreePath, role) {
     pid: proc.pid,
   });
 
-  const prefix = chalk.gray(`  │ [${task.id}] `);
+  const prefix = chalk.gray('  │ ');
+  let lastSummary = '';
 
-  // Show only key lines from agent output (nested, filtered)
+  // Show only high-level coordinator-style progress (no task-id spam)
   const handleData = (data) => {
     const lines = data.toString().split('\n');
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      // Show important lines: results, thinking, auth, commits, file ops
-      if (
-        trimmed.startsWith('● TASK RESULT:') ||
-        trimmed.startsWith('● Thinking') ||
-        trimmed.startsWith('TASK RESULT:') ||
-        trimmed.startsWith('Authenticated') ||
-        trimmed.includes('committed') ||
-        trimmed.includes('commit ') ||
-        trimmed.startsWith('● cd ') ||
-        trimmed.startsWith('● cat ') ||
-        trimmed.startsWith('● find ') ||
-        trimmed.startsWith('● mkdir ') ||
-        trimmed.includes('created') ||
-        trimmed.includes('updated') ||
-        trimmed.includes('Added') ||
-        trimmed.includes('Modified') ||
-        trimmed.includes('Wrote') ||
-        trimmed.includes('Writing')
+
+      // Extract meaningful summaries — skip commands, noise, auth
+      let summary = null;
+      if (trimmed.startsWith('● TASK RESULT:') || trimmed.startsWith('TASK RESULT:')) {
+        summary = trimmed.replace(/^●?\s*TASK RESULT:\s*/, '');
+      } else if (
+        !trimmed.startsWith('●') &&
+        !trimmed.startsWith('│') &&
+        !trimmed.startsWith('Authenticated') &&
+        !trimmed.startsWith('Enter ') &&
+        !trimmed.startsWith('[Junie]') &&
+        trimmed.length > 20 &&
+        /^[A-Z]/.test(trimmed)
       ) {
-        console.log(prefix + trimmed);
+        // Likely a Junie summary sentence
+        summary = trimmed;
+      }
+
+      if (summary && summary !== lastSummary) {
+        lastSummary = summary;
+        // Truncate long summaries
+        const display = summary.length > 120 ? summary.slice(0, 117) + '...' : summary;
+        console.log(prefix + chalk.white(display));
       }
     }
   };
@@ -92,9 +96,8 @@ export function spawnAgent(task, worktreePath, role) {
       if (code === 0) {
         try {
           execSync(`cd "${worktreePath}" && git push -u origin ${task.branch} --force`, { stdio: 'pipe' });
-          console.log(prefix + chalk.green('Pushed branch to origin'));
         } catch {
-          console.log(prefix + chalk.yellow('Could not push branch (no remote or auth issue)'));
+          // Push failed — non-critical
         }
       }
 

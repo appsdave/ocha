@@ -59,5 +59,5 @@ export async function cordStart(opts) {
   writeStatus(status);
 
   // Run the coordinator loop (only spawns agents, doesn't do work itself)
-  await runCoordinator(opts);
+  await runCoordinator({ ...opts, noMerge: opts.merge === false });
 }
