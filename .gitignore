@@ -1,0 +1,26 @@
+# Environment files
+.env
+
+# Junie memory
+.junie/
+.junie/memory/
+
+# Node modules
+node_modules/
+
+# Ocha internal
+.ocha/
+.ocha-worktrees/
+
+# Submodule / worktree artifacts
+junietree/
+overstory/
+overstory
+
+# Test repos
+tmp-ocha-test/
+
+# OS / editor / tool artifacts
+.DS_Store
+*.swp
+.output.txt
