@@ -3,7 +3,7 @@
 set -e
 
 INSTALL_DIR="${OCHA_HOME:-$HOME/.ocha}"
-REPO_URL="https://github.com/appsdave/ocha.git"
+REPO_URL="git@github.com:appsdave/ocha.git"
 BIN_NAME="ocha"
 
 echo "🚀 Installing ocha..."

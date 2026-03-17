@@ -46,13 +46,13 @@ Ocha turns a single Junie session into a multi-agent team. A high-level task is 
 **One-liner** (clones to `~/.ocha` and adds `ocha` to your PATH):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/appsdave/ocha/main/install.sh | bash
+git clone git@github.com:appsdave/ocha.git /tmp/ocha-install && bash /tmp/ocha-install/install.sh && rm -rf /tmp/ocha-install
 ```
 
 **Or manually:**
 
 ```bash
-git clone https://github.com/appsdave/ocha.git ~/.ocha
+git clone git@github.com:appsdave/ocha.git ~/.ocha
 cd ~/.ocha && npm install
 ln -sf ~/.ocha/bin/ocha.js ~/.local/bin/ocha
 ```
