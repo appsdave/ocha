@@ -3,7 +3,7 @@
  * Session status management — read, write, and update task state
  * in the .ocha/status.json file.
  */
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readJSON, writeJSON } from './files.js';
 import { STATUS_FILE } from './paths.js';
 
 /**
@@ -11,8 +11,7 @@ import { STATUS_FILE } from './paths.js';
  * @returns {object|null} The parsed status object, or null if no status file exists.
  */
 export function readStatus() {
-  if (!existsSync(STATUS_FILE)) return null;
-  return JSON.parse(readFileSync(STATUS_FILE, 'utf-8'));
+  return readJSON(STATUS_FILE);
 }
 
 /**
@@ -20,7 +19,7 @@ export function readStatus() {
  * @param {object} status - The status object to persist.
  */
 export function writeStatus(status) {
-  writeFileSync(STATUS_FILE, JSON.stringify(status, null, 2));
+  writeJSON(STATUS_FILE, status);
 }
 
 /**

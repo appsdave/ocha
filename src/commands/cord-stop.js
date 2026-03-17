@@ -3,8 +3,8 @@
  * Implements the `ocha cord stop` command.
  * Stops all running agents, removes worktrees, and cleans up the .ocha/ directory.
  */
-import { rmSync, existsSync } from 'fs';
 import chalk from 'chalk';
+import { pathExists, safeDelete } from '../lib/files.js';
 import { OCHA_DIR, WORKTREES_DIR } from '../lib/paths.js';
 import { killAllAgents } from '../lib/agent.js';
 import { readStatus, writeStatus } from '../lib/status.js';
@@ -38,7 +38,7 @@ export function cordStop() {
 
     // Clean up worktrees
     for (const task of status.tasks) {
-      if (task.worktree && existsSync(task.worktree)) {
+      if (task.worktree && pathExists(task.worktree)) {
         try {
           removeWorktree(task.worktree);
           console.log(chalk.gray(`  Removed worktree: ${task.branch}`));
@@ -55,13 +55,11 @@ export function cordStop() {
   }
 
   // Remove worktrees directory
-  if (existsSync(WORKTREES_DIR)) {
-    rmSync(WORKTREES_DIR, { recursive: true, force: true });
-  }
+  safeDelete(WORKTREES_DIR, { recursive: true });
 
   // Remove .ocha directory
-  if (existsSync(OCHA_DIR)) {
-    rmSync(OCHA_DIR, { recursive: true, force: true });
+  if (pathExists(OCHA_DIR)) {
+    safeDelete(OCHA_DIR, { recursive: true });
     console.log(chalk.green('✓ Session stopped and cleaned up.'));
   } else {
     console.log(chalk.yellow('No active session found.'));

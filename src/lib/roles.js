@@ -4,8 +4,8 @@
  * Each role has a markdown prompt that is written to .ocha/roles/ during init
  * and prepended to agent task descriptions when spawned.
  */
-import { writeFileSync } from 'fs';
 import { resolve } from 'path';
+import { writeText } from './files.js';
 import { ROLES_DIR } from './paths.js';
 
 const ROLES = {
@@ -72,6 +72,6 @@ Do not make code changes yourself — only review and report.`,
  */
 export function installRolePrompts() {
   for (const [role, content] of Object.entries(ROLES)) {
-    writeFileSync(resolve(ROLES_DIR, `${role}.md`), content);
+    writeText(resolve(ROLES_DIR, `${role}.md`), content);
   }
 }

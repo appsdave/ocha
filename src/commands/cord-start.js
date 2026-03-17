@@ -4,8 +4,8 @@
  * Decomposes a high-level task, creates the session status, and launches
  * the coordinator loop to spawn parallel agents.
  */
-import { mkdirSync, existsSync } from 'fs';
 import chalk from 'chalk';
+import { ensureDir, pathExists } from '../lib/files.js';
 import { OCHA_DIR, ROLES_DIR } from '../lib/paths.js';
 import { createInitialStatus, writeStatus } from '../lib/status.js';
 import { decomposeTask } from '../lib/decompose.js';
@@ -27,9 +27,9 @@ export async function cordStart(opts) {
   console.log(chalk.gray(`   Base: ${opts.baseBranch}`));
 
   // Auto-init if needed
-  if (!existsSync(OCHA_DIR)) {
-    mkdirSync(OCHA_DIR, { recursive: true });
-    mkdirSync(ROLES_DIR, { recursive: true });
+  if (!pathExists(OCHA_DIR)) {
+    ensureDir(OCHA_DIR);
+    ensureDir(ROLES_DIR);
     installRolePrompts();
     console.log(chalk.gray('   Initialized .ocha/'));
   }

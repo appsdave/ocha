@@ -5,7 +5,7 @@
  */
 import { spawn } from 'child_process';
 import { resolve } from 'path';
-import { readFileSync, existsSync } from 'fs';
+import { readJSON, readText, pathExists } from './files.js';
 import { OCHA_DIR } from './paths.js';
 import { updateTask } from './status.js';
 import chalk from 'chalk';
@@ -105,12 +105,7 @@ export function spawnAgent(task, worktreePath, role) {
  * @returns {object|null} Parsed output, or null if missing/invalid.
  */
 function readAgentOutput(outputFile) {
-  if (!existsSync(outputFile)) return null;
-  try {
-    return JSON.parse(readFileSync(outputFile, 'utf-8'));
-  } catch {
-    return null;
-  }
+  return readJSON(outputFile);
 }
 
 /**
@@ -121,10 +116,7 @@ function readAgentOutput(outputFile) {
  */
 function loadRolePrompt(role) {
   const rolePath = resolve(OCHA_DIR, 'roles', `${role}.md`);
-  if (existsSync(rolePath)) {
-    return readFileSync(rolePath, 'utf-8');
-  }
-  return `You are a ${role} agent. Complete the assigned task thoroughly.`;
+  return readText(rolePath, `You are a ${role} agent. Complete the assigned task thoroughly.`);
 }
 
 /**

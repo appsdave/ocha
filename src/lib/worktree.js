@@ -4,8 +4,8 @@
  * used to isolate each agent's working directory.
  */
 import { execSync } from 'child_process';
-import { existsSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
+import { ensureDir, pathExists } from './files.js';
 import { WORKTREES_DIR } from './paths.js';
 
 /**
@@ -18,11 +18,9 @@ import { WORKTREES_DIR } from './paths.js';
  * @returns {string} Absolute path to the created worktree directory.
  */
 export function createWorktree(branch, baseBranch = 'main') {
-  if (!existsSync(WORKTREES_DIR)) {
-    mkdirSync(WORKTREES_DIR, { recursive: true });
-  }
+  ensureDir(WORKTREES_DIR);
   const worktreePath = resolve(WORKTREES_DIR, branch.replace(/\//g, '-'));
-  if (existsSync(worktreePath)) return worktreePath;
+  if (pathExists(worktreePath)) return worktreePath;
 
   try {
     execSync(`git worktree add -b ${branch} "${worktreePath}" ${baseBranch}`, {
@@ -42,7 +40,7 @@ export function createWorktree(branch, baseBranch = 'main') {
  * @param {string} worktreePath - Absolute path to the worktree to remove.
  */
 export function removeWorktree(worktreePath) {
-  if (!existsSync(worktreePath)) return;
+  if (!pathExists(worktreePath)) return;
   execSync(`git worktree remove "${worktreePath}" --force`, { stdio: 'pipe' });
 }
 
