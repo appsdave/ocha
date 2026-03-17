@@ -6,7 +6,7 @@
  */
 import { spawn } from 'child_process';
 import { resolve } from 'path';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync } from 'fs';
 import { OCHA_DIR } from './paths.js';
 
 const ENHANCE_PROMPT = `You are the **coordinator** in an ocha multi-agent workflow. Your job is to take a raw user task and produce an enriched, detailed task brief that gives the lead agent everything it needs to plan and assign work.
@@ -47,8 +47,8 @@ export async function enhanceTask(task, projectDir) {
     if (result && result.enhancedTask && result.enhancedTask.trim().length > 0) {
       return result.enhancedTask;
     }
-  } catch {
-    // Fall through to original task
+  } catch (err) {
+    throw err;
   }
 
   return task;
@@ -64,6 +64,7 @@ export async function enhanceTask(task, projectDir) {
  * @returns {Promise<object>} Parsed JSON output from Junie.
  */
 function runJunieEnhance(task, outputFile, projectDir) {
+  mkdirSync(OCHA_DIR, { recursive: true });
   const fullPrompt = `${ENHANCE_PROMPT}\n\nUser task:\n${task}`;
 
   return new Promise((resolve, reject) => {
