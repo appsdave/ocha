@@ -74,13 +74,6 @@ export async function runCoordinator(opts) {
   writeStatus(finalStatus);
 }
 
-<<<<<<< Updated upstream
-/**
- * Truncates a description to its first 6 words for display.
- * @param {string} description - Full task description.
- * @returns {string} Shortened description with ellipsis if truncated.
- */
-=======
 async function mergeAndCleanup(status, baseBranch, noMerge) {
   const completed = status.tasks.filter(t => t.state === 'completed');
 
@@ -155,21 +148,22 @@ async function mergeAndCleanup(status, baseBranch, noMerge) {
   }
 }
 
->>>>>>> Stashed changes
+/**
+ * Truncates a description to its first 6 words for display.
+ * @param {string} description - Full task description.
+ * @returns {string} Shortened description with ellipsis if truncated.
+ */
 function shortDesc(description) {
   const words = description.split(/\s+/);
   return words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : '');
 }
 
-<<<<<<< Updated upstream
 /**
  * Prints the session summary with task counts and merge commands.
  * @param {object} status - The final session status object.
+ * @param {boolean} noMerge - Whether auto-merge was skipped.
  */
-function printSummary(status) {
-=======
 function printSummary(status, noMerge) {
->>>>>>> Stashed changes
   console.log(chalk.blue('\n═══════════════════════════════════'));
   console.log(chalk.blue('       OCHA Session Summary'));
   console.log(chalk.blue('═══════════════════════════════════\n'));
