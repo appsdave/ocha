@@ -20,6 +20,10 @@ import { WORKTREES_DIR } from './paths.js';
 export function createWorktree(branch, baseBranch = 'main') {
   ensureDir(WORKTREES_DIR);
   const worktreePath = resolve(WORKTREES_DIR, branch.replace(/\//g, '-'));
+
+  // Prune stale worktree registrations before attempting to create
+  try { execSync('git worktree prune', { stdio: 'pipe' }); } catch (_) {}
+
   if (pathExists(worktreePath)) return worktreePath;
 
   try {
@@ -27,10 +31,12 @@ export function createWorktree(branch, baseBranch = 'main') {
       stdio: 'pipe',
     });
   } catch (err) {
-    // Branch may already exist
-    execSync(`git worktree add "${worktreePath}" ${branch}`, {
-      stdio: 'pipe',
-    });
+    // Branch may already exist — try adding without -b, or force if stale
+    try {
+      execSync(`git worktree add "${worktreePath}" ${branch}`, { stdio: 'pipe' });
+    } catch (_) {
+      execSync(`git worktree add -f -b ${branch} "${worktreePath}" ${baseBranch}`, { stdio: 'pipe' });
+    }
   }
   return worktreePath;
 }
