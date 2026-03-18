@@ -167,10 +167,9 @@ export class OchaTUI {
   // ── Agent management ──────────────────────────────────────────────────────
 
   _spawnAgent(task) {
-    // Clear log immediately so no previous agent's text shows before new logs arrive
+    // Clear log content — do NOT render here to avoid a blank-screen flash
     this.logBox.setContent('');
     this.taskHeader.setContent('');
-    this.screen.render();
 
     spawnAgent(task, this.agents, (agent) => {
       // Only re-render log if this agent is currently selected
