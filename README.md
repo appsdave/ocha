@@ -231,12 +231,11 @@ ocha/
 │       ├── enhance.js       # prompt enhancer
 │       ├── agent.js         # Junie process spawner
 │       ├── worktree.js      # git worktree management
-│       ├── config.js        # configuration loader
+│       ├── beads.js         # beads issue-tracking integration
 │       ├── issues.js        # agent issue feed
 │       ├── files.js         # filesystem helpers
 │       ├── status.js        # .ocha/status.json r/w
 │       ├── paths.js         # shared path constants
-│       ├── preflight.js     # pre-run checks
 │       ├── prompt.js        # prompt utilities
 │       ├── roles.js         # role prompt installer
 │       ├── tree.js          # directory tree builder
