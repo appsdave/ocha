@@ -241,7 +241,7 @@ export class OchaTUI {
     this.selectedIdx = this.agents.length - 1;
     persistAgents(this.agents);
     this._renderAgentList();
-    this._renderLog();
+    this._clearAndRenderLog();
     this.screen.render();
   }
 
