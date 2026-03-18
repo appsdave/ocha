@@ -61,7 +61,7 @@ export function buildLayout() {
     height: 1,
     style: { fg: 'white', bg: 'black' },
     tags: true,
-    content: '{grey-fg}  {bold}n{/bold} new task   {bold}↑↓{/bold} navigate   {bold}K{/bold} kill agent   {bold}l/r{/bold} switch pane   {bold}q{/bold} quit{/grey-fg}',
+    content: '{grey-fg}  {bold}n{/bold} new task   {bold}↑↓{/bold} navigate   {bold}K{/bold} kill   {bold}C{/bold} clear done   {bold}l/r{/bold} switch pane   {bold}q{/bold} quit{/grey-fg}',
   });
 
   // ── Status bar ────────────────────────────────────────────────────────────
