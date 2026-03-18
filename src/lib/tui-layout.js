@@ -33,7 +33,7 @@ export function buildLayout() {
     scrollable: true,
     alwaysScroll: true,
     keys: true,
-    vi: true,
+    vi: false,
   });
 
   // ── Right pane: log output ────────────────────────────────────────────────
@@ -50,7 +50,7 @@ export function buildLayout() {
     alwaysScroll: true,
     scrollbar: { ch: '│', style: { fg: 'grey' } },
     keys: true,
-    vi: true,
+    vi: false,
     wrap: true,
   });
 
