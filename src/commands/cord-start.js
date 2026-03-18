@@ -13,6 +13,7 @@ import { runCoordinator } from '../lib/coordinator.js';
 import { installRolePrompts } from '../lib/roles.js';
 import { ensureAuthenticated } from '../lib/agent.js';
 import { readMultilineTask } from '../lib/prompt.js';
+import { drawBox } from '../lib/ui.js';
 
 /**
  * Starts a coordinator session.
@@ -38,25 +39,17 @@ export async function cordStart(opts) {
     : [resolve(process.cwd())];
 
   const maxAgentsLabel = parseInt(opts.maxAgents, 10) === 1 ? '1 agent' : `${opts.maxAgents} agents (parallel)`;
-  // Show full task, wrapped at 47 chars per line
-  const taskLines = [];
-  let remaining = task;
-  while (remaining.length > 0) {
-    taskLines.push(remaining.slice(0, 47));
-    remaining = remaining.slice(47);
-  }
-  console.log(chalk.bold.blue('┌─ 🚀  ocha cord start ──────────────────────────┐'));
-  for (let i = 0; i < taskLines.length; i++) {
-    const label = i === 0 ? chalk.dim('Task  ') : '      ';
-    console.log(`│  ${label} ${taskLines[i]}`);
-  }
-  console.log(`│  ${chalk.dim('Branch')} ${opts.baseBranch}`);
-  console.log(`│  ${chalk.dim('Agents')} ${maxAgentsLabel}`);
+
+  const rows = [
+    [chalk.dim('Task  '), task],
+    [chalk.dim('Branch'), opts.baseBranch],
+    [chalk.dim('Agents'), maxAgentsLabel],
+  ];
   if (repoDirs.length > 1) {
-    console.log(`│  ${chalk.dim('Repos ')} ${repoDirs.length} repos`);
-    for (const r of repoDirs) console.log(`│    ${chalk.dim('→')} ${r}`);
+    rows.push([chalk.dim('Repos '), `${repoDirs.length} repos`]);
+    for (const r of repoDirs) rows.push([chalk.dim('  →'), r]);
   }
-  console.log(chalk.bold.blue('└' + '─'.repeat(49) + '┘'));
+  drawBox('🚀  ocha cord start', rows, { maxWidth: 80 });
 
   // Auto-init if needed
   if (!pathExists(OCHA_DIR)) {

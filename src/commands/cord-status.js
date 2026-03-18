@@ -6,7 +6,7 @@
  */
 import chalk from 'chalk';
 import { readStatus } from '../lib/status.js';
-import { getTerminalWidth, wrapText } from '../lib/ui.js';
+import { getTerminalWidth, wrapText, drawBox, progressBar, badge } from '../lib/ui.js';
 
 const stateIcon = {
   pending:   '⏳',
@@ -14,14 +14,6 @@ const stateIcon = {
   completed: '✅',
   failed:    '❌',
   stopped:   '🛑',
-};
-
-const stateColor = {
-  pending:   chalk.gray,
-  running:   chalk.yellow,
-  completed: chalk.green,
-  failed:    chalk.red,
-  stopped:   chalk.gray,
 };
 
 function formatDate(iso) {
@@ -36,35 +28,22 @@ function printStatus() {
     return false;
   }
 
-  const termWidth = getTerminalWidth();
-  // Box fits the terminal; capped at 76 cols, minimum 52 cols.
-  const boxWidth = Math.max(52, Math.min(termWidth - 2, 76));
-  // Inner content width: subtract '│  ' prefix (3) and a 2-col right margin.
-  const innerWidth = boxWidth - 5;
-
-  const sessionColor = stateColor[status.session.state] || chalk.white;
-
-  // Top border — "─ 📊  ocha session status " is 27 visual columns (emoji = 2 cols).
-  const headerDashes = Math.max(1, boxWidth - 29);
-  console.log(chalk.bold.blue('\n┌─ 📊  ocha session status ' + '─'.repeat(headerDashes) + '┐'));
-
-  // Task line — wrap if longer than available inner width.
-  const taskLabelStr = 'Task   ';
-  const taskLines = wrapText(status.session.task, innerWidth - taskLabelStr.length - 1);
-  console.log(`│  ${chalk.dim(taskLabelStr)} ${taskLines[0]}`);
-  for (let i = 1; i < taskLines.length; i++) {
-    console.log(`│  ${' '.repeat(taskLabelStr.length + 1)}${taskLines[i]}`);
-  }
-
-  console.log(`│  ${chalk.dim('State  ')} ${sessionColor(status.session.state)}`);
-  console.log(`│  ${chalk.dim('Started')} ${formatDate(status.session.startedAt)}`);
+  // Session info box
+  const sessionRows = [
+    [chalk.dim('Task   '), status.session.task],
+    [chalk.dim('State  '), badge(status.session.state)],
+    [chalk.dim('Started'), formatDate(status.session.startedAt)],
+  ];
   if (status.session.completedAt) {
-    console.log(`│  ${chalk.dim('Ended  ')} ${formatDate(status.session.completedAt)}`);
+    sessionRows.push([chalk.dim('Ended  '), formatDate(status.session.completedAt)]);
   }
-  console.log(chalk.bold.blue('└' + '─'.repeat(boxWidth - 2) + '┘\n'));
+  drawBox('📊  ocha session status', sessionRows, { maxWidth: 78 });
 
+  // Task summary counts + progress bar
   const counts = { completed: 0, running: 0, failed: 0, pending: 0 };
   for (const task of status.tasks) counts[task.state] = (counts[task.state] || 0) + 1;
+  const total = status.tasks.length;
+  const done  = counts.completed;
 
   const countParts = [
     counts.completed ? chalk.green(`${counts.completed} completed`) : null,
@@ -72,27 +51,30 @@ function printStatus() {
     counts.failed    ? chalk.red(`${counts.failed} failed`)         : null,
     counts.pending   ? chalk.gray(`${counts.pending} pending`)      : null,
   ].filter(Boolean);
-  console.log('  ' + countParts.join(chalk.dim('  ·  ')) + '\n');
 
-  const descIndent = '       '; // 7 spaces — aligns under icon + state columns
-  const descWidth = Math.max(20, termWidth - descIndent.length);
+  console.log('\n  ' + progressBar(done, total, 24) + '   ' + countParts.join(chalk.dim('  ·  ')));
+  console.log(chalk.dim('  ' + '─'.repeat(Math.max(40, Math.min(getTerminalWidth() - 4, 76)))));
+
+  // Individual task rows
+  const termWidth  = getTerminalWidth();
+  const descIndent = '        '; // 8 spaces — aligns under icon + badge
+  const descWidth  = Math.max(20, termWidth - descIndent.length - 2);
 
   for (const task of status.tasks) {
-    const icon = stateIcon[task.state] || '?';
-    const colorState = (stateColor[task.state] || chalk.white)(task.state.padEnd(9));
-    const rawDesc = task.description.split('\n')[0];
+    const icon     = stateIcon[task.state] || '?';
+    const rawDesc  = task.description.split('\n')[0];
     const descLines = wrapText(rawDesc, descWidth);
 
-    console.log(`  ${icon}  ${colorState} ${chalk.bold(task.id)} ${chalk.dim(`[${task.role}]`)}`);
+    console.log(`\n  ${icon}  ${badge(task.state)}  ${chalk.bold(task.id)}  ${chalk.dim(`[${task.role}]`)}`);
     for (const dLine of descLines) {
       console.log(chalk.gray(`${descIndent}${dLine}`));
     }
     console.log(chalk.dim(`${descIndent}branch: ${task.branch}`));
     if (task.worktree) console.log(chalk.dim(`${descIndent}worktree: ${task.worktree}`));
-    if (task.prUrl)    console.log(chalk.cyan(`${descIndent}pr: ${task.prUrl}`));
+    if (task.prUrl)    console.log(chalk.cyan(`${descIndent}🔗 pr: ${task.prUrl}`));
     if (task.merged)   console.log(chalk.green(`${descIndent}✓ merged`));
-    console.log();
   }
+  console.log();
 
   return status.session.state === 'running';
 }
