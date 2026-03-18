@@ -17,6 +17,7 @@
  *   h / ←   — focus agent list
  *   q / C-c — quit (confirms if agents running)
  */
+import { basename } from 'path';
 import blessed from 'blessed';
 import { buildLayout, openPromptDialog } from './tui-layout.js';
 import { loadPersistedAgents, persistAgents, spawnAgent, killAgent } from './tui-agents.js';
@@ -168,7 +169,8 @@ export class OchaTUI {
     }
 
     const total  = this.agents.length;
-    const header = `{bold}{blue-fg}ocha/{/blue-fg}{/bold} {grey-fg}(${total}){/grey-fg}`;
+    const repoName = basename(process.cwd());
+    const header = `{bold}{blue-fg}ocha/{/blue-fg}{white-fg}${repoName}{/white-fg}{/bold} {grey-fg}(${total}){/grey-fg}`;
 
     const lines = this.agents.map((a, i) => {
       const selected  = i === this.selectedIdx;
@@ -187,10 +189,16 @@ export class OchaTUI {
       const selOpen   = selected ? '{cyan-fg}{bold}' : '';
       const selClose  = selected ? '{/bold}{/cyan-fg}' : '';
       const rowStyle  = selected ? '{cyan-fg}' : '{grey-fg}';
-      const prLine    = a.prUrl
-        ? `\n${rowStyle}${indent}{/}  {cyan-fg}↗ PR{/cyan-fg}`
+      const branchDisplay = a.branch
+        ? (a.repo ? `${a.repo}/${a.branch}` : a.branch).slice(-34)
+        : null;
+      const branchLine = branchDisplay
+        ? `\n${rowStyle}${indent}{/}  {grey-fg}⎇ ${branchDisplay}{/grey-fg}`
         : '';
-      return `${rowStyle}${connector}{/}${badge} ${num} ${selOpen}${name}${selClose}  ${time}${prLine}`;
+      const prLine    = a.prUrl
+        ? `\n${rowStyle}${indent}{/}  {cyan-fg}↗ ${a.prUrl}{/cyan-fg}`
+        : '';
+      return `${rowStyle}${connector}{/}${badge} ${num} ${selOpen}${name}${selClose}  ${time}${branchLine}${prLine}`;
     });
 
     this.agentList.setContent([header, ...lines].join('\n'));
