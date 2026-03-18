@@ -19,3 +19,6 @@ export const ROLES_DIR = resolve(OCHA_DIR, 'roles');
 
 /** Directory where git worktrees are created for each agent */
 export const WORKTREES_DIR = resolve(process.cwd(), '.ocha-worktrees');
+
+/** Path to the agent issues feed file */
+export const ISSUES_FILE = resolve(OCHA_DIR, 'issues.json');
