@@ -223,9 +223,26 @@ async function runBuilderWithReview(task, status, baseBranch) {
 
     try {
       const prTitle = `ocha: ${shortDesc(cleanDesc)}`;
-      const prBody = reviewPassed
-        ? `✅ Reviewed and approved by ocha reviewer.\n\nTask: ${cleanDesc}`
-        : `⚠️ Reviewer flagged issues — needs manual review.\n\nTask: ${cleanDesc}`;
+
+      // Build a git log summary of what changed vs base branch
+      let diffSummary = '';
+      try {
+        const logLines = execSync(
+          `git log --oneline ${baseBranch}..${task.branch}`,
+          { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+        ).trim();
+        const statLines = execSync(
+          `git diff --stat ${baseBranch}..${task.branch}`,
+          { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+        ).trim();
+        if (logLines) diffSummary = `\n\n### Commits\n\`\`\`\n${logLines}\n\`\`\``;
+        if (statLines) diffSummary += `\n\n### Files changed\n\`\`\`\n${statLines}\n\`\`\``;
+      } catch {}
+
+      const reviewStatus = reviewPassed
+        ? '✅ Reviewed and approved by ocha reviewer.'
+        : '⚠️ Reviewer flagged issues — needs manual review.';
+      const prBody = `${reviewStatus}\n\n**Task:** ${cleanDesc}${diffSummary}`;
       const prOutput = execSync(
         `gh pr create --base ${baseBranch} --head ${task.branch} --title "${prTitle}" --body "${prBody}"`,
         { cwd: taskRepoDir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }

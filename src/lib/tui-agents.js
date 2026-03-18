@@ -1,0 +1,160 @@
+/**
+ * @module tui-agents
+ * Agent lifecycle management for the TUI: spawn, kill, persist, reload.
+ */
+import { spawn } from 'child_process';
+import { existsSync, mkdirSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { readStatus, writeStatus } from './status.js';
+import { OCHA_DIR, STATUS_FILE } from './paths.js';
+import { slugify } from './tui-utils.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+export const OCHA_ROOT = resolve(__dirname, '../..');
+
+/**
+ * Load previously persisted agents from .ocha/status.json.
+ * Running agents are marked as stopped (they can't be resumed).
+ * @returns {object[]} Array of agent objects.
+ */
+export function loadPersistedAgents() {
+  const agents = [];
+  try {
+    if (existsSync(STATUS_FILE)) {
+      const status = readStatus();
+      if (status && status.tasks) {
+        for (const t of status.tasks) {
+          agents.push({
+            id: t.id,
+            task: t.displayTask || t.branch,
+            branch: t.branch,
+            state: t.state === 'running' ? 'stopped' : t.state,
+            startedAt: t.startedAt,
+            completedAt: t.completedAt,
+            logs: t.logs || [],
+            proc: null,
+          });
+        }
+      }
+    }
+  } catch (_) {}
+  return agents;
+}
+
+/**
+ * Persist current agent list to .ocha/status.json.
+ * @param {object[]} agents
+ */
+export function persistAgents(agents) {
+  try {
+    if (!existsSync(OCHA_DIR)) mkdirSync(OCHA_DIR, { recursive: true });
+    const existing = readStatus() || {
+      session: { task: 'ocha tui', startedAt: new Date().toISOString(), state: 'running' },
+      tasks: [],
+    };
+    existing.tasks = agents.map(a => ({
+      id: a.id,
+      displayTask: a.task,
+      branch: a.branch,
+      state: a.state,
+      startedAt: a.startedAt,
+      completedAt: a.completedAt,
+      logs: a.logs.slice(-200),
+    }));
+    writeStatus(existing);
+  } catch (_) {}
+}
+
+/**
+ * Spawn a new agent process for the given task.
+ * Returns the agent object (already pushed into the agents array).
+ *
+ * @param {string} task - Human-readable task description.
+ * @param {object[]} agents - Shared agents array (mutated in place).
+ * @param {Function} onUpdate - Called whenever logs or state change.
+ * @returns {object} The new agent object.
+ */
+export function spawnAgent(task, agents, onUpdate) {
+  const now = new Date();
+  const ts = now.toISOString()
+    .replace(/[-:T]/g, '')
+    .slice(0, 15)
+    .replace(/(\d{8})(\d{6})/, '$1-$2');
+  const slug = slugify(task);
+  const branch = `ocha/${slug}-${ts}`;
+  const id = `agent-${Date.now()}`;
+
+  const agent = {
+    id,
+    task,
+    branch,
+    state: 'running',
+    startedAt: now.toISOString(),
+    completedAt: null,
+    logs: [
+      `[ocha] Starting agent for: ${task}`,
+      `[ocha] Branch: ${branch}`,
+      `[ocha] Time: ${now.toLocaleString()}`,
+      '',
+    ],
+    proc: null,
+  };
+
+  agents.push(agent);
+
+  const proc = spawn(process.execPath, [
+    resolve(OCHA_ROOT, 'bin/ocha.js'),
+    '--tui-agent',
+    '--task', task,
+    '--branch', branch,
+  ], {
+    cwd: process.cwd(),
+    env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  agent.proc = proc;
+
+  const appendLine = (line) => {
+    if (!line) return;
+    agent.logs.push(line);
+    if (agent.logs.length > 2000) agent.logs.shift();
+    onUpdate(agent);
+  };
+
+  proc.stdout.on('data', (chunk) => {
+    for (const line of chunk.toString().split('\n')) appendLine(line);
+  });
+
+  proc.stderr.on('data', (chunk) => {
+    for (const line of chunk.toString().split('\n')) appendLine(`[err] ${line}`);
+  });
+
+  proc.on('close', (code) => {
+    agent.proc = null;
+    agent.state = code === 0 ? 'completed' : 'failed';
+    agent.completedAt = new Date().toISOString();
+    agent.logs.push('');
+    agent.logs.push(`[ocha] Agent exited with code ${code}`);
+    persistAgents(agents);
+    onUpdate(agent);
+  });
+
+  return agent;
+}
+
+/**
+ * Kill the agent at the given index.
+ * @param {object[]} agents
+ * @param {number} idx
+ */
+export function killAgent(agents, idx) {
+  const agent = agents[idx];
+  if (!agent) return;
+  if (agent.proc) {
+    agent.proc.kill('SIGTERM');
+    agent.state = 'stopped';
+    agent.logs.push('[ocha] Agent killed by user');
+  }
+}
