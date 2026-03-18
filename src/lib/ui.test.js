@@ -18,6 +18,11 @@ describe('stripAnsi', () => {
   it('returns empty string for empty input', () => {
     assert.equal(stripAnsi(''), '');
   });
+
+  it('removes cursor movement and erase sequences', () => {
+    assert.equal(stripAnsi('\x1B[2Jhello\x1B[H'), 'hello');
+  });
+
 });
 
 describe('wrapText', () => {

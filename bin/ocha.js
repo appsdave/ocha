@@ -94,10 +94,7 @@ program
 // --tui-agent mode: spawned by TUI to run a single task, streaming output
 if (process.argv.includes('--tui-agent')) {
   const taskIdx = process.argv.indexOf('--task');
-  const branchIdx = process.argv.indexOf('--branch');
   const task = taskIdx !== -1 ? process.argv[taskIdx + 1] : null;
-  const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 15).replace(/(\d{8})(\d{6})/, '$1-$2');
-  const branch = branchIdx !== -1 ? process.argv[branchIdx + 1] : `ocha/task-${ts}`;
 
   if (!task) {
     console.error('--tui-agent requires --task <task>');
@@ -109,7 +106,7 @@ if (process.argv.includes('--tui-agent')) {
   silenceTree();
 
   const { cordStart } = await import('../src/commands/cord-start.js');
-  await cordStart({ task, baseBranch: 'main', maxAgents: '1', branch });
+  await cordStart({ task, baseBranch: 'main', maxAgents: '1' });
   process.exit(0);
 }
 

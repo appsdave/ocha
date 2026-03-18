@@ -136,7 +136,7 @@ export function openPromptDialog(screen, onSubmit) {
   const overlay = blessed.box({
     top: layout.overlayTop,
     left: 'center',
-    width: '70%',
+    width: '80%',
     height: layout.overlayHeight,
     border: { type: 'line' },
     style: {
@@ -153,7 +153,7 @@ export function openPromptDialog(screen, onSubmit) {
     parent: overlay,
     top: 0,
     left: 1,
-    width: '100%-4',
+    width: '100%-3',
     height: 1,
     tags: true,
     style: { bg: 'black' },
@@ -164,7 +164,7 @@ export function openPromptDialog(screen, onSubmit) {
     parent: overlay,
     top: layout.textareaTop,
     left: 1,
-    width: '100%-4',
+    width: '100%-3',
     height: layout.textareaHeight,
     style: {
       fg: 'white',
