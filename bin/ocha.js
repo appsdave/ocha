@@ -22,7 +22,7 @@ const cord = program.command('cord').description('Coordinator commands');
 cord
   .command('start')
   .description('Start a coordinator session')
-  .requiredOption('-t, --task <task>', 'High-level task description')
+  .option('-t, --task <task>', 'High-level task description (omit for interactive prompt)')
   .option('-b, --base-branch <branch>', 'Base branch to create worktrees from', 'main')
   .option('--max-agents <n>', 'Maximum parallel agents', '3')
   .option('--no-merge', 'Skip auto-merge after completion')
@@ -57,15 +57,31 @@ program
     const chalk = (await import('chalk')).default;
 
     const installDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-    console.log(chalk.blue('🔄 Updating ocha...'));
+    console.log(chalk.blue('🔄 Updating ocha…'));
     try {
-      const out = execSync('git pull origin main', { cwd: installDir, encoding: 'utf-8' });
-      console.log(chalk.gray(`   ${out.trim()}`));
-      execSync('npm install --production', { cwd: installDir, stdio: 'pipe' });
-      console.log(chalk.green('✅ ocha updated!'));
+      const before = execSync('git rev-parse HEAD', { cwd: installDir, encoding: 'utf-8' }).trim();
+      const out = execSync('git pull origin main', { cwd: installDir, encoding: 'utf-8' }).trim();
+      const after = execSync('git rev-parse HEAD', { cwd: installDir, encoding: 'utf-8' }).trim();
+      if (before === after) {
+        console.log(chalk.green('✅ Already up to date.'));
+      } else {
+        console.log(chalk.gray(`   ${out}`));
+        execSync('npm install --production', { cwd: installDir, stdio: 'pipe' });
+        console.log(chalk.green(`✅ Updated ${before.slice(0,7)} → ${after.slice(0,7)}`));
+      }
     } catch (err) {
       console.log(chalk.red(`✗ Update failed: ${err.message}`));
     }
   });
 
-program.parse();
+// Default action: interactive prompt when no subcommand given
+if (process.argv.length === 2) {
+  const { readMultilineTask } = await import('../src/lib/prompt.js');
+  const task = await readMultilineTask();
+  if (task) {
+    const { cordStart } = await import('../src/commands/cord-start.js');
+    await cordStart({ task, baseBranch: 'main', maxAgents: '3' });
+  }
+} else {
+  program.parse();
+}

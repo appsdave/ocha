@@ -59,9 +59,12 @@ export async function runCoordinator(task, opts) {
   {
     enhancedTask = await enhanceTask(task, projectDir);
     if (enhancedTask !== task) {
-      const preview = enhancedTask.replace(/\s+/g, ' ').slice(0, 120);
       console.log(chalk.green('✔ 🧠 Prompt enhanced with project context'));
-      console.log(chalk.gray(`   ${preview}${enhancedTask.length > 120 ? '…' : ''}`));
+      // Show the raw task portion (before the --- context block)
+      const rawTask = extractRawTask(enhancedTask, task);
+      const contextAdded = enhancedTask.length - task.length;
+      console.log(chalk.white(`   ${rawTask}`));
+      console.log(chalk.dim(`   (+${contextAdded} chars of project context appended)`));
     } else {
       console.log(chalk.yellow('⚠ 🧠 No project context found — using original prompt'));
     }

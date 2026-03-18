@@ -12,6 +12,7 @@ import { OCHA_DIR, ROLES_DIR } from '../lib/paths.js';
 import { runCoordinator } from '../lib/coordinator.js';
 import { installRolePrompts } from '../lib/roles.js';
 import { ensureAuthenticated } from '../lib/agent.js';
+import { readMultilineTask } from '../lib/prompt.js';
 
 /**
  * Starts a coordinator session.
@@ -24,12 +25,26 @@ import { ensureAuthenticated } from '../lib/agent.js';
  * @param {string} opts.maxAgents   - Maximum parallel agents.
  */
 export async function cordStart(opts) {
-  const task = opts.task.trim();
+  // If no -t given, open interactive prompt
+  let task = opts.task ? opts.task.trim() : null;
+  if (!task) {
+    task = await readMultilineTask();
+    if (!task) process.exit(0);
+  }
 
   const maxAgentsLabel = parseInt(opts.maxAgents, 10) === 1 ? '1 agent' : `${opts.maxAgents} agents (parallel)`;
-  const taskPreview = task.length > 43 ? task.slice(0, 42) + '…' : task;
+  // Show full task, wrapped at 47 chars per line
+  const taskLines = [];
+  let remaining = task;
+  while (remaining.length > 0) {
+    taskLines.push(remaining.slice(0, 47));
+    remaining = remaining.slice(47);
+  }
   console.log(chalk.bold.blue('┌─ 🚀  ocha cord start ──────────────────────────┐'));
-  console.log(`│  ${chalk.dim('Task  ')} ${taskPreview}`);
+  for (let i = 0; i < taskLines.length; i++) {
+    const label = i === 0 ? chalk.dim('Task  ') : '      ';
+    console.log(`│  ${label} ${taskLines[i]}`);
+  }
   console.log(`│  ${chalk.dim('Branch')} ${opts.baseBranch}`);
   console.log(`│  ${chalk.dim('Agents')} ${maxAgentsLabel}`);
   console.log(chalk.bold.blue('└' + '─'.repeat(49) + '┘'));
