@@ -119,7 +119,7 @@ export async function runCoordinator(task, opts) {
 
   if (beadsEnabled) {
     for (const t of tasks) {
-      const title = shortDesc(t.description.split('\n')[0]);
+      const title = extractRawTask(t.description, t.description).split('\n')[0].slice(0, 80) || shortDesc(t.description);
       const issueId = createBeadsIssue(title, t.description, { cwd: projectDir });
       if (issueId) {
         t.beadsId = issueId;
