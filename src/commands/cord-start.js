@@ -26,9 +26,12 @@ import { ensureAuthenticated } from '../lib/agent.js';
 export async function cordStart(opts) {
   const task = opts.task.trim();
 
-  console.log(chalk.blue('🚀 ocha cord start'));
-  console.log(chalk.gray(`   Task: ${task}`));
-  console.log(chalk.gray(`   Base: ${opts.baseBranch}`));
+  const maxAgentsLabel = parseInt(opts.maxAgents, 10) === 1 ? '1 agent' : `${opts.maxAgents} agents (parallel)`;
+  console.log(chalk.bold.blue('┌─ 🚀  ocha cord start ──────────────────────────┐'));
+  console.log(`│  ${chalk.dim('Task  ')} ${task.slice(0, 43)}`);
+  console.log(`│  ${chalk.dim('Branch')} ${opts.baseBranch}`);
+  console.log(`│  ${chalk.dim('Agents')} ${maxAgentsLabel}`);
+  console.log(chalk.bold.blue('└' + '─'.repeat(49) + '┘'));
 
   // Auto-init if needed
   if (!pathExists(OCHA_DIR)) {
@@ -39,13 +42,13 @@ export async function cordStart(opts) {
   }
 
   // Check git repo
-  console.log(chalk.blue('\n🔍 Checking git setup...'));
+  console.log(chalk.blue('\n  🔍 Checking prerequisites…'));
   try {
     execSync('git rev-parse --is-inside-work-tree', { stdio: 'pipe' });
   } catch {
-    console.log(chalk.red('   ✗ Not a git repository'));
-    console.log(chalk.yellow('\n   To fix this, run:'));
-    console.log(chalk.white('     git init && git add . && git commit -m "initial commit"'));
+    console.log(chalk.red('  ✗ Not a git repository'));
+    console.log(chalk.yellow('\n  To fix this, run:'));
+    console.log(chalk.white('    git init && git add . && git commit -m "initial commit"'));
     process.exit(1);
   }
 
@@ -53,23 +56,23 @@ export async function cordStart(opts) {
   try {
     execSync(`git rev-parse --verify ${opts.baseBranch}`, { stdio: 'pipe' });
   } catch {
-    console.log(chalk.red(`   ✗ Branch "${opts.baseBranch}" does not exist`));
-    console.log(chalk.yellow(`\n   Make sure you have at least one commit on "${opts.baseBranch}":`));
-    console.log(chalk.white('     git add . && git commit -m "initial commit"'));
+    console.log(chalk.red(`  ✗ Branch "${opts.baseBranch}" does not exist`));
+    console.log(chalk.yellow(`\n  Make sure you have at least one commit on "${opts.baseBranch}":`));
+    console.log(chalk.white('    git add . && git commit -m "initial commit"'));
     process.exit(1);
   }
-  console.log(chalk.green('   ✓ Git repository ready'));
+  console.log(chalk.green('  ✓ git repository ready'));
 
   // Ensure Junie is authenticated
-  console.log(chalk.blue('\n🔐 Checking authentication...'));
   try {
     await ensureAuthenticated();
-    console.log(chalk.green('   ✓ Authenticated successfully'));
+    console.log(chalk.green('  ✓ authenticated'));
   } catch (err) {
-    console.log(chalk.red(`   ✗ Authentication failed: ${err.message}`));
-    console.log(chalk.yellow('   Run "junie" manually to log in first.'));
+    console.log(chalk.red(`  ✗ Authentication failed: ${err.message}`));
+    console.log(chalk.yellow('  Run "junie" manually to log in first.'));
     process.exit(1);
   }
+  console.log();
 
   // Hand off to coordinator — it handles enhance → lead → builders → reviewers
   await runCoordinator(task, {

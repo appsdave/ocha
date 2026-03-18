@@ -7,29 +7,67 @@
 import chalk from 'chalk';
 import { readStatus } from '../lib/status.js';
 
-const stateIcon = { pending: '⏳', running: '🔄', completed: '✅', failed: '❌', stopped: '🛑' };
+const stateIcon = {
+  pending:   '⏳',
+  running:   '🔄',
+  completed: '✅',
+  failed:    '❌',
+  stopped:   '🛑',
+};
+
+const stateColor = {
+  pending:   chalk.gray,
+  running:   chalk.yellow,
+  completed: chalk.green,
+  failed:    chalk.red,
+  stopped:   chalk.gray,
+};
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString();
+}
 
 function printStatus() {
   const status = readStatus();
   if (!status) {
-    console.log(chalk.yellow('No active ocha session. Run "ocha cord start" first.'));
+    console.log(chalk.yellow('⚠  No active ocha session. Run "ocha cord start" first.'));
     return false;
   }
 
-  console.log(chalk.blue('\n📊 OCHA Session Status\n'));
-  console.log(`Task:    ${status.session.task}`);
-  console.log(`State:   ${status.session.state}`);
-  console.log(`Started: ${status.session.startedAt}`);
-  if (status.session.completedAt) console.log(`Ended:   ${status.session.completedAt}`);
-  console.log();
+  const sessionColor = stateColor[status.session.state] || chalk.white;
+  const divider = chalk.blue('─'.repeat(50));
+
+  console.log(chalk.bold.blue('\n┌─ 📊  ocha session status ──────────────────────┐'));
+  console.log(`│  ${chalk.dim('Task   ')} ${status.session.task.slice(0, 42)}`);
+  console.log(`│  ${chalk.dim('State  ')} ${sessionColor(status.session.state)}`);
+  console.log(`│  ${chalk.dim('Started')} ${formatDate(status.session.startedAt)}`);
+  if (status.session.completedAt) {
+    console.log(`│  ${chalk.dim('Ended  ')} ${formatDate(status.session.completedAt)}`);
+  }
+  console.log(chalk.bold.blue('└' + '─'.repeat(49) + '┘\n'));
+
+  const counts = { completed: 0, running: 0, failed: 0, pending: 0 };
+  for (const task of status.tasks) counts[task.state] = (counts[task.state] || 0) + 1;
+
+  const countParts = [
+    counts.completed ? chalk.green(`${counts.completed} completed`) : null,
+    counts.running   ? chalk.yellow(`${counts.running} running`)   : null,
+    counts.failed    ? chalk.red(`${counts.failed} failed`)        : null,
+    counts.pending   ? chalk.gray(`${counts.pending} pending`)     : null,
+  ].filter(Boolean);
+  console.log('  ' + countParts.join(chalk.dim('  ·  ')) + '\n');
 
   for (const task of status.tasks) {
     const icon = stateIcon[task.state] || '?';
-    console.log(`  ${icon} ${task.id} [${task.role}] ${task.state}`);
-    console.log(chalk.gray(`     ${task.description.split('\n')[0]}`));
-    console.log(chalk.gray(`     branch: ${task.branch}`));
-    if (task.worktree) console.log(chalk.gray(`     worktree: ${task.worktree}`));
-    if (task.merged) console.log(chalk.green(`     ✓ merged`));
+    const colorState = (stateColor[task.state] || chalk.white)(task.state.padEnd(9));
+    const desc = task.description.split('\n')[0].slice(0, 60);
+    console.log(`  ${icon}  ${colorState} ${chalk.bold(task.id)} ${chalk.dim(`[${task.role}]`)}`);
+    console.log(chalk.gray(`       ${desc}`));
+    console.log(chalk.dim(`       branch: ${task.branch}`));
+    if (task.worktree) console.log(chalk.dim(`       worktree: ${task.worktree}`));
+    if (task.prUrl)   console.log(chalk.cyan(`       pr: ${task.prUrl}`));
+    if (task.merged)  console.log(chalk.green(`       ✓ merged`));
     console.log();
   }
 
