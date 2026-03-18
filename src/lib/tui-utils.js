@@ -50,7 +50,10 @@ export function formatCompletionSummary(agent) {
   } else if (agent.state === 'stopped') {
     lines.push('  ■   Agent stopped by user');
   }
-  lines.push(`  Branch  : ${agent.branch}`);
+  if (agent.repo) {
+    lines.push(`  Repo     : ${agent.repo}`);
+  }
+  lines.push(`  Branch   : ${agent.branch}`);
   if (agent.startedAt && agent.completedAt) {
     const secs = Math.round((new Date(agent.completedAt) - new Date(agent.startedAt)) / 1000);
     const mins = Math.floor(secs / 60);

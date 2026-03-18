@@ -100,7 +100,7 @@ export class OchaTUI {
       this.screen.render();
     });
 
-    screen.key(['C'], () => {
+    const clearDone = () => {
       if (this.inputMode) return;
       this.agents = this.agents.filter(a => a.state === 'running');
       this.selectedIdx = Math.min(this.selectedIdx, Math.max(0, this.agents.length - 1));
@@ -108,7 +108,10 @@ export class OchaTUI {
       this._renderAgentList();
       this._renderLog();
       this.screen.render();
-    });
+    };
+    screen.key(['C'], clearDone);
+    // Also bind on agentList directly so vi-mode doesn't swallow the key
+    this.agentList.key(['C'], clearDone);
 
     screen.key(['l', 'right'], () => {
       if (this.inputMode) return;
@@ -218,9 +221,10 @@ export class OchaTUI {
     const agent   = this.agents[this.selectedIdx];
     let right = '';
     if (agent) {
+      const repoPrefix = agent.repo ? `${agent.repo}/` : '';
       right = agent.prUrl
         ? ` | PR: ${agent.prUrl}`
-        : ` | ${agent.branch}`;
+        : ` | ${repoPrefix}${agent.branch}`;
     }
     this.statusBar.setContent(
       ` ocha  |  ${total} task(s)  ${running} running  ${done} done${right} `

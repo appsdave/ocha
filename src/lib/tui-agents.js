@@ -4,7 +4,7 @@
  */
 import { spawn } from 'child_process';
 import { existsSync, mkdirSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { readStatus, writeStatus } from './status.js';
 import { OCHA_DIR, STATUS_FILE } from './paths.js';
@@ -29,6 +29,7 @@ export function loadPersistedAgents() {
             id: t.id,
             task: t.displayTask || t.branch,
             branch: t.branch,
+            repo: t.repo || null,
             state: t.state === 'running' ? 'stopped' : t.state,
             startedAt: t.startedAt,
             completedAt: t.completedAt,
@@ -57,6 +58,7 @@ export function persistAgents(agents) {
       id: a.id,
       displayTask: a.task,
       branch: a.branch,
+      repo: a.repo || null,
       state: a.state,
       startedAt: a.startedAt,
       completedAt: a.completedAt,
@@ -83,16 +85,19 @@ export function spawnAgent(task, agents, onUpdate) {
     .replace(/(\d{8})(\d{6})/, '$1-$2');
   const slug = slugify(task);
   const branch = `ocha/${slug}-${ts}`;
+  const repo = basename(process.cwd());
   const id = `agent-${Date.now()}`;
 
   const agent = {
     id,
     task,
     branch,
+    repo,
     state: 'running',
     startedAt: now.toISOString(),
     completedAt: null,
     logs: [
+      `[ocha] Repo   : ${repo}`,
       `[ocha] Branch : ${branch}`,
       `[ocha] Started: ${now.toLocaleString()}`,
       '',
