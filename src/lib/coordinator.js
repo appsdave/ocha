@@ -20,6 +20,7 @@ import { safeDelete } from './files.js';
 import { WORKTREES_DIR } from './paths.js';
 import chalk from 'chalk';
 import { startSpinner, succeedSpinner, failSpinner, stopSpinner, logWithSpinner } from './spinner.js';
+import { isBeadsInitialized, ensureDoltServer, createBeadsIssue, claimBeadsIssue, closeBeadsIssue, pushBeadsData } from './beads.js';
 import {
   initTree,
   setLeadNode,
@@ -52,6 +53,18 @@ export async function runCoordinator(task, opts) {
   const baseBranch = opts.baseBranch;
   const projectDir = opts.projectDir || process.cwd();
   const repoDirs = (opts.repoDirs && opts.repoDirs.length > 0) ? opts.repoDirs : [projectDir];
+
+  // ── Step 0: Start beads if available ─────────────────────────────────────
+  let beadsEnabled = false;
+  try {
+    ensureDoltServer(projectDir);
+    beadsEnabled = isBeadsInitialized(projectDir);
+    if (beadsEnabled) {
+      console.log(chalk.green('✔ 🔗 Beads (bd) issue tracking active'));
+    }
+  } catch {
+    // Beads not available — continue without it
+  }
 
   // ── Step 1: Coordinator enhances the prompt ──────────────────────────────
   initTree(task);
@@ -100,8 +113,19 @@ export async function runCoordinator(task, opts) {
     }
   }
 
-  // ── Step 3: Assign repoDir round-robin to each task ─────────────────────
+  // ── Step 3: Assign repoDir round-robin & create beads issues ────────────
   tasks.forEach((t, i) => { if (!t.repoDir) t.repoDir = repoDirs[i % repoDirs.length]; });
+
+  if (beadsEnabled) {
+    for (const t of tasks) {
+      const title = shortDesc(t.description.split('\n')[0]);
+      const issueId = createBeadsIssue(title, t.description, { cwd: projectDir });
+      if (issueId) {
+        t.beadsId = issueId;
+        logWithSpinner(chalk.dim(`  🔗 Beads issue ${issueId} → ${t.branch}`));
+      }
+    }
+  }
 
   // ── Step 4: Write initial status ─────────────────────────────────────────
   const status = createInitialStatus(enhancedTask, tasks);
@@ -141,6 +165,18 @@ export async function runCoordinator(task, opts) {
   cleanupWorktrees(finalStatus);
   safeDelete(WORKTREES_DIR, { recursive: true });
 
+  // Push beads data if active
+  if (beadsEnabled) {
+    // Close completed task issues
+    for (const t of finalStatus.tasks) {
+      if (t.state === 'completed' && t.beadsId) {
+        closeBeadsIssue(t.beadsId, `Completed — PR: ${t.prUrl || 'none'}`, projectDir);
+      }
+    }
+    pushBeadsData(projectDir);
+    logWithSpinner(chalk.dim('  🔗 Beads data synced'));
+  }
+
   // Auto-stop: mark session completed
   finalStatus.session.state = 'completed';
   finalStatus.session.completedAt = new Date().toISOString();
@@ -156,6 +192,11 @@ const MAX_RETRIES = 2;
 async function runBuilderWithReview(task, status, baseBranch) {
   const cleanDesc = task.displayDesc ? shortDesc(task.displayDesc) : shortDesc(task.description.split('\n')[0]);
   setBuilderNode(task.id, 'pending', cleanDesc);
+
+  // Claim beads issue atomically before starting work
+  if (task.beadsId) {
+    claimBeadsIssue(task.beadsId, task.repoDir || process.cwd());
+  }
 
   const taskRepoDir = task.repoDir || process.cwd();
   const worktreePath = createWorktree(task.branch, baseBranch, taskRepoDir);
@@ -182,6 +223,9 @@ async function runBuilderWithReview(task, status, baseBranch) {
     setBuilderNode(task.id, 'failed', cleanDesc);
     logWithSpinner(chalk.red(`  ✗ Builder failed after ${MAX_RETRIES + 1} attempts: ${cleanDesc}`));
     task.state = 'failed';
+    if (task.beadsId) {
+      closeBeadsIssue(task.beadsId, `Failed after ${MAX_RETRIES + 1} attempts`, task.repoDir || process.cwd());
+    }
     writeStatus(status);
     return;
   }
