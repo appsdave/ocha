@@ -101,6 +101,10 @@ if (process.argv.includes('--tui-agent')) {
     process.exit(1);
   }
 
+  // Suppress CLI tree rendering — the TUI has its own display
+  const { silenceTree } = await import('../src/lib/tree.js');
+  silenceTree();
+
   const { cordStart } = await import('../src/commands/cord-start.js');
   await cordStart({ task, baseBranch: 'main', maxAgents: '1' });
   process.exit(0);

@@ -6,6 +6,27 @@
 import blessed from 'blessed';
 
 /**
+ * Compute the geometry for the new-task prompt dialog.
+ * @param {{ height?: number }} screen
+ * @returns {{ overlayHeight: number, overlayTop: number, textareaTop: number, textareaHeight: number }}
+ */
+export function getPromptDialogLayout(screen) {
+  const screenHeight = Math.max(0, Math.floor(Number(screen?.height) || 0));
+  const overlayHeight = screenHeight > 0
+    ? Math.min(12, Math.max(5, screenHeight - 2), screenHeight)
+    : 12;
+  const textareaTop = overlayHeight >= 8 ? 2 : 1;
+  const textareaHeight = Math.max(3, overlayHeight - textareaTop - 1);
+
+  return {
+    overlayHeight,
+    overlayTop: Math.max(0, Math.floor((screenHeight - overlayHeight) / 2)),
+    textareaTop,
+    textareaHeight,
+  };
+}
+
+/**
  * Build the full screen and all widgets.
  * @returns {{ screen, agentList, logBox, inputBar, statusBar }}
  */
@@ -109,12 +130,14 @@ export function buildLayout() {
  * @param {Function} onSubmit - called with the trimmed task string (or null if cancelled)
  */
 export function openPromptDialog(screen, onSubmit) {
+  const layout = getPromptDialogLayout(screen);
+
   // Overlay backdrop
   const overlay = blessed.box({
-    top: 'center',
+    top: layout.overlayTop,
     left: 'center',
     width: '80%',
-    height: 12,
+    height: layout.overlayHeight,
     border: { type: 'line' },
     style: {
       border: { fg: 'cyan' },
@@ -139,10 +162,10 @@ export function openPromptDialog(screen, onSubmit) {
 
   const textarea = blessed.textarea({
     parent: overlay,
-    top: 2,
+    top: layout.textareaTop,
     left: 1,
     width: '100%-3',
-    height: 7,
+    height: layout.textareaHeight,
     style: {
       fg: 'white',
       bg: 'black',

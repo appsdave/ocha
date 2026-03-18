@@ -122,11 +122,23 @@ export function spawnAgent(task, agents, onUpdate) {
   };
 
   proc.stdout.on('data', (chunk) => {
-    for (const line of chunk.toString().split('\n')) appendLine(line);
+    for (const line of chunk.toString().split('\n')) {
+      // Skip lines that are only ANSI escape sequences (no readable content)
+      const stripped = line.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '').trim();
+      if (!stripped && line.includes('\x1B')) continue;
+      appendLine(line);
+    }
   });
 
   proc.stderr.on('data', (chunk) => {
-    for (const line of chunk.toString().split('\n')) appendLine(`[err] ${line}`);
+    for (const line of chunk.toString().split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      // Skip lines that are only ANSI escape sequences (no readable content)
+      const stripped = trimmed.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '').trim();
+      if (!stripped) continue;
+      appendLine(`[err] ${line}`);
+    }
   });
 
   proc.on('close', (code) => {

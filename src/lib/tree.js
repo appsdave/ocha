@@ -29,6 +29,16 @@ const STATE_ICONS = {
 let _tree = null;
 /** Whether we've printed the tree at least once (for in-place redraw) */
 let _lineCount = 0;
+/** When true, skip all stdout rendering (e.g. inside --tui-agent subprocess). */
+let _silent = false;
+
+/**
+ * Suppress all tree rendering to stdout.
+ * Used when running inside a TUI-spawned subprocess where stdout is captured.
+ */
+export function silenceTree() {
+  _silent = true;
+}
 
 /**
  * Initialises the tree with a coordinator root node.
@@ -122,7 +132,7 @@ export function setCoordinatorState(state) {
  * Renders the full tree to stdout, overwriting the previous render.
  */
 export function renderTree() {
-  if (!_tree) return;
+  if (_silent || !_tree) return;
 
   const lines = buildLines(_tree, '', true);
 
