@@ -16,6 +16,7 @@ import { readStatus, writeStatus, createInitialStatus } from './status.js';
 import { enhanceTask } from './enhance.js';
 import { runLeadAgent } from './lead.js';
 import { git, exec } from './exec.js';
+import { validateBranchName, validateMaxAgents } from './validate.js';
 import { safeDelete } from './files.js';
 import { WORKTREES_DIR } from './paths.js';
 import chalk from 'chalk';
@@ -49,8 +50,8 @@ function extractRawTask(enhanced, original) {
 }
 
 export async function runCoordinator(task, opts) {
-  const maxAgents = parseInt(opts.maxAgents, 10);
-  const baseBranch = opts.baseBranch;
+  const maxAgents = validateMaxAgents(opts.maxAgents);
+  const baseBranch = validateBranchName(opts.baseBranch);
   const projectDir = opts.projectDir || process.cwd();
   const repoDirs = (opts.repoDirs && opts.repoDirs.length > 0) ? opts.repoDirs : [projectDir];
 

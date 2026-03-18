@@ -10,6 +10,7 @@
  * All bd commands use --json for reliable parsing and run non-interactively.
  */
 import { exec } from './exec.js';
+import { validatePriority } from './validate.js';
 
 const BD = 'bd';
 
@@ -54,7 +55,8 @@ export function ensureDoltServer(cwd) {
 export function createBeadsIssue(title, description, opts = {}) {
   const { type = 'task', priority = 2, parentId, cwd } = opts;
   try {
-    const args = ['create', title, `--description=${description}`, '-t', type, '-p', String(priority)];
+    const validPriority = validatePriority(priority);
+    const args = ['create', title, `--description=${description}`, '-t', type, '-p', String(validPriority)];
     if (parentId) args.push('--deps', `discovered-from:${parentId}`);
     args.push('--json');
     const out = exec(BD, args, { cwd, timeout: 15_000 });
