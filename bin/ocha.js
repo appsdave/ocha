@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { program } from 'commander';
-import { cordStart } from '../src/commands/cord-start.js';
 import { ochaInit } from '../src/commands/init.js';
 import { ochaDev } from '../src/commands/dev.js';
 
@@ -66,13 +65,28 @@ program
     }
   });
 
-// Default action: interactive prompt when no subcommand given
-if (process.argv.length === 2) {
-  const { readMultilineTask } = await import('../src/lib/prompt.js');
-  const task = await readMultilineTask();
-  if (task) {
-    await cordStart({ task, baseBranch: 'main', maxAgents: '3' });
+// --tui-agent mode: spawned by TUI to run a single task, streaming output
+if (process.argv.includes('--tui-agent')) {
+  const taskIdx = process.argv.indexOf('--task');
+  const branchIdx = process.argv.indexOf('--branch');
+  const task = taskIdx !== -1 ? process.argv[taskIdx + 1] : null;
+  const branch = branchIdx !== -1 ? process.argv[branchIdx + 1] : 'ocha/main-task';
+
+  if (!task) {
+    console.error('--tui-agent requires --task <task>');
+    process.exit(1);
   }
+
+  const { cordStart } = await import('../src/commands/cord-start.js');
+  await cordStart({ task, baseBranch: 'main', maxAgents: '1', branch });
+  process.exit(0);
+}
+
+// Default action: launch TUI when no subcommand given
+if (process.argv.length === 2) {
+  const { OchaTUI } = await import('../src/lib/tui.js');
+  const tui = new OchaTUI();
+  tui.launch();
 } else {
   program.parse();
 }
