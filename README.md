@@ -20,7 +20,7 @@ Ocha turns a single Junie session into a multi-agent team. You describe a high-l
 │                       │  ✅ Agent completed successfully              │
 │                       │  PR: https://github.com/org/repo/pull/42     │
 └───────────────────────┴─────────────────────────────────────────────┘
-  n new  ↑↓ navigate  K kill  C clear done  ←→ switch pane  q quit
+  n new  ↑↓ navigate  k kill  c clear done  ←→ switch pane  q quit
   ocha  |  2 task(s)  1 running  1 done  | ocha/update-docs-...
 ```
 
@@ -171,8 +171,8 @@ ocha self-update
 |-----|--------|
 | `n` | Open new task prompt |
 | `↑` / `↓` | Navigate agent list |
-| `K` | Kill selected agent |
-| `C` | Clear completed/failed agents |
+| `k` | Kill selected agent |
+| `c` | Clear completed/failed agents |
 | `←` / `h` | Focus agent list |
 | `→` / `l` | Focus log pane |
 | `q` / `Ctrl+C` | Quit (confirms if agents running) |
