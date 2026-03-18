@@ -1,7 +1,30 @@
 /**
  * @module worktree
- * Git worktree management — create, remove, and list worktrees
+ * Git worktree management — create, remove, list, lookup, and bulk-clean worktrees
  * used to isolate each agent's working directory.
+ *
+ * ## How ocha uses worktrees
+ *
+ * Each builder/reviewer agent pair runs inside its own `git worktree` so that:
+ * - Agents never conflict with each other or with the running ocha process.
+ * - Each agent has a clean branch (`ocha/<task-slug>`) branched from the base branch.
+ * - Worktrees are created under `<repoDir>/.ocha-worktrees/<branch-slug>/`.
+ * - After an agent finishes (or the session is stopped), the worktree is removed
+ *   and the branch is pushed to origin for PR review.
+ *
+ * ## Typical lifecycle
+ *
+ * ```
+ * createWorktree('ocha/task-1', 'main')   // agent starts
+ *   → <repo>/.ocha-worktrees/ocha-task-1/
+ *
+ * getWorktreeForBranch('ocha/task-1')     // look up path by branch
+ *   → '/abs/path/.ocha-worktrees/ocha-task-1'
+ *
+ * removeWorktree(path)                    // agent done / stopped
+ *
+ * cleanOchaWorktrees()                    // session-level full cleanup
+ * ```
  */
 import { execSync } from 'child_process';
 import { resolve } from 'path';
@@ -47,19 +70,33 @@ export function createWorktree(branch, baseBranch = 'main', repoDir) {
 
 /**
  * Force-removes a git worktree at the given path.
+ * Does nothing if the path does not exist.
+ * Returns true on success, false if removal failed (e.g. git internal error).
+ *
  * @param {string} worktreePath - Absolute path to the worktree to remove.
+ * @param {string} [repoDir] - Repo root to run git commands in (defaults to cwd).
+ * @returns {boolean} True if the worktree was removed (or did not exist), false on error.
  */
-export function removeWorktree(worktreePath) {
-  if (!pathExists(worktreePath)) return;
-  execSync(`git worktree remove "${worktreePath}" --force`, { stdio: 'pipe' });
+export function removeWorktree(worktreePath, repoDir) {
+  if (!pathExists(worktreePath)) return true;
+  const gitOpts = { stdio: 'pipe', ...(repoDir ? { cwd: repoDir } : {}) };
+  try {
+    execSync(`git worktree remove "${worktreePath}" --force`, gitOpts);
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 /**
  * Lists all git worktrees in the repository.
- * @returns {Array<{path: string, branch?: string}>} Array of worktree objects.
+ *
+ * @param {string} [repoDir] - Repo root to run git commands in (defaults to cwd).
+ * @returns {Array<{path: string, branch?: string, bare?: boolean}>} Array of worktree objects.
  */
-export function listWorktrees() {
-  const out = execSync('git worktree list --porcelain', { encoding: 'utf-8' });
+export function listWorktrees(repoDir) {
+  const gitOpts = { encoding: 'utf-8', ...(repoDir ? { cwd: repoDir } : {}) };
+  const out = execSync('git worktree list --porcelain', gitOpts);
   const trees = [];
   let current = {};
   for (const line of out.split('\n')) {
@@ -67,10 +104,64 @@ export function listWorktrees() {
       current = { path: line.slice(9) };
     } else if (line.startsWith('branch ')) {
       current.branch = line.slice(7);
+    } else if (line === 'bare') {
+      current.bare = true;
     } else if (line === '') {
       if (current.path) trees.push(current);
       current = {};
     }
   }
   return trees;
+}
+
+/**
+ * Finds the worktree path for a given branch name.
+ * Searches the git worktree list for a matching `refs/heads/<branch>` entry.
+ *
+ * @param {string} branch - Branch name to look up (e.g. "ocha/task-1").
+ * @param {string} [repoDir] - Repo root to run git commands in (defaults to cwd).
+ * @returns {string|null} Absolute path to the worktree, or null if not found.
+ */
+export function getWorktreeForBranch(branch, repoDir) {
+  const trees = listWorktrees(repoDir);
+  const ref = `refs/heads/${branch}`;
+  const found = trees.find(t => t.branch === ref);
+  return found ? found.path : null;
+}
+
+/**
+ * Removes all git worktrees whose branch starts with "ocha/" (or a custom prefix).
+ * Useful for a full session cleanup when `.ocha-worktrees/` has already been deleted
+ * but git still tracks the registrations, or for pruning individually.
+ *
+ * Prunes stale registrations first, then force-removes each matching worktree.
+ *
+ * @param {string} [repoDir] - Repo root to run git commands in (defaults to cwd).
+ * @param {string} [branchPrefix='refs/heads/ocha/'] - Branch ref prefix to match.
+ * @returns {{ removed: string[], failed: string[] }} Lists of removed and failed worktree paths.
+ */
+export function cleanOchaWorktrees(repoDir, branchPrefix = 'refs/heads/ocha/') {
+  const gitOpts = { stdio: 'pipe', ...(repoDir ? { cwd: repoDir } : {}) };
+
+  // Prune stale registrations first
+  try { execSync('git worktree prune', gitOpts); } catch (_) {}
+
+  const trees = listWorktrees(repoDir);
+  const removed = [];
+  const failed = [];
+
+  for (const tree of trees) {
+    if (!tree.branch || !tree.branch.startsWith(branchPrefix)) continue;
+    const ok = removeWorktree(tree.path, repoDir);
+    if (ok) {
+      removed.push(tree.path);
+    } else {
+      failed.push(tree.path);
+    }
+  }
+
+  // Final prune to clear any leftover registrations
+  try { execSync('git worktree prune', gitOpts); } catch (_) {}
+
+  return { removed, failed };
 }
