@@ -102,9 +102,11 @@ export function openPromptDialog(screen, onSubmit) {
     style: {
       border: { fg: 'cyan' },
       bg: 'black',
+      fg: 'white',
     },
     label: ' {cyan-fg}{bold} New Task {/bold}{/cyan-fg} ',
     tags: true,
+    filled: true,
   });
 
   const hint = blessed.box({
@@ -126,8 +128,8 @@ export function openPromptDialog(screen, onSubmit) {
     height: 7,
     style: {
       fg: 'white',
-      bg: '#1e1e1e',
-      focus: { bg: '#2a2a2a', border: { fg: 'cyan' } },
+      bg: 'black',
+      focus: { bg: 'black', border: { fg: 'cyan' } },
     },
     border: { type: 'line' },
     inputOnFocus: true,
@@ -142,18 +144,22 @@ export function openPromptDialog(screen, onSubmit) {
   // Clear any stale value from previous open, then focus
   textarea.setValue('');
   textarea.focus();
+  // Force a full repaint so no underlying content bleeds through the overlay
+  screen.clearRegion(0, screen.width, 0, screen.height);
   screen.render();
 
   // Enter submits, Escape cancels
   textarea.key(['enter'], () => {
-    const value = textarea.getValue().trim();
+    const value = textarea.getValue().replace(/\r?\n/g, ' ').trim();
     screen.remove(overlay);
+    screen.clearRegion(0, screen.width, 0, screen.height);
     screen.render();
     onSubmit(value || null);
   });
 
   textarea.key(['escape'], () => {
     screen.remove(overlay);
+    screen.clearRegion(0, screen.width, 0, screen.height);
     screen.render();
     onSubmit(null);
   });

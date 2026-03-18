@@ -157,21 +157,30 @@ export class OchaTUI {
       return;
     }
 
-    const header = '{bold}{blue-fg}ocha/{/blue-fg}{/bold}';
+    const total  = this.agents.length;
+    const header = `{bold}{blue-fg}ocha/{/blue-fg}{/bold} {grey-fg}(${total}){/grey-fg}`;
 
     const lines = this.agents.map((a, i) => {
       const selected  = i === this.selectedIdx;
       const isLast    = i === this.agents.length - 1;
       const connector = isLast ? '└─' : '├─';
+      const indent    = isLast ? '  ' : '│ ';
       const badge     = `${badgeColor(a.state)}${badgeText(a.state)}{/}`;
-      const maxName   = 26;
+      const maxName   = 24;
       const name      = truncateTask(a.task, maxName);
+      const num       = `{grey-fg}#${String(i + 1).padStart(2, '0')}{/grey-fg}`;
       const time      = a.state === 'running'
-        ? elapsed(a.startedAt)
-        : a.state === 'completed' ? '✔ done' : a.state === 'failed' ? '✗ fail' : '■ stop';
-      const highlight = selected ? '{cyan-fg}{bold}' : '{grey-fg}';
-      const prLine    = a.prUrl ? `\n${isLast ? ' ' : '│'}    {cyan-fg}↗ PR{/cyan-fg}` : '';
-      return `${highlight}${connector}{/}${badge} {bold}${name}{/bold}  {grey-fg}${time}{/grey-fg}${prLine}`;
+        ? `{yellow-fg}${elapsed(a.startedAt)}{/yellow-fg}`
+        : a.state === 'completed' ? '{green-fg}✔ done{/green-fg}'
+        : a.state === 'failed'    ? '{red-fg}✗ fail{/red-fg}'
+        : '{grey-fg}■ stop{/grey-fg}';
+      const selOpen   = selected ? '{cyan-fg}{bold}' : '';
+      const selClose  = selected ? '{/bold}{/cyan-fg}' : '';
+      const rowStyle  = selected ? '{cyan-fg}' : '{grey-fg}';
+      const prLine    = a.prUrl
+        ? `\n${rowStyle}${indent}{/}  {cyan-fg}↗ PR{/cyan-fg}`
+        : '';
+      return `${rowStyle}${connector}{/}${badge} ${num} ${selOpen}${name}${selClose}  ${time}${prLine}`;
     });
 
     this.agentList.setContent([header, ...lines].join('\n'));
@@ -197,6 +206,7 @@ export class OchaTUI {
 
     // Force full content replacement so switching agents always clears previous output
     this.logBox.setContent('');
+    this.screen.clearRegion(0, this.screen.width, 0, this.screen.height);
     this.logBox.setContent(agent.logs.join('\n'));
     this.logBox.setScrollPerc(100);
   }
