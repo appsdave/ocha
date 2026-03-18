@@ -20,7 +20,7 @@
 import blessed from 'blessed';
 import { buildLayout, openPromptDialog } from './tui-layout.js';
 import { loadPersistedAgents, persistAgents, spawnAgent, killAgent } from './tui-agents.js';
-import { elapsed, badgeText, badgeColor } from './tui-utils.js';
+import { elapsed, badgeText, badgeColor, truncateTask } from './tui-utils.js';
 
 export class OchaTUI {
   constructor() {
@@ -98,6 +98,16 @@ export class OchaTUI {
       this.screen.render();
     });
 
+    screen.key(['C'], () => {
+      if (this.inputMode) return;
+      this.agents = this.agents.filter(a => a.state === 'running');
+      this.selectedIdx = Math.min(this.selectedIdx, Math.max(0, this.agents.length - 1));
+      persistAgents(this.agents);
+      this._renderAgentList();
+      this._renderLog();
+      this.screen.render();
+    });
+
     screen.key(['l', 'right'], () => {
       if (this.inputMode) return;
       this.logBox.focus();
@@ -142,22 +152,24 @@ export class OchaTUI {
       return;
     }
 
+    const header = '{bold}{blue-fg}ocha/{/blue-fg}{/bold}';
+
     const lines = this.agents.map((a, i) => {
-      const selected = i === this.selectedIdx;
-      const badge    = `${badgeColor(a.state)}${badgeText(a.state)}{/}`;
-      const maxName  = 20;
-      const name     = a.task.length > maxName ? a.task.slice(0, maxName - 1) + '…' : a.task;
-      const time     = a.state === 'running'
+      const selected  = i === this.selectedIdx;
+      const isLast    = i === this.agents.length - 1;
+      const connector = isLast ? '└─' : '├─';
+      const badge     = `${badgeColor(a.state)}${badgeText(a.state)}{/}`;
+      const maxName   = 22;
+      const name      = truncateTask(a.task, maxName);
+      const time      = a.state === 'running'
         ? elapsed(a.startedAt)
         : a.state === 'completed' ? '✔ done' : a.state === 'failed' ? '✗ fail' : '■ stop';
-      const prefix   = selected ? '{cyan-fg}{bold}▶ {/bold}{/cyan-fg}' : '  ';
-      // Show branch slug (strip ocha/ prefix for brevity)
-      const branchShort = a.branch.replace(/^ocha\//, '').slice(0, 22);
-      const prLine   = a.prUrl ? `\n    {cyan-fg}↗ PR{/cyan-fg}` : '';
-      return `${prefix}${badge} {bold}${name}{/bold}\n    {grey-fg}${branchShort}{/grey-fg}  ${time}${prLine}`;
+      const highlight = selected ? '{cyan-fg}{bold}' : '{grey-fg}';
+      const prLine    = a.prUrl ? `\n${isLast ? ' ' : '│'}    {cyan-fg}↗ PR{/cyan-fg}` : '';
+      return `${highlight}${connector}{/}${badge} {bold}${name}{/bold}  {grey-fg}${time}{/grey-fg}${prLine}`;
     });
 
-    this.agentList.setContent(lines.join('\n'));
+    this.agentList.setContent([header, ...lines].join('\n'));
     this._updateStatusBar();
   }
 

@@ -63,6 +63,20 @@ export function formatCompletionSummary(agent) {
   return lines;
 }
 
+/**
+ * Truncate a task description to `max` characters, breaking at a word
+ * boundary where possible and appending an ellipsis.
+ * @param {string} text
+ * @param {number} max
+ * @returns {string}
+ */
+export function truncateTask(text, max) {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  return (lastSpace > max * 0.5 ? cut.slice(0, lastSpace) : cut) + '…';
+}
+
 /** Status badge blessed color tag */
 export function badgeColor(state) {
   switch (state) {
