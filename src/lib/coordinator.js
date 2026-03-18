@@ -202,20 +202,25 @@ async function runBuilderWithReview(task, status, baseBranch) {
       const prBody = reviewPassed
         ? `✅ Reviewed and approved by ocha reviewer.\n\nTask: ${cleanDesc}`
         : `⚠️ Reviewer flagged issues — needs manual review.\n\nTask: ${cleanDesc}`;
-      const prUrl = execSync(
-        `gh pr create --base ${baseBranch} --head ${task.branch} --title "${prTitle}" --body "${prBody}" 2>&1`,
-        { stdio: 'pipe' }
-      ).toString().trim();
+      const prOutput = execSync(
+        `gh pr create --base ${baseBranch} --head ${task.branch} --title "${prTitle}" --body "${prBody}"`,
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      // gh pr create prints the URL as the last line
+      const prUrl = prOutput.trim().split('\n').filter(l => l.startsWith('http')).pop()
+        || prOutput.trim().split('\n').pop();
       task.prUrl = prUrl;
-      logWithSpinner(chalk.cyan(`  🔗 PR created: ${prUrl}`));
+      writeStatus(status);
+      console.log(chalk.cyan(`  🔗 PR created: ${prUrl}`));
     } catch (prErr) {
       // PR may already exist — try to get the URL
       try {
-        const prUrl = execSync(`gh pr view ${task.branch} --json url -q .url 2>&1`, { stdio: 'pipe' }).toString().trim();
+        const prUrl = execSync(`gh pr view ${task.branch} --json url -q .url`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
         task.prUrl = prUrl;
-        logWithSpinner(chalk.cyan(`  🔗 PR already exists: ${prUrl}`));
+        writeStatus(status);
+        console.log(chalk.cyan(`  🔗 PR already exists: ${prUrl}`));
       } catch {
-        logWithSpinner(chalk.yellow(`  ⚠ Could not create PR for ${task.branch} — push manually`));
+        console.log(chalk.yellow(`  ⚠ Could not create PR for ${task.branch}: ${prErr.message.split('\n')[0]}`));
       }
     }
   } catch (reviewErr) {
