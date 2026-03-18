@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { stripAnsi, wrapText } from './ui.js';
+import { stripAnsi, wrapText, progressBar, badge } from './ui.js';
 
 describe('stripAnsi', () => {
   it('passes plain strings through unchanged', () => {
@@ -60,5 +60,49 @@ describe('wrapText', () => {
       assert.ok(line.length <= 30, `line too long: "${line}"`);
     }
     assert.equal(lines.join(' '), text);
+  });
+});
+
+describe('progressBar', () => {
+  it('returns a zero-total placeholder when total is 0', () => {
+    const result = stripAnsi(progressBar(0, 0, 10));
+    assert.ok(result.includes('0/0'), `expected "0/0" in "${result}"`);
+  });
+
+  it('returns a fully-filled bar when done equals total', () => {
+    const result = stripAnsi(progressBar(5, 5, 10));
+    assert.ok(result.includes('5/5'), `expected "5/5" in "${result}"`);
+    // no empty blocks expected
+    assert.ok(!result.includes('░'), `expected no empty blocks in "${result}"`);
+  });
+
+  it('returns a fully-empty bar when done is 0', () => {
+    const result = stripAnsi(progressBar(0, 5, 10));
+    assert.ok(result.includes('0/5'), `expected "0/5" in "${result}"`);
+    assert.ok(!result.includes('█'), `expected no filled blocks in "${result}"`);
+  });
+
+  it('produces a partial bar with correct counts', () => {
+    const result = stripAnsi(progressBar(3, 10, 10));
+    assert.ok(result.includes('3/10'), `expected "3/10" in "${result}"`);
+  });
+
+  it('clamps done above total to a full bar', () => {
+    const result = stripAnsi(progressBar(99, 5, 10));
+    assert.ok(!result.includes('░'), `expected no empty blocks for over-full bar in "${result}"`);
+  });
+});
+
+describe('badge', () => {
+  it('contains the state text for each known state', () => {
+    for (const state of ['pending', 'running', 'completed', 'failed', 'stopped']) {
+      const result = stripAnsi(badge(state));
+      assert.ok(result.includes(state), `badge for "${state}" should contain the state text`);
+    }
+  });
+
+  it('falls back gracefully for unknown states', () => {
+    const result = stripAnsi(badge('unknown'));
+    assert.ok(result.includes('unknown'), 'badge should contain the unknown state text');
   });
 });
