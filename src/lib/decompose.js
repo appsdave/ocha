@@ -87,10 +87,8 @@ function runJunieDecompose(task, outputFile, tempDir) {
       '--brave',
     ], { stdio: 'pipe' });
 
-    let output = '';
     const handleData = (d) => {
       const text = d.toString();
-      output += text;
       // Show only key progress lines (filter out raw JSON, noise)
       for (const line of text.split('\n')) {
         const t = line.trim();
@@ -114,7 +112,7 @@ function runJunieDecompose(task, outputFile, tempDir) {
       reject(new Error('Decomposition timed out'));
     }, 120000);
 
-    proc.on('close', (code) => {
+    proc.on('close', () => {
       clearTimeout(timeout);
       if (existsSync(outputFile)) {
         try {

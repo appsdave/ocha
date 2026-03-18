@@ -26,10 +26,10 @@
  * cleanOchaWorktrees()                    // session-level full cleanup
  * ```
  */
-import { execSync } from 'child_process';
 import { resolve } from 'path';
 import { ensureDir, pathExists } from './files.js';
 import { WORKTREES_DIR } from './paths.js';
+import { git, gitSafe } from './exec.js';
 
 /**
  * Creates a git worktree for the given branch.
@@ -42,27 +42,25 @@ import { WORKTREES_DIR } from './paths.js';
  * @returns {string} Absolute path to the created worktree directory.
  */
 export function createWorktree(branch, baseBranch = 'main', repoDir) {
-  // Each repo gets its own worktrees dir: <repoDir>/.ocha-worktrees/
   const worktreesDir = repoDir ? resolve(repoDir, '.ocha-worktrees') : WORKTREES_DIR;
   ensureDir(worktreesDir);
   const worktreePath = resolve(worktreesDir, branch.replace(/\//g, '-'));
-  const gitOpts = { stdio: 'pipe', ...(repoDir ? { cwd: repoDir } : {}) };
 
   // Prune stale worktree registrations before attempting to create
-  try { execSync('git worktree prune', gitOpts); } catch (_) {}
+  gitSafe(['worktree', 'prune'], { cwd: repoDir });
 
   if (pathExists(worktreePath)) return worktreePath;
 
   try {
-    execSync(`git worktree add -b ${branch} "${worktreePath}" ${baseBranch}`, gitOpts);
-  } catch (err) {
+    git(['worktree', 'add', '-b', branch, worktreePath, baseBranch], { cwd: repoDir });
+  } catch {
     // Branch already exists — delete it and recreate fresh from baseBranch
-    try { execSync(`git branch -D ${branch}`, gitOpts); } catch (_) {}
+    gitSafe(['branch', '-D', branch], { cwd: repoDir });
     try {
-      execSync(`git worktree add -b ${branch} "${worktreePath}" ${baseBranch}`, gitOpts);
-    } catch (_) {
+      git(['worktree', 'add', '-b', branch, worktreePath, baseBranch], { cwd: repoDir });
+    } catch {
       // Last resort: reuse existing branch as-is
-      execSync(`git worktree add "${worktreePath}" ${branch}`, gitOpts);
+      git(['worktree', 'add', worktreePath, branch], { cwd: repoDir });
     }
   }
   return worktreePath;
@@ -79,13 +77,7 @@ export function createWorktree(branch, baseBranch = 'main', repoDir) {
  */
 export function removeWorktree(worktreePath, repoDir) {
   if (!pathExists(worktreePath)) return true;
-  const gitOpts = { stdio: 'pipe', ...(repoDir ? { cwd: repoDir } : {}) };
-  try {
-    execSync(`git worktree remove "${worktreePath}" --force`, gitOpts);
-    return true;
-  } catch (err) {
-    return false;
-  }
+  return gitSafe(['worktree', 'remove', worktreePath, '--force'], { cwd: repoDir }) !== null;
 }
 
 /**
@@ -95,8 +87,7 @@ export function removeWorktree(worktreePath, repoDir) {
  * @returns {Array<{path: string, branch?: string, bare?: boolean}>} Array of worktree objects.
  */
 export function listWorktrees(repoDir) {
-  const gitOpts = { encoding: 'utf-8', ...(repoDir ? { cwd: repoDir } : {}) };
-  const out = execSync('git worktree list --porcelain', gitOpts);
+  const out = git(['worktree', 'list', '--porcelain'], { cwd: repoDir });
   const trees = [];
   let current = {};
   for (const line of out.split('\n')) {
@@ -141,10 +132,8 @@ export function getWorktreeForBranch(branch, repoDir) {
  * @returns {{ removed: string[], failed: string[] }} Lists of removed and failed worktree paths.
  */
 export function cleanOchaWorktrees(repoDir, branchPrefix = 'refs/heads/ocha/') {
-  const gitOpts = { stdio: 'pipe', ...(repoDir ? { cwd: repoDir } : {}) };
-
   // Prune stale registrations first
-  try { execSync('git worktree prune', gitOpts); } catch (_) {}
+  gitSafe(['worktree', 'prune'], { cwd: repoDir });
 
   const trees = listWorktrees(repoDir);
   const removed = [];
@@ -161,7 +150,7 @@ export function cleanOchaWorktrees(repoDir, branchPrefix = 'refs/heads/ocha/') {
   }
 
   // Final prune to clear any leftover registrations
-  try { execSync('git worktree prune', gitOpts); } catch (_) {}
+  gitSafe(['worktree', 'prune'], { cwd: repoDir });
 
   return { removed, failed };
 }

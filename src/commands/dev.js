@@ -1,9 +1,9 @@
-import { execSync } from 'child_process';
 import { existsSync, mkdirSync, rmSync } from 'fs';
 import { resolve } from 'path';
 import { spawn } from 'child_process';
 import chalk from 'chalk';
 import { ensureAuthenticated } from '../lib/agent.js';
+import { git } from '../lib/exec.js';
 
 const DEV_DIR = resolve(process.cwd(), '.ocha-dev');
 const DEV_BRANCH = 'ocha-dev-session';
@@ -36,17 +36,17 @@ export async function ochaDev(opts) {
   if (existsSync(worktreePath)) {
     console.log(chalk.yellow('   Cleaning up existing dev worktree...'));
     try {
-      execSync(`git worktree remove "${worktreePath}" --force`, { stdio: 'pipe' });
+      git(['worktree', 'remove', worktreePath, '--force']);
     } catch {}
   }
 
   // Delete branch if it exists from a previous session
   try {
-    execSync(`git branch -D ${DEV_BRANCH}`, { stdio: 'pipe' });
+    git(['branch', '-D', DEV_BRANCH]);
   } catch {}
 
   try {
-    execSync(`git worktree add -b ${DEV_BRANCH} "${worktreePath}" ${baseBranch}`, { stdio: 'pipe' });
+    git(['worktree', 'add', '-b', DEV_BRANCH, worktreePath, baseBranch]);
     console.log(chalk.green(`   ✓ Worktree created at ${worktreePath}`));
     console.log(chalk.gray(`   Branch: ${DEV_BRANCH}`));
   } catch (err) {
@@ -64,14 +64,14 @@ export async function ochaDev(opts) {
 
     // Check if there are changes to merge
     try {
-      const diff = execSync(`cd "${worktreePath}" && git diff ${baseBranch} --stat`, { encoding: 'utf-8' }).trim();
+      const diff = git(['diff', baseBranch, '--stat'], { cwd: worktreePath }).trim();
       if (diff) {
         console.log(chalk.blue('\n📋 Changes made:'));
         console.log(chalk.gray(diff.split('\n').map(l => `   ${l}`).join('\n')));
 
         // Push branch
         try {
-          execSync(`cd "${worktreePath}" && git push -u origin ${DEV_BRANCH} --force`, { stdio: 'pipe' });
+          git(['push', '-u', 'origin', DEV_BRANCH, '--force'], { cwd: worktreePath });
           console.log(chalk.green('\n   ✓ Branch pushed'));
         } catch {}
 
@@ -79,7 +79,7 @@ export async function ochaDev(opts) {
         if (!opts.noMerge) {
           console.log(chalk.blue(`\n🔀 Merging ${DEV_BRANCH} into ${baseBranch}...`));
           try {
-            execSync(`git merge ${DEV_BRANCH}`, { stdio: 'pipe' });
+            git(['merge', DEV_BRANCH]);
             console.log(chalk.green('   ✓ Merged successfully'));
           } catch (err) {
             console.log(chalk.red('   ✗ Merge conflict — resolve manually:'));
@@ -102,7 +102,7 @@ export async function ochaDev(opts) {
   // Cleanup worktree
   console.log(chalk.blue('\n🧹 Cleaning up...'));
   try {
-    execSync(`git worktree remove "${worktreePath}" --force`, { stdio: 'pipe' });
+    git(['worktree', 'remove', worktreePath, '--force']);
     console.log(chalk.green('   ✓ Worktree removed'));
   } catch {}
 
@@ -113,7 +113,7 @@ export async function ochaDev(opts) {
   // Clean up branch if merged
   if (exitCode === 0 && !opts.noMerge) {
     try {
-      execSync(`git branch -D ${DEV_BRANCH}`, { stdio: 'pipe' });
+      git(['branch', '-D', DEV_BRANCH]);
       console.log(chalk.green('   ✓ Branch cleaned up'));
     } catch {}
   }

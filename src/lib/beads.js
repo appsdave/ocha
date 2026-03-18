@@ -9,7 +9,8 @@
  *
  * All bd commands use --json for reliable parsing and run non-interactively.
  */
-import { execSync } from 'child_process';
+import { exec } from './exec.js';
+import { validatePriority } from './validate.js';
 
 const BD = 'bd';
 
@@ -20,7 +21,7 @@ const BD = 'bd';
  */
 export function isBeadsInitialized(cwd) {
   try {
-    execSync(`${BD} list --json`, { cwd, stdio: 'pipe', encoding: 'utf-8', timeout: 10000 });
+    exec(BD, ['list', '--json'], { cwd, timeout: 10_000 });
     return true;
   } catch {
     return false;
@@ -34,7 +35,7 @@ export function isBeadsInitialized(cwd) {
  */
 export function ensureDoltServer(cwd) {
   try {
-    execSync(`${BD} dolt start`, { cwd, stdio: 'pipe', timeout: 15000 });
+    exec(BD, ['dolt', 'start'], { cwd, timeout: 15_000 });
   } catch {
     // Server may already be running — that's fine
   }
@@ -54,11 +55,11 @@ export function ensureDoltServer(cwd) {
 export function createBeadsIssue(title, description, opts = {}) {
   const { type = 'task', priority = 2, parentId, cwd } = opts;
   try {
-    const depsFlag = parentId ? ` --deps discovered-from:${parentId}` : '';
-    const safeTitle = title.replace(/"/g, '\\"');
-    const safeDesc = description.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-    const cmd = `${BD} create "${safeTitle}" --description="${safeDesc}" -t ${type} -p ${priority}${depsFlag} --json`;
-    const out = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf-8', timeout: 15000 });
+    const validPriority = validatePriority(priority);
+    const args = ['create', title, `--description=${description}`, '-t', type, '-p', String(validPriority)];
+    if (parentId) args.push('--deps', `discovered-from:${parentId}`);
+    args.push('--json');
+    const out = exec(BD, args, { cwd, timeout: 15_000 });
     const data = JSON.parse(out);
     return data.id || data.issue_id || null;
   } catch {
@@ -74,7 +75,7 @@ export function createBeadsIssue(title, description, opts = {}) {
  */
 export function claimBeadsIssue(issueId, cwd) {
   try {
-    execSync(`${BD} update ${issueId} --claim --json`, { cwd, stdio: 'pipe', encoding: 'utf-8', timeout: 10000 });
+    exec(BD, ['update', issueId, '--claim', '--json'], { cwd, timeout: 10_000 });
     return true;
   } catch {
     return false;
@@ -90,8 +91,7 @@ export function claimBeadsIssue(issueId, cwd) {
  */
 export function closeBeadsIssue(issueId, reason = 'Completed by ocha agent', cwd) {
   try {
-    const safeReason = reason.replace(/"/g, '\\"');
-    execSync(`${BD} close ${issueId} --reason "${safeReason}" --json`, { cwd, stdio: 'pipe', encoding: 'utf-8', timeout: 10000 });
+    exec(BD, ['close', issueId, '--reason', reason, '--json'], { cwd, timeout: 10_000 });
     return true;
   } catch {
     return false;
@@ -105,7 +105,7 @@ export function closeBeadsIssue(issueId, reason = 'Completed by ocha agent', cwd
  */
 export function pushBeadsData(cwd) {
   try {
-    execSync(`${BD} dolt push`, { cwd, stdio: 'pipe', encoding: 'utf-8', timeout: 30000 });
+    exec(BD, ['dolt', 'push'], { cwd, timeout: 30_000 });
     return true;
   } catch {
     return false;
@@ -119,7 +119,7 @@ export function pushBeadsData(cwd) {
  */
 export function getReadyIssues(cwd) {
   try {
-    const out = execSync(`${BD} ready --json`, { cwd, stdio: 'pipe', encoding: 'utf-8', timeout: 10000 });
+    const out = exec(BD, ['ready', '--json'], { cwd, timeout: 10_000 });
     const data = JSON.parse(out);
     return Array.isArray(data) ? data : (data.issues || []);
   } catch {

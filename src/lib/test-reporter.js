@@ -22,7 +22,7 @@ let totalPass    = 0;
 let totalFail    = 0;
 let totalSkip    = 0;
 let totalTodo    = 0;
-let startTime    = Date.now();
+const startTime  = Date.now();
 
 /**
  * Indentation helper.
@@ -73,7 +73,7 @@ export default async function* reporter(source) {
           yield `${indent(depth)}${icon.todo} ${chalk.cyan(data.name)} ${TODO}\n`;
         } else {
           totalPass++;
-          const dur = data.details?.duration_ms != null
+          const dur = data.details?.duration_ms !== null && data.details?.duration_ms !== undefined
             ? ` ${formatDuration(Math.round(data.details.duration_ms))}`
             : '';
           yield `${indent(depth)}${icon.pass} ${chalk.green(data.name)}${dur}\n`;
@@ -84,7 +84,7 @@ export default async function* reporter(source) {
       case 'test:fail': {
         const depth = data.nesting ?? 0;
         totalFail++;
-        const dur = data.details?.duration_ms != null
+        const dur = data.details?.duration_ms !== null && data.details?.duration_ms !== undefined
           ? ` ${formatDuration(Math.round(data.details.duration_ms))}`
           : '';
         yield `${indent(depth)}${icon.fail} ${chalk.red.bold(data.name)}${dur} ${FAIL}\n`;
