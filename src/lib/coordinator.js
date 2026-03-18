@@ -95,7 +95,8 @@ export async function runCoordinator(task, opts) {
       clearInterval(leadTimer);
       setLeadNode('failed', 'Planning failed — using fallback');
       failSpinner(`👔 Lead agent failed: ${err.message} — falling back to single task`);
-      tasks = [{ description: enhancedTask, role: 'builder', branch: 'ocha/main-task', displayDesc: task, repoDir: repoDirs[0] }];
+      const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 15).replace(/(\d{8})(\d{6})/, '$1-$2');
+      tasks = [{ description: enhancedTask, role: 'builder', branch: `ocha/task-${ts}`, displayDesc: task, repoDir: repoDirs[0] }];
     }
   }
 

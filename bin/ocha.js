@@ -36,7 +36,7 @@ program
     console.log(chalk.blue('🔄 Updating ocha…'));
     try {
       const before = execSync('git rev-parse HEAD', { cwd: installDir, encoding: 'utf-8' }).trim();
-      execSync(`git pull ${OCHA_REPO} main`, { cwd: installDir, encoding: 'utf-8' });
+      execSync(`git pull --rebase ${OCHA_REPO} main`, { cwd: installDir, encoding: 'utf-8' });
       const after = execSync('git rev-parse HEAD', { cwd: installDir, encoding: 'utf-8' }).trim();
       if (before === after) {
         console.log(chalk.green('✅ Already up to date.'));
@@ -70,7 +70,8 @@ if (process.argv.includes('--tui-agent')) {
   const taskIdx = process.argv.indexOf('--task');
   const branchIdx = process.argv.indexOf('--branch');
   const task = taskIdx !== -1 ? process.argv[taskIdx + 1] : null;
-  const branch = branchIdx !== -1 ? process.argv[branchIdx + 1] : 'ocha/main-task';
+  const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 15).replace(/(\d{8})(\d{6})/, '$1-$2');
+  const branch = branchIdx !== -1 ? process.argv[branchIdx + 1] : `ocha/task-${ts}`;
 
   if (!task) {
     console.error('--tui-agent requires --task <task>');
