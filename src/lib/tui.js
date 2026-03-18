@@ -110,8 +110,9 @@ export class OchaTUI {
       this.screen.render();
     };
     screen.key(['C'], clearDone);
-    // Also bind on agentList directly so vi-mode doesn't swallow the key
+    // Bind on both panes so vi-mode doesn't swallow the key
     this.agentList.key(['C'], clearDone);
+    this.logBox.key(['C'], clearDone);
 
     screen.key(['l', 'right'], () => {
       if (this.inputMode) return;
