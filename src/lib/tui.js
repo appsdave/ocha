@@ -67,6 +67,7 @@ export class OchaTUI {
         this.selectedIdx--;
         this._renderAgentList();
         this._renderLog();
+        this.screen.render();
       }
     });
 
@@ -76,6 +77,7 @@ export class OchaTUI {
         this.selectedIdx++;
         this._renderAgentList();
         this._renderLog();
+        this.screen.render();
       }
     });
 
@@ -122,10 +124,13 @@ export class OchaTUI {
   // ── Agent management ──────────────────────────────────────────────────────
 
   _spawnAgent(task) {
+    // Clear log immediately so no previous agent's text shows before new logs arrive
+    this.logBox.setContent('');
+    this.screen.render();
+
     spawnAgent(task, this.agents, (agent) => {
-      // Select the new/updated agent if it's the last one
-      if (this.agents[this.selectedIdx] === agent || agent === this.agents[this.agents.length - 1]) {
-        this.selectedIdx = this.agents.indexOf(agent);
+      // Only re-render log if this agent is currently selected
+      if (this.agents[this.selectedIdx] === agent) {
         this._renderLog();
       }
       this._renderAgentList();
@@ -159,7 +164,7 @@ export class OchaTUI {
       const isLast    = i === this.agents.length - 1;
       const connector = isLast ? '└─' : '├─';
       const badge     = `${badgeColor(a.state)}${badgeText(a.state)}{/}`;
-      const maxName   = 22;
+      const maxName   = 26;
       const name      = truncateTask(a.task, maxName);
       const time      = a.state === 'running'
         ? elapsed(a.startedAt)
@@ -185,10 +190,14 @@ export class OchaTUI {
       : agent.state === 'completed' ? '✔ done'
       : agent.state === 'failed'    ? '✗ failed'
       : agent.state === 'stopped'   ? '■ stopped' : agent.state;
-    this.logBox.setLabel(` ${agent.task.slice(0, 40)} [${stateLabel}] `);
-    // Always replace content fully so switching agents clears old text
-    const content = agent.logs.join('\n');
-    this.logBox.setContent(content);
+
+    // Truncate task label to fit the pane header cleanly
+    const taskLabel = agent.task.length > 50 ? agent.task.slice(0, 49) + '…' : agent.task;
+    this.logBox.setLabel(` ${taskLabel} [${stateLabel}] `);
+
+    // Force full content replacement so switching agents always clears previous output
+    this.logBox.setContent('');
+    this.logBox.setContent(agent.logs.join('\n'));
     this.logBox.setScrollPerc(100);
   }
 

@@ -34,12 +34,13 @@ export function badgeText(state) {
 
 /**
  * Format a clean completion summary block for the log pane.
+ * Shows status, branch, duration and PR — task is already visible in the log header.
  * @param {object} agent
  * @returns {string[]}
  */
 export function formatCompletionSummary(agent) {
   const lines = [];
-  const divider = '─'.repeat(48);
+  const divider = '─'.repeat(52);
   lines.push('');
   lines.push(divider);
   if (agent.state === 'completed') {
@@ -49,14 +50,16 @@ export function formatCompletionSummary(agent) {
   } else if (agent.state === 'stopped') {
     lines.push('  ■   Agent stopped by user');
   }
-  lines.push(`  Task   : ${agent.task}`);
-  lines.push(`  Branch : ${agent.branch}`);
+  lines.push(`  Branch  : ${agent.branch}`);
   if (agent.startedAt && agent.completedAt) {
     const secs = Math.round((new Date(agent.completedAt) - new Date(agent.startedAt)) / 1000);
-    lines.push(`  Duration: ${secs}s`);
+    const mins = Math.floor(secs / 60);
+    const remaining = secs % 60;
+    const duration = mins > 0 ? `${mins}m ${remaining}s` : `${secs}s`;
+    lines.push(`  Duration : ${duration}`);
   }
   if (agent.prUrl) {
-    lines.push(`  PR     : ${agent.prUrl}`);
+    lines.push(`  PR       : ${agent.prUrl}`);
   }
   lines.push(divider);
   lines.push('');

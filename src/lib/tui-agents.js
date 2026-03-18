@@ -93,9 +93,8 @@ export function spawnAgent(task, agents, onUpdate) {
     startedAt: now.toISOString(),
     completedAt: null,
     logs: [
-      `[ocha] Starting agent for: ${task}`,
-      `[ocha] Branch: ${branch}`,
-      `[ocha] Time: ${now.toLocaleString()}`,
+      `[ocha] Branch : ${branch}`,
+      `[ocha] Started: ${now.toLocaleString()}`,
       '',
     ],
     proc: null,

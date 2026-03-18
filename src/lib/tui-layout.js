@@ -21,7 +21,7 @@ export function buildLayout() {
   const agentList = blessed.box({
     top: 0,
     left: 0,
-    width: '25%',
+    width: '30%',
     height: '100%-3',
     border: { type: 'line' },
     style: {
@@ -37,10 +37,10 @@ export function buildLayout() {
   });
 
   // ── Right pane: log output ────────────────────────────────────────────────
-  const logBox = blessed.log({
+  const logBox = blessed.box({
     top: 0,
-    left: '25%',
-    width: '75%',
+    left: '30%',
+    width: '70%',
     height: '100%-3',
     border: { type: 'line' },
     style: { border: { fg: 'blue' } },
@@ -51,6 +51,7 @@ export function buildLayout() {
     scrollbar: { ch: '│', style: { fg: 'grey' } },
     keys: true,
     vi: true,
+    wrap: true,
   });
 
   // ── Bottom hint bar ───────────────────────────────────────────────────────
@@ -61,7 +62,7 @@ export function buildLayout() {
     height: 1,
     style: { fg: 'white', bg: 'black' },
     tags: true,
-    content: '{grey-fg}  {bold}n{/bold} new task   {bold}↑↓{/bold} navigate   {bold}K{/bold} kill   {bold}C{/bold} clear done   {bold}l/r{/bold} switch pane   {bold}q{/bold} quit{/grey-fg}',
+    content: '{grey-fg}  {bold}n{/bold} new   {bold}↑↓{/bold} navigate   {bold}K{/bold} kill   {bold}C{/bold} clear done   {bold}←→{/bold} switch pane   {bold}q{/bold} quit{/grey-fg}',
   });
 
   // ── Status bar ────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ export function buildLayout() {
 
 /**
  * Open a styled multi-line prompt dialog for task input.
- * Supports Shift+Enter for newlines, Enter to submit.
+ * Supports Enter to submit, Escape to cancel.
  *
  * @param {object} screen - blessed screen instance
  * @param {Function} onSubmit - called with the trimmed task string (or null if cancelled)
@@ -114,7 +115,7 @@ export function openPromptDialog(screen, onSubmit) {
     height: 1,
     tags: true,
     style: { bg: 'black' },
-    content: '{grey-fg}Describe your task. {bold}Enter{/bold} to submit · {bold}Esc{/bold} to cancel{/grey-fg}',
+    content: '{grey-fg}Describe your task below. {bold}Enter{/bold} to submit · {bold}Esc{/bold} to cancel{/grey-fg}',
   });
 
   const textarea = blessed.textarea({
@@ -137,11 +138,10 @@ export function openPromptDialog(screen, onSubmit) {
   });
 
   screen.append(overlay);
-  textarea.focus();
-  screen.render();
 
-  // Clear any stale value from previous open
+  // Clear any stale value from previous open, then focus
   textarea.setValue('');
+  textarea.focus();
   screen.render();
 
   // Enter submits, Escape cancels
