@@ -107,7 +107,7 @@ ocha/
 │       ├── agent.js         # Spawn Junie agents, auth check, git push
 │       ├── coordinator.js   # Task loop, lead review, merge/cleanup
 │       ├── decompose.js     # Task decomposition via Junie
-│       ├── worktree.js      # git worktree create/remove
+│       ├── worktree.js      # git worktree create/remove/list/lookup/clean
 │       ├── status.js        # Read/write .ocha/status.json
 │       ├── roles.js         # Role prompt templates
 │       ├── paths.js         # Shared path constants
@@ -144,6 +144,50 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 - Git
 - Junie CLI (installed and authenticated)
 - `gh` CLI (required for PR creation)
+
+---
+
+## Worktree Management
+
+Each agent runs inside an isolated `git worktree` created under `<project>/.ocha-worktrees/`.
+The `src/lib/worktree.js` module is the single source of truth for all worktree operations.
+
+### API
+
+| Function | Description |
+|---|---|
+| `createWorktree(branch, baseBranch?, repoDir?)` | Creates a worktree for `branch` off `baseBranch`. Returns the path. Idempotent — safe to call if the directory already exists. |
+| `removeWorktree(worktreePath, repoDir?)` | Force-removes a worktree. Returns `true` on success or if the path never existed, `false` on git error. |
+| `listWorktrees(repoDir?)` | Returns all registered worktrees as `{ path, branch?, bare? }` objects. |
+| `getWorktreeForBranch(branch, repoDir?)` | Looks up the worktree path for a given branch name. Returns `null` if not found. |
+| `cleanOchaWorktrees(repoDir?, branchPrefix?)` | Bulk-removes all worktrees whose branch starts with `refs/heads/ocha/` (or a custom prefix). Returns `{ removed, failed }` path lists. |
+
+### Lifecycle
+
+```
+createWorktree('ocha/task-1', 'main')
+  → .ocha-worktrees/ocha-task-1/   ← agent works here
+
+getWorktreeForBranch('ocha/task-1')
+  → '/abs/path/.ocha-worktrees/ocha-task-1'
+
+removeWorktree(path)               ← called after agent finishes / on cord stop
+
+cleanOchaWorktrees()               ← session-level cleanup, removes all ocha/* trees
+```
+
+### Naming convention
+
+Branch names follow the pattern `ocha/<task-slug>`. The slash is replaced with a dash
+when constructing the directory name, so `ocha/task-1` maps to `.ocha-worktrees/ocha-task-1`.
+
+### Error handling
+
+- `createWorktree` retries branch creation: if the branch already exists it is deleted and
+  re-created from `baseBranch`; as a last resort the existing branch is reused as-is.
+- `removeWorktree` catches git errors and returns `false` instead of throwing, so callers
+  can log warnings without crashing the session loop.
+- `cleanOchaWorktrees` prunes stale git registrations before and after bulk removal.
 
 ---
 
