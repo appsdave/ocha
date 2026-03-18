@@ -7,9 +7,26 @@ import readline from 'node:readline';
 import chalk from 'chalk';
 
 export async function readMultilineTask() {
-  console.log(chalk.bold.blue('┌─ 🚀  ocha ─────────────────────────────────────┐'));
-  console.log(`│  ${chalk.dim('Paste your task below. Press Enter twice to run.')}`);
-  console.log(chalk.bold.blue('└' + '─'.repeat(49) + '┘'));
+  const width = 54;
+  const inner = width - 2;
+  const top    = chalk.cyan('╭' + '─'.repeat(inner) + '╮');
+  const bottom = chalk.cyan('╰' + '─'.repeat(inner) + '╯');
+  const divider = chalk.cyan('├' + '─'.repeat(inner) + '┤');
+
+  const pad = (text, len) => {
+    const visible = text.replace(/\x1b\[[0-9;]*m/g, '');
+    return text + ' '.repeat(Math.max(0, len - visible.length));
+  };
+
+  const row = (content) => chalk.cyan('│') + ' ' + pad(content, inner - 1) + chalk.cyan('│');
+
+  console.log();
+  console.log(top);
+  console.log(row(chalk.bold.white('  ◆ ocha') + chalk.dim.white('  —  multi-agent orchestration')));
+  console.log(divider);
+  console.log(row(chalk.dim('  Describe your task below.')));
+  console.log(row(chalk.dim('  Press ') + chalk.white('Enter') + chalk.dim(' on a blank line to submit, ') + chalk.white('Ctrl+C') + chalk.dim(' to exit.')));
+  console.log(bottom);
   console.log();
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
