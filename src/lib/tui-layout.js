@@ -144,23 +144,23 @@ export function openPromptDialog(screen, onSubmit) {
   // Clear any stale value from previous open, then focus
   textarea.setValue('');
   textarea.focus();
-  // Force a full repaint so no underlying content bleeds through the overlay
-  screen.clearRegion(0, screen.width, 0, screen.height);
+  // reallyClear forces a full terminal repaint so no underlying content bleeds through
+  screen.reallyClear();
   screen.render();
 
   // Enter submits, Escape cancels
-  textarea.key(['enter'], () => {
-    const value = textarea.getValue().replace(/\r?\n/g, ' ').trim();
+  const close = (value) => {
     screen.remove(overlay);
-    screen.clearRegion(0, screen.width, 0, screen.height);
+    screen.reallyClear();
     screen.render();
     onSubmit(value || null);
+  };
+
+  textarea.key(['enter'], () => {
+    close(textarea.getValue().replace(/\r?\n/g, ' ').trim());
   });
 
   textarea.key(['escape'], () => {
-    screen.remove(overlay);
-    screen.clearRegion(0, screen.width, 0, screen.height);
-    screen.render();
-    onSubmit(null);
+    close(null);
   });
 }

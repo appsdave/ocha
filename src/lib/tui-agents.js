@@ -84,7 +84,8 @@ export function spawnAgent(task, agents, onUpdate) {
     .slice(0, 15)
     .replace(/(\d{8})(\d{6})/, '$1-$2');
   const slug = slugify(task);
-  const branch = `ocha/${slug}-${ts}`;
+  const rand = Math.random().toString(36).slice(2, 6);
+  const branch = `ocha/${slug}-${ts}-${rand}`;
   const repo = basename(process.cwd());
   const id = `agent-${Date.now()}`;
 

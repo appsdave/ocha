@@ -137,6 +137,7 @@ export class OchaTUI {
   _spawnAgent(task) {
     // Clear log immediately so no previous agent's text shows before new logs arrive
     this.logBox.setContent('');
+    this.screen.reallyClear();
     this.screen.render();
 
     spawnAgent(task, this.agents, (agent) => {
@@ -224,7 +225,7 @@ export class OchaTUI {
 
     // Force full content replacement so switching agents always clears previous output
     this.logBox.setContent('');
-    this.screen.clearRegion(0, this.screen.width, 0, this.screen.height);
+    this.screen.reallyClear();
     this.logBox.setContent(agent.logs.join('\n'));
     this.logBox.setScrollPerc(100);
   }
