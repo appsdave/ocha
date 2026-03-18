@@ -24,6 +24,15 @@ import { loadPersistedAgents, persistAgents, spawnAgent, killAgent } from './tui
 import { elapsed, badgeText, badgeColor, truncateTask, sortAgentsForDisplay, strikethrough } from './tui-utils.js';
 
 /**
+ * Escape blessed tag characters in user-supplied text so `{` and `}` are
+ * rendered literally instead of being interpreted as markup.
+ */
+function escapeTags(str) {
+  if (!str) return '';
+  return str.replace(/\{/g, '\\{').replace(/\}/g, '\\}');
+}
+
+/**
  * Detect which pipeline phases have started/completed from log lines.
  * Returns an array of { name, done, active } in pipeline order.
  * @param {string[]} logs
@@ -128,6 +137,13 @@ export class OchaTUI {
     this._renderAgentList();
     this._renderLog();
     this._startTick();
+
+    // Re-render all panes on terminal resize to prevent text bleaching/overlap
+    screen.on('resize', () => {
+      this._renderAgentList();
+      this._clearAndRenderLog();
+      screen.render();
+    });
 
     screen.render();
     agentList.focus();
@@ -259,8 +275,8 @@ export class OchaTUI {
       const badge     = `${badgeColor(a.state)}${badgeText(a.state)}{/}`;
       const maxName   = 24;
       const name      = isDone
-        ? strikethrough(truncateTask(a.task, maxName))
-        : truncateTask(a.task, maxName);
+        ? strikethrough(escapeTags(truncateTask(a.task, maxName)))
+        : escapeTags(truncateTask(a.task, maxName));
       const num       = `{grey-fg}#${String(i + 1).padStart(2, '0')}{/grey-fg}`;
       const time      = a.state === 'running'
         ? `{yellow-fg}${elapsed(a.startedAt)}{/yellow-fg}`
@@ -271,7 +287,7 @@ export class OchaTUI {
       const selClose  = selected ? '{/bold}{/cyan-fg}' : '';
       const rowStyle  = selected ? '{cyan-fg}' : isDone ? '{grey-fg}' : '{grey-fg}';
       const branchDisplay = a.branch
-        ? (a.repo ? `${a.repo}/${a.branch}` : a.branch).slice(-34)
+        ? escapeTags((a.repo ? `${a.repo}/${a.branch}` : a.branch).slice(-34))
         : null;
       const branchLine = branchDisplay
         ? `\n${rowStyle}${indent}{/}  {grey-fg}⎇ ${branchDisplay}{/grey-fg}`
@@ -306,7 +322,8 @@ export class OchaTUI {
       : agent.state === 'failed'    ? '✗ failed'
       : agent.state === 'stopped'   ? '■ stopped' : agent.state;
 
-    const taskLine = agent.task.length > 70 ? agent.task.slice(0, 69) + '…' : agent.task;
+    const rawTask = agent.task.length > 70 ? agent.task.slice(0, 69) + '…' : agent.task;
+    const taskLine = escapeTags(rawTask);
     const phases = _detectPhases(agent.logs);
     const phaseBar = phases.map(p =>
       p.active   ? `{cyan-fg}{bold}[${p.name}]{/bold}{/cyan-fg}`
