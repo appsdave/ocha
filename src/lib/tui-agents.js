@@ -8,7 +8,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { readStatus, writeStatus } from './status.js';
 import { OCHA_DIR, STATUS_FILE } from './paths.js';
-import { slugify } from './tui-utils.js';
+import { slugify, formatCompletionSummary } from './tui-utils.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const OCHA_ROOT = resolve(__dirname, '../..');
@@ -135,8 +135,15 @@ export function spawnAgent(task, agents, onUpdate) {
     agent.proc = null;
     agent.state = code === 0 ? 'completed' : 'failed';
     agent.completedAt = new Date().toISOString();
-    agent.logs.push('');
-    agent.logs.push(`[ocha] Agent exited with code ${code}`);
+    // Extract PR URL from logs if present
+    for (const line of agent.logs) {
+      const m = line.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
+      if (m) { agent.prUrl = m[0]; break; }
+    }
+    // Append clean summary block
+    for (const line of formatCompletionSummary(agent)) {
+      agent.logs.push(line);
+    }
     persistAgents(agents);
     onUpdate(agent);
   });

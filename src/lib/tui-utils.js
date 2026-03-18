@@ -32,6 +32,37 @@ export function badgeText(state) {
   }
 }
 
+/**
+ * Format a clean completion summary block for the log pane.
+ * @param {object} agent
+ * @returns {string[]}
+ */
+export function formatCompletionSummary(agent) {
+  const lines = [];
+  const divider = '─'.repeat(48);
+  lines.push('');
+  lines.push(divider);
+  if (agent.state === 'completed') {
+    lines.push('  ✅  Agent completed successfully');
+  } else if (agent.state === 'failed') {
+    lines.push('  ❌  Agent failed');
+  } else if (agent.state === 'stopped') {
+    lines.push('  ■   Agent stopped by user');
+  }
+  lines.push(`  Task   : ${agent.task}`);
+  lines.push(`  Branch : ${agent.branch}`);
+  if (agent.startedAt && agent.completedAt) {
+    const secs = Math.round((new Date(agent.completedAt) - new Date(agent.startedAt)) / 1000);
+    lines.push(`  Duration: ${secs}s`);
+  }
+  if (agent.prUrl) {
+    lines.push(`  PR     : ${agent.prUrl}`);
+  }
+  lines.push(divider);
+  lines.push('');
+  return lines;
+}
+
 /** Status badge blessed color tag */
 export function badgeColor(state) {
   switch (state) {

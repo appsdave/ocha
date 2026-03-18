@@ -61,7 +61,7 @@ export function buildLayout() {
     height: 1,
     style: { fg: 'white', bg: 'black' },
     tags: true,
-    content: '{grey-fg}  Press {bold}n{/bold} new task  {bold}↑↓{/bold} navigate  {bold}K{/bold} kill  {bold}q{/bold} quit{/grey-fg}',
+    content: '{grey-fg}  {bold}n{/bold} new task   {bold}↑↓{/bold} navigate   {bold}K{/bold} kill agent   {bold}l/r{/bold} switch pane   {bold}q{/bold} quit{/grey-fg}',
   });
 
   // ── Status bar ────────────────────────────────────────────────────────────
@@ -138,6 +138,10 @@ export function openPromptDialog(screen, onSubmit) {
 
   screen.append(overlay);
   textarea.focus();
+  screen.render();
+
+  // Clear any stale value from previous open
+  textarea.setValue('');
   screen.render();
 
   // Enter submits, Escape cancels

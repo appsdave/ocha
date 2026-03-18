@@ -145,12 +145,16 @@ export class OchaTUI {
     const lines = this.agents.map((a, i) => {
       const selected = i === this.selectedIdx;
       const badge    = `${badgeColor(a.state)}${badgeText(a.state)}{/}`;
-      const name     = a.task.length > 18 ? a.task.slice(0, 17) + '…' : a.task;
+      const maxName  = 20;
+      const name     = a.task.length > maxName ? a.task.slice(0, maxName - 1) + '…' : a.task;
       const time     = a.state === 'running'
         ? elapsed(a.startedAt)
-        : a.state === 'completed' ? '✔' : a.state === 'failed' ? '✗' : '■';
+        : a.state === 'completed' ? '✔ done' : a.state === 'failed' ? '✗ fail' : '■ stop';
       const prefix   = selected ? '{cyan-fg}{bold}▶ {/bold}{/cyan-fg}' : '  ';
-      return `${prefix}${badge} ${name}\n    {grey-fg}${a.branch.slice(0, 22)}{/grey-fg}  ${time}`;
+      // Show branch slug (strip ocha/ prefix for brevity)
+      const branchShort = a.branch.replace(/^ocha\//, '').slice(0, 22);
+      const prLine   = a.prUrl ? `\n    {cyan-fg}↗ PR{/cyan-fg}` : '';
+      return `${prefix}${badge} {bold}${name}{/bold}\n    {grey-fg}${branchShort}{/grey-fg}  ${time}${prLine}`;
     });
 
     this.agentList.setContent(lines.join('\n'));
@@ -162,21 +166,33 @@ export class OchaTUI {
     const agent = this.agents[this.selectedIdx];
     if (!agent) {
       this.logBox.setLabel(' Log ');
-      this.logBox.setContent('{grey-fg}No agent selected{/grey-fg}');
+      this.logBox.setContent('No agent selected');
       return;
     }
-    this.logBox.setLabel(` ${agent.task} [${agent.state}] `);
-    this.logBox.setContent(agent.logs.join('\n'));
+    const stateLabel = agent.state === 'running' ? '⟳ running'
+      : agent.state === 'completed' ? '✔ done'
+      : agent.state === 'failed'    ? '✗ failed'
+      : agent.state === 'stopped'   ? '■ stopped' : agent.state;
+    this.logBox.setLabel(` ${agent.task.slice(0, 40)} [${stateLabel}] `);
+    // Always replace content fully so switching agents clears old text
+    const content = agent.logs.join('\n');
+    this.logBox.setContent(content);
     this.logBox.setScrollPerc(100);
   }
 
   _updateStatusBar() {
     const running = this.agents.filter(a => a.state === 'running').length;
+    const done    = this.agents.filter(a => a.state === 'completed').length;
     const total   = this.agents.length;
     const agent   = this.agents[this.selectedIdx];
-    const sel     = agent ? ` | ${agent.branch}` : '';
+    let right = '';
+    if (agent) {
+      right = agent.prUrl
+        ? ` | PR: ${agent.prUrl}`
+        : ` | ${agent.branch}`;
+    }
     this.statusBar.setContent(
-      ` ocha  |  ${total} agent(s), ${running} running${sel}  |  n:new  K:kill  q:quit `
+      ` ocha  |  ${total} task(s)  ${running} running  ${done} done${right} `
     );
   }
 
