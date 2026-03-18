@@ -12,7 +12,8 @@
  * Keyboard shortcuts:
  *   n        — open new task prompt
  *   ↑ / ↓   — navigate agent list
- *   K        — kill selected agent
+ *   k        — kill selected agent
+ *   c        — clear completed/failed agents
  *   l / →   — focus log pane
  *   h / ←   — focus agent list
  *   q / C-c — quit (confirms if agents running)

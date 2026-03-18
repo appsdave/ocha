@@ -109,6 +109,7 @@ ocha/
 │       ├── coordinator.js   # Task loop, batched agent concurrency
 │       ├── decompose.js     # Task decomposition via Junie
 │       ├── enhance.js       # Prompt enhancement with project context
+│       ├── exec.js          # Safe command execution utilities
 │       ├── files.js         # Safe file I/O utilities
 │       ├── issues.js        # Agent issue feed (problems, warnings, notes)
 │       ├── lead.js          # Lead agent runner (produces task plan JSON)
@@ -124,6 +125,7 @@ ocha/
 │       ├── tui-layout.js    # blessed screen layout and prompt dialog
 │       ├── tui-utils.js     # TUI display utilities (elapsed, badges, truncation)
 │       ├── ui.js            # Shared UI helper utilities
+│       ├── validate.js      # Input validation helpers
 │       └── worktree.js      # git worktree create/remove/list/lookup/clean
 ├── install.sh               # One-command installer
 └── .ocha/                   # Per-project config (gitignored)
@@ -223,10 +225,10 @@ Running `ocha` with no arguments launches the interactive TUI — a persistent, 
 |-----|--------|
 | `n` | Open new-task prompt |
 | `↑` / `↓` | Navigate agent list |
-| `K` | Kill selected agent |
+| `k` | Kill selected agent |
 | `l` / `→` | Focus log pane |
 | `h` / `←` | Focus agent list |
-| `C` / `Shift+C` / `x` | Clear completed agents |
+| `c` | Clear completed/failed agents |
 | `q` / `Ctrl+C` | Quit (confirms if agents running) |
 
 ### TUI modules
