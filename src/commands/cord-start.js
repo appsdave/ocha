@@ -27,8 +27,9 @@ export async function cordStart(opts) {
   const task = opts.task.trim();
 
   const maxAgentsLabel = parseInt(opts.maxAgents, 10) === 1 ? '1 agent' : `${opts.maxAgents} agents (parallel)`;
+  const taskPreview = task.length > 43 ? task.slice(0, 42) + '…' : task;
   console.log(chalk.bold.blue('┌─ 🚀  ocha cord start ──────────────────────────┐'));
-  console.log(`│  ${chalk.dim('Task  ')} ${task.slice(0, 43)}`);
+  console.log(`│  ${chalk.dim('Task  ')} ${taskPreview}`);
   console.log(`│  ${chalk.dim('Branch')} ${opts.baseBranch}`);
   console.log(`│  ${chalk.dim('Agents')} ${maxAgentsLabel}`);
   console.log(chalk.bold.blue('└' + '─'.repeat(49) + '┘'));

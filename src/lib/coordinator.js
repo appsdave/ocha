@@ -170,6 +170,8 @@ async function runBuilderWithReview(task, status, baseBranch) {
 
   setBuilderNode(task.id, 'completed', cleanDesc);
   logWithSpinner(chalk.green(`  ✓ Builder done: ${cleanDesc}`));
+  task.state = 'completed';
+  writeStatus(status);
 
   // ── Spawn reviewer ──────────────────────────────────────────────────────────
   setReviewerNode(task.id, 'running');
@@ -268,28 +270,30 @@ function shortDesc(description) {
 function printSummary(status) {
   const completed = status.tasks.filter(t => t.state === 'completed');
   const failed    = status.tasks.filter(t => t.state === 'failed');
-  const merged    = completed.filter(t => t.merged);
-  const unmerged  = completed.filter(t => !t.merged);
+  const withPR    = completed.filter(t => t.prUrl);
+  const noPR      = completed.filter(t => !t.prUrl);
 
   console.log(chalk.bold.blue('\n┌─ 🏁  ocha session complete ────────────────────┐'));
   console.log(`│  ${chalk.dim('Total    ')} ${status.tasks.length}`);
   console.log(`│  ${chalk.dim('Completed')} ${chalk.green(completed.length)}`);
-  if (failed.length)  console.log(`│  ${chalk.dim('Failed   ')} ${chalk.red(failed.length)}`);
-  if (merged.length)  console.log(`│  ${chalk.dim('Merged   ')} ${chalk.green(merged.length)}`);
-  if (unmerged.length) console.log(`│  ${chalk.dim('Open PRs ')} ${chalk.cyan(unmerged.length)}`);
+  if (failed.length) console.log(`│  ${chalk.dim('Failed   ')} ${chalk.red(failed.length)}`);
+  if (withPR.length) console.log(`│  ${chalk.dim('Open PRs ')} ${chalk.cyan(withPR.length)}`);
   console.log(chalk.bold.blue('└' + '─'.repeat(49) + '┘'));
 
-  if (unmerged.length > 0) {
+  if (withPR.length > 0) {
     console.log(chalk.cyan('\n  Open pull requests:'));
-    for (const task of unmerged) {
-      const desc = shortDesc(task.description.split('\n')[0]);
-      if (task.prUrl) {
-        console.log(chalk.cyan(`    🔗 ${task.prUrl}`));
-        console.log(chalk.dim(`       ${task.branch} — ${desc}`));
-      } else {
-        console.log(chalk.yellow(`    ⚠  ${task.branch} — ${desc}`));
-        console.log(chalk.dim(`       push manually and open a PR`));
-      }
+    for (const task of withPR) {
+      const desc = task.description.split('\n')[0].slice(0, 60);
+      console.log(chalk.cyan(`    🔗 ${task.prUrl}`));
+      console.log(chalk.dim(`       ${task.branch} — ${desc}`));
+    }
+  }
+
+  if (noPR.length > 0) {
+    console.log(chalk.yellow('\n  Completed (no PR):'));
+    for (const task of noPR) {
+      const desc = task.description.split('\n')[0].slice(0, 60);
+      console.log(chalk.yellow(`    ⚠  ${task.branch} — ${desc}`));
     }
   }
 
