@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import { getPromptDialogLayout } from './tui-layout.js';
 
 describe('getPromptDialogLayout', () => {
+  it('leaves enough room for the textarea to display at least one visible line', () => {
+    for (const h of [7, 8, 10, 14, 24, 40]) {
+      const layout = getPromptDialogLayout({ height: h });
+      assert.ok(
+        layout.textareaHeight >= 3,
+        `textarea height should be >= 3 for screen height ${h}, got ${layout.textareaHeight}`
+      );
+    }
+  });
   it('keeps the full-size dialog on taller terminals', () => {
     const layout = getPromptDialogLayout({ height: 24 });
 

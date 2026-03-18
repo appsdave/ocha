@@ -174,6 +174,9 @@ export function openPromptDialog(screen, onSubmit) {
       focus: { bg: 'black', border: { fg: 'cyan' } },
     },
     border: { type: 'line' },
+    // Explicit padding prevents the first line of text from being hidden
+    // behind the top border when the screen uses autoPadding: false.
+    padding: { top: 0, right: 0, bottom: 0, left: 1 },
     inputOnFocus: true,
     keys: true,
     mouse: true,
@@ -188,9 +191,17 @@ export function openPromptDialog(screen, onSubmit) {
   textarea.focus();
   screen.render();
 
+  // Force a full screen redraw so the overlay renders cleanly without
+  // bleached / stale content bleeding through from widgets underneath.
+  screen.alloc();
+  screen.render();
+
   // Enter submits, Escape cancels
   const close = (value) => {
     screen.remove(overlay);
+    // Force full redraw to clear any remnants of the overlay that blessed's
+    // smart-CSR optimisation would otherwise leave on screen ("bleaching").
+    screen.alloc();
     screen.render();
     onSubmit(value || null);
   };
