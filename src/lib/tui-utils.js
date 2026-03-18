@@ -83,6 +83,38 @@ export function truncateTask(text, max) {
   return (lastSpace > max * 0.5 ? cut.slice(0, lastSpace) : cut) + '…';
 }
 
+/**
+ * Sort agents for display: running/active agents first, then
+ * completed/failed/stopped agents at the bottom.
+ * Returns a new array of { agent, originalIndex } objects.
+ * @param {object[]} agents
+ * @returns {{ agent: object, originalIndex: number }[]}
+ */
+export function sortAgentsForDisplay(agents) {
+  const active = [];
+  const done = [];
+  agents.forEach((agent, i) => {
+    const entry = { agent, originalIndex: i };
+    if (agent.state === 'running') {
+      active.push(entry);
+    } else {
+      done.push(entry);
+    }
+  });
+  return [...active, ...done];
+}
+
+/**
+ * Apply blessed strikethrough styling to text.
+ * Uses Unicode combining long stroke overlay (U+0336) since blessed
+ * does not support native strikethrough escape sequences.
+ * @param {string} text
+ * @returns {string}
+ */
+export function strikethrough(text) {
+  return text.split('').map(ch => ch + '\u0336').join('');
+}
+
 /** Status badge blessed color tag */
 export function badgeColor(state) {
   switch (state) {
