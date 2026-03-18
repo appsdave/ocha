@@ -110,6 +110,7 @@ export function spawnAgent(task, agents, onUpdate) {
     cwd: process.cwd(),
     env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
 
   agent.proc = proc;
@@ -170,7 +171,12 @@ export function killAgent(agents, idx) {
   const agent = agents[idx];
   if (!agent) return;
   if (agent.proc) {
-    agent.proc.kill('SIGTERM');
+    try {
+      // Kill the entire process group so Junie subprocesses also die
+      process.kill(-agent.proc.pid, 'SIGTERM');
+    } catch {
+      try { agent.proc.kill('SIGTERM'); } catch {}
+    }
     agent.state = 'stopped';
     agent.logs.push('[ocha] Agent killed by user');
   }

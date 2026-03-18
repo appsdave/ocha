@@ -120,6 +120,9 @@ export class OchaTUI {
       process.exit(1);
     });
 
+    // Ensure child agent processes are killed when ocha exits unexpectedly
+    this._installSignalHandlers();
+
     this._bindKeys();
     this._renderAgentList();
     this._renderLog();
@@ -379,7 +382,6 @@ export class OchaTUI {
         `${running.length} agent(s) still running. Kill all and quit? (y/n)`,
         (err, value) => {
           if (value === true || value === 'y' || value === 'yes') {
-            for (const a of running) if (a.proc) a.proc.kill('SIGTERM');
             persistAgents(this.agents);
             this._cleanup();
           } else {
@@ -396,7 +398,51 @@ export class OchaTUI {
 
   _cleanup() {
     if (this.tickInterval) clearInterval(this.tickInterval);
+    this._killAllChildProcesses();
     this.screen.destroy();
     process.exit(0);
+  }
+
+  /**
+   * Kill all running agent child processes and their entire process trees.
+   */
+  _killAllChildProcesses() {
+    for (const agent of this.agents) {
+      if (agent.proc) {
+        try {
+          // Kill the entire process group (negative PID)
+          process.kill(-agent.proc.pid, 'SIGKILL');
+        } catch {
+          try { agent.proc.kill('SIGKILL'); } catch {}
+        }
+        agent.proc = null;
+        agent.state = 'stopped';
+      }
+    }
+    persistAgents(this.agents);
+  }
+
+  /**
+   * Install signal handlers so child processes are cleaned up
+   * when ocha is killed externally (SIGINT, SIGTERM, SIGHUP).
+   */
+  _installSignalHandlers() {
+    const cleanup = (signal) => {
+      this._killAllChildProcesses();
+      if (this.tickInterval) clearInterval(this.tickInterval);
+      try { this.screen.destroy(); } catch {}
+      process.exit(signal === 'SIGINT' ? 130 : 143);
+    };
+
+    // Override blessed's default C-c handling with our cleanup
+    process.on('SIGTERM', () => cleanup('SIGTERM'));
+    process.on('SIGHUP', () => cleanup('SIGHUP'));
+
+    // Handle uncaught exceptions and unhandled rejections
+    process.on('uncaughtException', (err) => {
+      this._killAllChildProcesses();
+      process.stderr.write(`[ocha] Fatal: ${err.message}\n`);
+      process.exit(1);
+    });
   }
 }
