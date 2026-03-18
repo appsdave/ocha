@@ -1,4 +1,4 @@
-# ocha
+# ocha — Multi-Agent Orchestration
 
 **Multi-agent orchestration for Junie** — decompose tasks, spawn AI coding agents in isolated git worktrees, and coordinate parallel work automatically.
 
@@ -259,3 +259,6 @@ ocha/
 ## License
 
 ISC
+
+## Changelog
+- v1.0.0: Initial release with cord-start, cord-status, cord-stop, dev, init, and self-update commands
