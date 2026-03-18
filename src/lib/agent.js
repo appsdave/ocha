@@ -3,9 +3,10 @@
  * Agent spawning, lifecycle management, and output handling.
  * Each agent is a Junie child process running in an isolated git worktree.
  */
-import { spawn, execSync } from 'child_process';
+import { spawn } from 'child_process';
+import { gitSafe } from './exec.js';
 import { resolve } from 'path';
-import { readJSON, readText, pathExists } from './files.js';
+import { readJSON, readText } from './files.js';
 import { OCHA_DIR } from './paths.js';
 import { updateTask } from './status.js';
 import { reportIssue } from './issues.js';
@@ -96,11 +97,7 @@ export function spawnAgent(task, worktreePath, role) {
 
       // Auto push the branch after agent completes successfully
       if (code === 0) {
-        try {
-          execSync(`cd "${worktreePath}" && git push -u origin ${task.branch} --force`, { stdio: 'pipe' });
-        } catch {
-          // Push failed — non-critical
-        }
+        gitSafe(['push', '-u', 'origin', task.branch, '--force'], { cwd: worktreePath });
       }
 
       if (code !== 0) {
@@ -159,11 +156,9 @@ export function ensureAuthenticated() {
     });
 
     let authenticated = false;
-    let output = '';
 
     const handleData = (data) => {
       const text = data.toString();
-      output += text;
       if (text.includes('Authenticated successfully')) {
         authenticated = true;
       }

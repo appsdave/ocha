@@ -18,7 +18,7 @@ export function getTerminalWidth() {
  * @returns {string}
  */
 export function stripAnsi(str) {
-  // eslint-disable-next-line no-control-regex
+   
   return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
 }
 

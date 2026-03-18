@@ -15,7 +15,7 @@ import { createWorktree, removeWorktree } from './worktree.js';
 import { readStatus, writeStatus, createInitialStatus } from './status.js';
 import { enhanceTask } from './enhance.js';
 import { runLeadAgent } from './lead.js';
-import { execSync } from 'child_process';
+import { git, exec } from './exec.js';
 import { safeDelete } from './files.js';
 import { WORKTREES_DIR } from './paths.js';
 import chalk from 'chalk';
@@ -260,7 +260,7 @@ async function runBuilderWithReview(task, status, baseBranch) {
 
     // Always push branch and open a PR — never auto-merge
     try {
-      execSync(`cd "${worktreePath}" && git push -u origin ${task.branch} --force`, { stdio: 'pipe' });
+      git(['push', '-u', 'origin', task.branch, '--force'], { cwd: worktreePath });
       logWithSpinner(chalk.green(`  ✓ Pushed branch ${task.branch} to origin`));
     } catch (pushErr) {
       logWithSpinner(chalk.yellow(`  ⚠ Could not push ${task.branch}: ${pushErr.message}`));
@@ -272,14 +272,9 @@ async function runBuilderWithReview(task, status, baseBranch) {
       // Build a git log summary of what changed vs base branch
       let diffSummary = '';
       try {
-        const logLines = execSync(
-          `git log --oneline ${baseBranch}..${task.branch}`,
-          { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-        ).trim();
-        const statLines = execSync(
-          `git diff --stat ${baseBranch}..${task.branch}`,
-          { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-        ).trim();
+        const range = `${baseBranch}..${task.branch}`;
+        const logLines = git(['log', '--oneline', range], { cwd: worktreePath }).trim();
+        const statLines = git(['diff', '--stat', range], { cwd: worktreePath }).trim();
         if (logLines) diffSummary = `\n\n### Commits\n\`\`\`\n${logLines}\n\`\`\``;
         if (statLines) diffSummary += `\n\n### Files changed\n\`\`\`\n${statLines}\n\`\`\``;
       } catch {}
@@ -288,10 +283,13 @@ async function runBuilderWithReview(task, status, baseBranch) {
         ? '✅ Reviewed and approved by ocha reviewer.'
         : '⚠️ Reviewer flagged issues — needs manual review.';
       const prBody = `${reviewStatus}\n\n**Task:** ${cleanDesc}${diffSummary}`;
-      const prOutput = execSync(
-        `gh pr create --base ${baseBranch} --head ${task.branch} --title "${prTitle}" --body "${prBody}"`,
-        { cwd: taskRepoDir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-      );
+      const prOutput = exec('gh', [
+        'pr', 'create',
+        '--base', baseBranch,
+        '--head', task.branch,
+        '--title', prTitle,
+        '--body', prBody,
+      ], { cwd: taskRepoDir });
       // gh pr create prints the URL as the last line
       const prUrl = prOutput.trim().split('\n').filter(l => l.startsWith('http')).pop()
         || prOutput.trim().split('\n').pop();
@@ -301,7 +299,7 @@ async function runBuilderWithReview(task, status, baseBranch) {
     } catch (prErr) {
       // PR may already exist — try to get the URL
       try {
-        const prUrl = execSync(`gh pr view ${task.branch} --json url -q .url`, { cwd: taskRepoDir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+        const prUrl = exec('gh', ['pr', 'view', task.branch, '--json', 'url', '-q', '.url'], { cwd: taskRepoDir }).trim();
         task.prUrl = prUrl;
         writeStatus(status);
         console.log(chalk.cyan(`  🔗 PR already exists: ${prUrl}`));
@@ -325,7 +323,7 @@ function showDiffStats(status, baseBranch) {
     if (task.merged) continue;
     try {
       const repoDir = task.repoDir || process.cwd();
-      const diff = execSync(`git diff ${baseBranch}..${task.branch} --stat`, { cwd: repoDir, encoding: 'utf-8' }).trim();
+      const diff = git(['diff', `${baseBranch}..${task.branch}`, '--stat'], { cwd: repoDir }).trim();
       if (diff) {
         console.log(chalk.blue(`\n  📋 Changes in ${task.branch}:`));
         console.log(chalk.gray(diff.split('\n').map(l => `     ${l}`).join('\n')));

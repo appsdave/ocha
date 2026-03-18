@@ -150,6 +150,7 @@ export function openPromptDialog(screen, onSubmit) {
     filled: true,
   });
 
+  /* eslint-disable-next-line no-unused-vars -- auto-appended to overlay via parent */
   const hint = blessed.box({
     parent: overlay,
     top: 0,

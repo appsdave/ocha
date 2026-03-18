@@ -5,7 +5,7 @@
  * with automatic directory creation and consistent error handling.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, renameSync, readdirSync, statSync } from 'fs';
-import { dirname, resolve, join } from 'path';
+import { dirname, join } from 'path';
 import { randomBytes } from 'crypto';
 
 /**
