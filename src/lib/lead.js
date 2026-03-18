@@ -11,6 +11,20 @@ import { readText } from './files.js';
 import { OCHA_DIR, ROLES_DIR } from './paths.js';
 
 /**
+ * Add a timestamp + short random suffix to a model-chosen branch name for uniqueness.
+ * The model picks the descriptive part; this just prevents collisions.
+ */
+function ensureUniqueBranch(branch, index, prefix = 'ocha') {
+  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15).replace(/(\d{8})(\d{6})/, '$1-$2');
+  const suffix = Math.random().toString(36).slice(2, 6);
+  if (branch) {
+    const raw = branch.replace(/^ocha\//, '');
+    return `${prefix}/${raw}-${ts}-${suffix}`;
+  }
+  return `${prefix}/task-${index}-${ts}-${suffix}`;
+}
+
+/**
  * Runs the lead agent to analyze the project and produce a builder task plan.
  * Falls back to a single builder task wrapping the enhanced task if the lead fails.
  *
@@ -24,11 +38,11 @@ export async function runLeadAgent(enhancedTask, projectDir) {
   try {
     const result = await runJunieLead(enhancedTask, outputFile, projectDir);
     if (result && result.tasks && result.tasks.length > 0) {
-      // Ensure all tasks have role = 'builder'
+      // Ensure all tasks have role = 'builder'; use the model's branch name with a short unique suffix
       return result.tasks.map((t, i) => ({
         description: t.description,
         role: 'builder',
-        branch: t.branch || `ocha/task-${i + 1}`,
+        branch: ensureUniqueBranch(t.branch, i + 1),
       }));
     }
   } catch {
@@ -39,7 +53,7 @@ export async function runLeadAgent(enhancedTask, projectDir) {
   return [{
     description: enhancedTask,
     role: 'builder',
-    branch: 'ocha/main-task',
+    branch: ensureUniqueBranch(null, 1),
   }];
 }
 

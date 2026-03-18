@@ -8,7 +8,7 @@ import { resolve, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { readStatus, writeStatus } from './status.js';
 import { OCHA_DIR, STATUS_FILE } from './paths.js';
-import { slugify, formatCompletionSummary } from './tui-utils.js';
+import { formatCompletionSummary } from './tui-utils.js';
 import { stripAnsi } from './ui.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -80,27 +80,20 @@ export function persistAgents(agents) {
  */
 export function spawnAgent(task, agents, onUpdate) {
   const now = new Date();
-  const ts = now.toISOString()
-    .replace(/[-:T]/g, '')
-    .slice(0, 15)
-    .replace(/(\d{8})(\d{6})/, '$1-$2');
-  const slug = slugify(task);
-  const rand = Math.random().toString(36).slice(2, 6);
-  const branch = `ocha/${slug}-${ts}-${rand}`;
   const repo = basename(process.cwd());
   const id = `agent-${Date.now()}`;
 
   const agent = {
     id,
     task,
-    branch,
+    branch: null,
     repo,
     state: 'running',
     startedAt: now.toISOString(),
     completedAt: null,
     logs: [
       `[ocha] Repo   : ${repo}`,
-      `[ocha] Branch : ${branch}`,
+      '[ocha] Branch : (model will assign)',
       `[ocha] Started: ${now.toLocaleString()}`,
       '',
     ],
@@ -113,7 +106,6 @@ export function spawnAgent(task, agents, onUpdate) {
     resolve(OCHA_ROOT, 'bin/ocha.js'),
     '--tui-agent',
     '--task', task,
-    '--branch', branch,
   ], {
     cwd: process.cwd(),
     env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
