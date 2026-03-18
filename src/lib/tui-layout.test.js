@@ -6,9 +6,9 @@ describe('getPromptDialogLayout', () => {
   it('keeps the full-size dialog on taller terminals', () => {
     const layout = getPromptDialogLayout({ height: 24 });
 
-    assert.equal(layout.overlayHeight, 12);
-    assert.equal(layout.overlayTop, 6);
-    assert.equal(layout.textareaTop, 2);
+    assert.equal(layout.overlayHeight, 14);
+    assert.equal(layout.overlayTop, 5);
+    assert.equal(layout.textareaTop, 3);
   });
 
   it('keeps the prompt dialog fully on screen in shorter terminals', () => {

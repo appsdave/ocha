@@ -211,7 +211,7 @@ export class OchaTUI {
     spawnAgent(task, this.agents, (agent) => {
       // Only re-render log if this agent is currently selected
       if (this.agents[this.selectedIdx] === agent) {
-        this._renderLog();
+        this._clearAndRenderLog();
       }
       this._renderAgentList();
       this.screen.render();
@@ -353,7 +353,7 @@ export class OchaTUI {
     this.tickInterval = setInterval(() => {
       if (this.agents.some(a => a.state === 'running')) {
         this._renderAgentList();
-        this._renderLog();
+        this._clearAndRenderLog();
         this.screen.render();
       }
     }, 1000);

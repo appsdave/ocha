@@ -13,9 +13,10 @@ import blessed from 'blessed';
 export function getPromptDialogLayout(screen) {
   const screenHeight = Math.max(0, Math.floor(Number(screen?.height) || 0));
   const overlayHeight = screenHeight > 0
-    ? Math.min(12, Math.max(5, screenHeight - 2), screenHeight)
-    : 12;
-  const textareaTop = overlayHeight >= 8 ? 2 : 1;
+    ? Math.min(14, Math.max(7, screenHeight - 2), screenHeight)
+    : 14;
+  // hint row sits at top:0 (1 line), leave a gap row, textarea starts at 2 minimum
+  const textareaTop = Math.max(2, overlayHeight >= 10 ? 3 : 2);
   const textareaHeight = Math.max(3, overlayHeight - textareaTop - 1);
 
   return {
@@ -68,7 +69,7 @@ export function buildLayout() {
     width: '70%',
     height: 5,
     border: { type: 'line' },
-    style: { border: { fg: 'blue' }, bg: 'black' },
+    style: { border: { fg: 'blue' }, bg: 'black', fg: 'white' },
     label: ' Task ',
     tags: true,
   });
@@ -80,7 +81,7 @@ export function buildLayout() {
     width: '70%',
     height: '100%-8',
     border: { type: 'line' },
-    style: { bg: 'black', border: { fg: 'blue' } },
+    style: { bg: 'black', fg: 'white', border: { fg: 'blue' } },
     label: ' Output ',
     tags: false,
     scrollable: true,
