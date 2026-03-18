@@ -115,10 +115,10 @@ export class OchaTUI {
       this._renderLog();
       this.screen.render();
     };
-    screen.key(['C'], clearDone);
-    // Bind on both panes so vi-mode doesn't swallow the key
-    this.agentList.key(['C'], clearDone);
-    this.logBox.key(['C'], clearDone);
+    // Bind all forms: 'C' (uppercase), 'S-c' (shift+c), and 'x' as fallback
+    screen.key(['C', 'S-c', 'x'], clearDone);
+    this.agentList.key(['C', 'S-c', 'x'], clearDone);
+    this.logBox.key(['C', 'S-c', 'x'], clearDone);
 
     screen.key(['l', 'right'], () => {
       if (this.inputMode) return;
