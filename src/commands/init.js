@@ -29,5 +29,6 @@ export function ochaInit(opts) {
   console.log(chalk.gray('  .ocha/roles/lead.md'));
   console.log(chalk.gray('  .ocha/roles/builder.md'));
   console.log(chalk.gray('  .ocha/roles/reviewer.md'));
-  console.log(chalk.blue('\nRun "ocha cord start -t \'your task\'" to begin.'));
+  console.log(chalk.blue('\nRun "ocha" to launch the interactive TUI, or'));
+  console.log(chalk.blue('"ocha cord start -t \'your task\'" to begin from the CLI.'));
 }

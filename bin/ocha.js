@@ -2,6 +2,9 @@
 import { program } from 'commander';
 import { ochaInit } from '../src/commands/init.js';
 import { ochaDev } from '../src/commands/dev.js';
+import { cordStart } from '../src/commands/cord-start.js';
+import { cordStatus } from '../src/commands/cord-status.js';
+import { cordStop } from '../src/commands/cord-stop.js';
 
 program
   .name('ocha')
@@ -13,6 +16,29 @@ program
   .description('Initialize .ocha/ directory with role prompts and config')
   .option('-y, --yes', 'Reinitialize even if .ocha/ already exists')
   .action(ochaInit);
+
+const cord = program.command('cord').description('Manage a coordinated multi-agent session');
+
+cord
+  .command('start')
+  .description('Decompose a task and run it across parallel agents')
+  .option('-t, --task <task>', 'High-level task description')
+  .option('-b, --base-branch <branch>', 'Base git branch for worktrees', 'main')
+  .option('-n, --max-agents <n>', 'Maximum parallel agents', '3')
+  .option('-r, --repo <path...>', 'Repo path(s) to operate on (defaults to cwd)')
+  .option('--no-merge', 'Skip auto-merge after completion')
+  .action(cordStart);
+
+cord
+  .command('status')
+  .description('Show current session status and task states')
+  .option('-w, --watch', 'Poll and redraw every 3 seconds until done')
+  .action(cordStatus);
+
+cord
+  .command('stop')
+  .description('Stop all running agents and clean up worktrees')
+  .action(cordStop);
 
 program
   .command('dev')
