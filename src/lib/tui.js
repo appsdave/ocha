@@ -21,7 +21,7 @@ import { basename } from 'path';
 import blessed from 'blessed';
 import { buildLayout, openPromptDialog } from './tui-layout.js';
 import { loadPersistedAgents, persistAgents, spawnAgent, killAgent } from './tui-agents.js';
-import { elapsed, badgeText, badgeColor, truncateTask } from './tui-utils.js';
+import { elapsed, badgeText, badgeColor, truncateTask, sortAgentsForDisplay, strikethrough } from './tui-utils.js';
 
 /**
  * Detect which pipeline phases have started/completed from log lines.
@@ -204,14 +204,21 @@ export class OchaTUI {
     const repoName = basename(process.cwd());
     const header = `{bold}{blue-fg}ocha/{/blue-fg}{white-fg}${repoName}{/white-fg}{/bold} {grey-fg}(${total}){/grey-fg}`;
 
-    const lines = this.agents.map((a, i) => {
+    const sorted = sortAgentsForDisplay(this.agents);
+
+    const lines = sorted.map((entry, displayIdx) => {
+      const a = entry.agent;
+      const i = entry.originalIndex;
       const selected  = i === this.selectedIdx;
-      const isLast    = i === this.agents.length - 1;
+      const isLast    = displayIdx === sorted.length - 1;
       const connector = isLast ? '└─' : '├─';
       const indent    = isLast ? '  ' : '│ ';
+      const isDone    = a.state !== 'running';
       const badge     = `${badgeColor(a.state)}${badgeText(a.state)}{/}`;
       const maxName   = 24;
-      const name      = truncateTask(a.task, maxName);
+      const name      = isDone
+        ? strikethrough(truncateTask(a.task, maxName))
+        : truncateTask(a.task, maxName);
       const num       = `{grey-fg}#${String(i + 1).padStart(2, '0')}{/grey-fg}`;
       const time      = a.state === 'running'
         ? `{yellow-fg}${elapsed(a.startedAt)}{/yellow-fg}`
@@ -220,7 +227,7 @@ export class OchaTUI {
         : '{grey-fg}■ stop{/grey-fg}';
       const selOpen   = selected ? '{cyan-fg}{bold}' : '';
       const selClose  = selected ? '{/bold}{/cyan-fg}' : '';
-      const rowStyle  = selected ? '{cyan-fg}' : '{grey-fg}';
+      const rowStyle  = selected ? '{cyan-fg}' : isDone ? '{grey-fg}' : '{grey-fg}';
       const branchDisplay = a.branch
         ? (a.repo ? `${a.repo}/${a.branch}` : a.branch).slice(-34)
         : null;
