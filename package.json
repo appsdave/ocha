@@ -8,7 +8,7 @@
     "ocha": "./bin/ocha.js"
   },
   "scripts": {
-    "test": "node --test src/**/*.test.js"
+    "test": "node --test --test-reporter=./src/lib/test-reporter.js src/**/*.test.js"
   },
   "repository": {
     "type": "git",
