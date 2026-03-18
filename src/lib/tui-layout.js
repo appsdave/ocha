@@ -15,6 +15,9 @@ export function buildLayout() {
     title: 'ocha',
     fullUnicode: true,
     forceUnicode: true,
+    dockBorders: true,
+    autoPadding: false,
+    style: { bg: 'black' },
   });
 
   // ── Left sidebar: agent list ──────────────────────────────────────────────
@@ -25,6 +28,7 @@ export function buildLayout() {
     height: '100%-3',
     border: { type: 'line' },
     style: {
+      bg: 'black',
       border: { fg: 'blue' },
       focus: { border: { fg: 'cyan' } },
     },
@@ -55,7 +59,7 @@ export function buildLayout() {
     width: '70%',
     height: '100%-8',
     border: { type: 'line' },
-    style: { border: { fg: 'blue' } },
+    style: { bg: 'black', border: { fg: 'blue' } },
     label: ' Output ',
     tags: false,
     scrollable: true,
