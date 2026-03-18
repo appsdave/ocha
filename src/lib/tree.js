@@ -5,6 +5,7 @@
  * pipeline to the terminal, updating in-place as agents change state.
  */
 import chalk from 'chalk';
+import { getTerminalWidth, stripAnsi, wrapText } from './ui.js';
 
 const STATE_ICONS = {
   pending:   chalk.gray('⏳'),
@@ -146,6 +147,7 @@ export function finalizeTree() {
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
 function buildLines(node, prefix, isLast) {
+  const termWidth = getTerminalWidth();
   const icon = STATE_ICONS[node.state] || chalk.gray('?');
   const roleColor = {
     coordinator: chalk.blue,
@@ -155,11 +157,28 @@ function buildLines(node, prefix, isLast) {
   }[node.role] || chalk.white;
 
   const connector = isLast ? '└─' : '├─';
-  const line = `${prefix}${prefix ? connector + ' ' : ''}${icon} ${roleColor(`[${node.role}]`)} ${chalk.white(node.label)}`;
+  const prefixStr = prefix ? connector + ' ' : '';
 
-  const lines = [line];
+  // Calculate visible overhead to find available width for the label.
+  // Emoji icons occupy 2 terminal columns; role tag is plain ASCII.
+  const visiblePrefixLen = stripAnsi(prefix).length + stripAnsi(prefixStr).length;
+  const roleTag = `[${node.role}]`;
+  const overhead = visiblePrefixLen + 2 /* emoji */ + 1 /* space */ + roleTag.length + 1 /* space */;
+  const labelWidth = Math.max(10, termWidth - overhead);
+
+  const labelLines = wrapText(node.label, labelWidth);
+  const firstLine = `${prefix}${prefixStr}${icon} ${roleColor(roleTag)} ${chalk.white(labelLines[0])}`;
+  const lines = [firstLine];
+
+  // Continuation lines are indented to align with the label start.
+  if (labelLines.length > 1) {
+    const indent = ' '.repeat(overhead);
+    for (let i = 1; i < labelLines.length; i++) {
+      lines.push(indent + chalk.white(labelLines[i]));
+    }
+  }
+
   const childPrefix = prefix + (isLast ? '   ' : '│  ');
-
   for (let i = 0; i < node.children.length; i++) {
     const child = node.children[i];
     const childIsLast = i === node.children.length - 1;
@@ -170,7 +189,6 @@ function buildLines(node, prefix, isLast) {
 }
 
 function shortLabel(text) {
-  const words = text.trim().split(/\s+/);
-  const short = words.slice(0, 8).join(' ');
-  return words.length > 8 ? short + '…' : short;
+  // Normalise whitespace; wrapping in buildLines handles display width.
+  return text.trim().replace(/\s+/g, ' ');
 }
