@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { startSpinner, updateSpinner, stopSpinner, logWithSpinner, succeedSpinner, failSpinner } from './spinner.js';
+import { startSpinner, updateSpinner, stopSpinner, logWithSpinner, succeedSpinner, failSpinner } from '../../src/lib/spinner.js';
 
 describe('spinner', () => {
   afterEach(() => {

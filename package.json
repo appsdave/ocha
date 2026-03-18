@@ -8,7 +8,7 @@
     "ocha": "./bin/ocha.js"
   },
   "scripts": {
-    "test": "node --test --test-reporter=./src/lib/test-reporter.js src/**/*.test.js",
+    "test": "node --test --test-reporter=./src/lib/test-reporter.js test/**/*.test.js",
     "lint": "eslint src/ bin/",
     "lint:fix": "eslint src/ bin/ --fix",
     "format": "prettier --write 'src/**/*.js' 'bin/**/*.js'",

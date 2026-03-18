@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { getPromptDialogLayout } from './tui-layout.js';
+import { getPromptDialogLayout } from '../../src/lib/tui-layout.js';
 
 describe('getPromptDialogLayout', () => {
   it('keeps the full-size dialog on taller terminals', () => {

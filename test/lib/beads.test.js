@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { isBeadsInitialized, createBeadsIssue, claimBeadsIssue, closeBeadsIssue, getReadyIssues, ensureDoltServer, pushBeadsData } from './beads.js';
+import { isBeadsInitialized, createBeadsIssue, claimBeadsIssue, closeBeadsIssue, getReadyIssues, ensureDoltServer, pushBeadsData } from '../../src/lib/beads.js';
 
 describe('beads integration', () => {
   describe('isBeadsInitialized', () => {

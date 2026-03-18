@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { sortAgentsForDisplay, strikethrough, slugify, elapsed, badgeText, badgeColor, truncateTask } from './tui-utils.js';
+import { sortAgentsForDisplay, strikethrough, slugify, elapsed, badgeText, badgeColor, truncateTask } from '../../src/lib/tui-utils.js';
 
 describe('sortAgentsForDisplay', () => {
   it('returns empty array for empty input', () => {

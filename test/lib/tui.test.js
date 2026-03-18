@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clearCompletedAgents } from './tui.js';
+import { clearCompletedAgents } from '../../src/lib/tui.js';
 
 function agent(id, task, state = 'running') {
   return {

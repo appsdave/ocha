@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateBranchName, validateMaxAgents, validateTask, validatePriority } from './validate.js';
+import { validateBranchName, validateMaxAgents, validateTask, validatePriority } from '../../src/lib/validate.js';
 
 describe('validateBranchName', () => {
   it('accepts a valid branch name', () => {

@@ -5,7 +5,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 
-import { enhanceTask } from './enhance.js';
+import { enhanceTask } from '../../src/lib/enhance.js';
 
 /** Create a unique temp directory for each test suite run */
 const TEST_ROOT = join(tmpdir(), 'ocha-enhance-test-' + randomBytes(4).toString('hex'));

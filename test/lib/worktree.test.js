@@ -12,7 +12,7 @@ import {
   listWorktrees,
   getWorktreeForBranch,
   cleanOchaWorktrees,
-} from './worktree.js';
+} from '../../src/lib/worktree.js';
 
 /** Unique temp dir for the test git repo */
 const REPO_DIR = join(tmpdir(), 'ocha-worktree-test-' + randomBytes(4).toString('hex'));

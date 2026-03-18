@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, rmSync, existsSync } from 'fs';
 import { dirname } from 'path';
 
-import { reportIssue, getIssues, clearIssues } from './issues.js';
-import { ISSUES_FILE } from './paths.js';
+import { reportIssue, getIssues, clearIssues } from '../../src/lib/issues.js';
+import { ISSUES_FILE } from '../../src/lib/paths.js';
 
 /** Ensure .ocha/ exists and wipe issues.json before/after each test */
 beforeEach(() => {

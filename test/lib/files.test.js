@@ -17,7 +17,7 @@ import {
   pathExists,
   listFiles,
   fileInfo,
-} from './files.js';
+} from '../../src/lib/files.js';
 
 /** Create a unique temp directory for each test suite run */
 const TEST_ROOT = join(tmpdir(), 'ocha-files-test-' + randomBytes(4).toString('hex'));

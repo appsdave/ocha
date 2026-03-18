@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { shellEscape, git, gitSafe, exec, execSafe, shell, shellSafe } from './exec.js';
+import { shellEscape, git, gitSafe, exec, execSafe, shell, shellSafe } from '../../src/lib/exec.js';
 
 describe('shellEscape', () => {
   it('wraps a simple string in single quotes', () => {

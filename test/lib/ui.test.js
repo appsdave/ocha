@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { stripAnsi, wrapText, progressBar, badge } from './ui.js';
+import { stripAnsi, wrapText, progressBar, badge } from '../../src/lib/ui.js';
 
 describe('stripAnsi', () => {
   it('passes plain strings through unchanged', () => {
