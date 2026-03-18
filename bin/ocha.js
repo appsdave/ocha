@@ -57,11 +57,12 @@ program
     const { fileURLToPath } = await import('url');
     const chalk = (await import('chalk')).default;
 
+    const OCHA_REPO = 'https://github.com/appsdave/ocha.git';
     const installDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
     console.log(chalk.blue('🔄 Updating ocha…'));
     try {
       const before = execSync('git rev-parse HEAD', { cwd: installDir, encoding: 'utf-8' }).trim();
-      const out = execSync('git pull origin main', { cwd: installDir, encoding: 'utf-8' }).trim();
+      const out = execSync(`git pull ${OCHA_REPO} main`, { cwd: installDir, encoding: 'utf-8' }).trim();
       const after = execSync('git rev-parse HEAD', { cwd: installDir, encoding: 'utf-8' }).trim();
       if (before === after) {
         console.log(chalk.green('✅ Already up to date.'));
