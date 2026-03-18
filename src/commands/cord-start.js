@@ -32,6 +32,11 @@ export async function cordStart(opts) {
     if (!task) process.exit(0);
   }
 
+  // Resolve repo dirs — default to cwd if none given
+  const repoDirs = (opts.repo && opts.repo.length > 0)
+    ? opts.repo.map(r => resolve(r))
+    : [resolve(process.cwd())];
+
   const maxAgentsLabel = parseInt(opts.maxAgents, 10) === 1 ? '1 agent' : `${opts.maxAgents} agents (parallel)`;
   // Show full task, wrapped at 47 chars per line
   const taskLines = [];
@@ -47,6 +52,10 @@ export async function cordStart(opts) {
   }
   console.log(`│  ${chalk.dim('Branch')} ${opts.baseBranch}`);
   console.log(`│  ${chalk.dim('Agents')} ${maxAgentsLabel}`);
+  if (repoDirs.length > 1) {
+    console.log(`│  ${chalk.dim('Repos ')} ${repoDirs.length} repos`);
+    for (const r of repoDirs) console.log(`│    ${chalk.dim('→')} ${r}`);
+  }
   console.log(chalk.bold.blue('└' + '─'.repeat(49) + '┘'));
 
   // Auto-init if needed
@@ -93,7 +102,8 @@ export async function cordStart(opts) {
   // Hand off to coordinator — it handles enhance → lead → builders → reviewers
   await runCoordinator(task, {
     ...opts,
-    projectDir: resolve(process.cwd()),
+    projectDir: repoDirs[0],
+    repoDirs,
     noMerge: opts.merge === false,
   });
 }

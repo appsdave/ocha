@@ -51,13 +51,14 @@ export async function runCoordinator(task, opts) {
   const maxAgents = parseInt(opts.maxAgents, 10);
   const baseBranch = opts.baseBranch;
   const projectDir = opts.projectDir || process.cwd();
+  const repoDirs = (opts.repoDirs && opts.repoDirs.length > 0) ? opts.repoDirs : [projectDir];
 
   // ── Step 1: Coordinator enhances the prompt ──────────────────────────────
   initTree(task);
 
   let enhancedTask = task;
   {
-    enhancedTask = await enhanceTask(task, projectDir);
+    enhancedTask = await enhanceTask(task, projectDir, repoDirs.slice(1));
     if (enhancedTask !== task) {
       console.log(chalk.green('✔ 🧠 Prompt enhanced with project context'));
       // Show the raw task portion (before the --- context block)
@@ -94,16 +95,19 @@ export async function runCoordinator(task, opts) {
       clearInterval(leadTimer);
       setLeadNode('failed', 'Planning failed — using fallback');
       failSpinner(`👔 Lead agent failed: ${err.message} — falling back to single task`);
-      tasks = [{ description: enhancedTask, role: 'builder', branch: 'ocha/main-task', displayDesc: task }];
+      tasks = [{ description: enhancedTask, role: 'builder', branch: 'ocha/main-task', displayDesc: task, repoDir: repoDirs[0] }];
     }
   }
 
-  // ── Step 3: Write initial status ─────────────────────────────────────────
+  // ── Step 3: Assign repoDir round-robin to each task ─────────────────────
+  tasks.forEach((t, i) => { if (!t.repoDir) t.repoDir = repoDirs[i % repoDirs.length]; });
+
+  // ── Step 4: Write initial status ─────────────────────────────────────────
   const status = createInitialStatus(enhancedTask, tasks);
 
   console.log(chalk.blue(`\n🎯 Coordinator dispatching ${status.tasks.length} builder(s) (max ${maxAgents} parallel)\n`));
 
-  // ── Step 4: Rolling concurrency builder loop ──────────────────────────────
+  // ── Step 5: Rolling concurrency builder loop ──────────────────────────────
   const pending = status.tasks.filter(t => t.state === 'pending');
   let active = 0;
   let idx = 0;
@@ -126,7 +130,7 @@ export async function runCoordinator(task, opts) {
 
   stopSpinner();
 
-  // ── Step 5: Wrap up ───────────────────────────────────────────────────────
+  // ── Step 6: Wrap up ───────────────────────────────────────────────────────
   const finalStatus = readStatus() || status;
 
   setCoordinatorState('completed');
@@ -152,7 +156,8 @@ async function runBuilderWithReview(task, status, baseBranch) {
   const cleanDesc = task.displayDesc ? shortDesc(task.displayDesc) : shortDesc(task.description.split('\n')[0]);
   setBuilderNode(task.id, 'pending', cleanDesc);
 
-  const worktreePath = createWorktree(task.branch, baseBranch);
+  const taskRepoDir = task.repoDir || process.cwd();
+  const worktreePath = createWorktree(task.branch, baseBranch, taskRepoDir);
   task.state = 'running';
   writeStatus(status);
   setBuilderNode(task.id, 'running', cleanDesc);
@@ -223,7 +228,7 @@ async function runBuilderWithReview(task, status, baseBranch) {
         : `⚠️ Reviewer flagged issues — needs manual review.\n\nTask: ${cleanDesc}`;
       const prOutput = execSync(
         `gh pr create --base ${baseBranch} --head ${task.branch} --title "${prTitle}" --body "${prBody}"`,
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+        { cwd: taskRepoDir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
       );
       // gh pr create prints the URL as the last line
       const prUrl = prOutput.trim().split('\n').filter(l => l.startsWith('http')).pop()
@@ -234,7 +239,7 @@ async function runBuilderWithReview(task, status, baseBranch) {
     } catch (prErr) {
       // PR may already exist — try to get the URL
       try {
-        const prUrl = execSync(`gh pr view ${task.branch} --json url -q .url`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+        const prUrl = execSync(`gh pr view ${task.branch} --json url -q .url`, { cwd: taskRepoDir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
         task.prUrl = prUrl;
         writeStatus(status);
         console.log(chalk.cyan(`  🔗 PR already exists: ${prUrl}`));
@@ -257,7 +262,8 @@ function showDiffStats(status, baseBranch) {
   for (const task of completed) {
     if (task.merged) continue;
     try {
-      const diff = execSync(`git diff ${baseBranch}..${task.branch} --stat`, { encoding: 'utf-8' }).trim();
+      const repoDir = task.repoDir || process.cwd();
+      const diff = execSync(`git diff ${baseBranch}..${task.branch} --stat`, { cwd: repoDir, encoding: 'utf-8' }).trim();
       if (diff) {
         console.log(chalk.blue(`\n  📋 Changes in ${task.branch}:`));
         console.log(chalk.gray(diff.split('\n').map(l => `     ${l}`).join('\n')));

@@ -26,6 +26,7 @@ cord
   .option('-b, --base-branch <branch>', 'Base branch to create worktrees from', 'main')
   .option('--max-agents <n>', 'Maximum parallel agents', '3')
   .option('--no-merge', 'Skip auto-merge after completion')
+  .option('-r, --repo <path>', 'Repo path(s) to target — repeat for multiple repos', (v, acc) => { acc.push(v); return acc; }, [])
   .action(cordStart);
 
 cord

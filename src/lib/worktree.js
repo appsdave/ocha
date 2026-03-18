@@ -15,29 +15,31 @@ import { WORKTREES_DIR } from './paths.js';
  *
  * @param {string} branch - Branch name for the worktree (e.g. "ocha/task-1").
  * @param {string} [baseBranch='main'] - Base branch to create the new branch from.
+ * @param {string} [repoDir] - Repo root to run git commands in (defaults to cwd).
  * @returns {string} Absolute path to the created worktree directory.
  */
-export function createWorktree(branch, baseBranch = 'main') {
-  ensureDir(WORKTREES_DIR);
-  const worktreePath = resolve(WORKTREES_DIR, branch.replace(/\//g, '-'));
+export function createWorktree(branch, baseBranch = 'main', repoDir) {
+  // Each repo gets its own worktrees dir: <repoDir>/.ocha-worktrees/
+  const worktreesDir = repoDir ? resolve(repoDir, '.ocha-worktrees') : WORKTREES_DIR;
+  ensureDir(worktreesDir);
+  const worktreePath = resolve(worktreesDir, branch.replace(/\//g, '-'));
+  const gitOpts = { stdio: 'pipe', ...(repoDir ? { cwd: repoDir } : {}) };
 
   // Prune stale worktree registrations before attempting to create
-  try { execSync('git worktree prune', { stdio: 'pipe' }); } catch (_) {}
+  try { execSync('git worktree prune', gitOpts); } catch (_) {}
 
   if (pathExists(worktreePath)) return worktreePath;
 
   try {
-    execSync(`git worktree add -b ${branch} "${worktreePath}" ${baseBranch}`, {
-      stdio: 'pipe',
-    });
+    execSync(`git worktree add -b ${branch} "${worktreePath}" ${baseBranch}`, gitOpts);
   } catch (err) {
     // Branch already exists — delete it and recreate fresh from baseBranch
-    try { execSync(`git branch -D ${branch}`, { stdio: 'pipe' }); } catch (_) {}
+    try { execSync(`git branch -D ${branch}`, gitOpts); } catch (_) {}
     try {
-      execSync(`git worktree add -b ${branch} "${worktreePath}" ${baseBranch}`, { stdio: 'pipe' });
+      execSync(`git worktree add -b ${branch} "${worktreePath}" ${baseBranch}`, gitOpts);
     } catch (_) {
       // Last resort: reuse existing branch as-is
-      execSync(`git worktree add "${worktreePath}" ${branch}`, { stdio: 'pipe' });
+      execSync(`git worktree add "${worktreePath}" ${branch}`, gitOpts);
     }
   }
   return worktreePath;

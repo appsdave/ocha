@@ -18,12 +18,17 @@ import { execSync } from 'child_process';
  * @param {string} projectDir - The project root directory.
  * @returns {Promise<string>} The enhanced task description.
  */
-export async function enhanceTask(task, projectDir) {
+export async function enhanceTask(task, projectDir, extraRepoDirs = []) {
   try {
-    const context = gatherProjectContext(projectDir);
-    if (!context) return task;
-
-    return `## Task\n${task}\n\n---\n## Project Context (auto-gathered by ocha coordinator)\n\n${context}`;
+    const allDirs = [projectDir, ...extraRepoDirs.filter(d => d !== projectDir)];
+    const contexts = [];
+    for (const dir of allDirs) {
+      const ctx = gatherProjectContext(dir);
+      if (ctx) contexts.push(`### Repo: ${dir}\n\n${ctx}`);
+    }
+    if (!contexts.length) return task;
+    const combined = contexts.join('\n\n---\n\n');
+    return `## Task\n${task}\n\n---\n## Project Context (auto-gathered by ocha coordinator)\n\n${combined}`;
   } catch {
     return task;
   }
