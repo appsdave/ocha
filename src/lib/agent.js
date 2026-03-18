@@ -8,6 +8,7 @@ import { resolve } from 'path';
 import { readJSON, readText, pathExists } from './files.js';
 import { OCHA_DIR } from './paths.js';
 import { updateTask } from './status.js';
+import { reportIssue } from './issues.js';
 import chalk from 'chalk';
 import { logWithSpinner } from './spinner.js';
 
@@ -102,6 +103,10 @@ export function spawnAgent(task, worktreePath, role) {
         }
       }
 
+      if (code !== 0) {
+        reportIssue(task.id, 'error', `Agent exited with code ${code}`, result?.error ?? undefined);
+      }
+
       updateTask(task.id, {
         state: code === 0 ? 'completed' : 'failed',
         completedAt: new Date().toISOString(),
@@ -112,6 +117,7 @@ export function spawnAgent(task, worktreePath, role) {
     });
     proc.on('error', (err) => {
       runningAgents.delete(task.id);
+      reportIssue(task.id, 'error', `Agent process error: ${err.message}`);
       updateTask(task.id, {
         state: 'failed',
         completedAt: new Date().toISOString(),
