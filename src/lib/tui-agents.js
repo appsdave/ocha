@@ -137,7 +137,7 @@ export function spawnAgent(task, agents, onUpdate) {
       // Skip lines that are only ANSI escape sequences (no readable content)
       const stripped = trimmed.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '').trim();
       if (!stripped) continue;
-      appendLine(`[err] ${line}`);
+      appendLine(line);
     }
   });
 
