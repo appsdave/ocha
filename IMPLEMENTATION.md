@@ -81,12 +81,12 @@ Kills all running agent processes (by PID from status file), removes all active 
 ### `ocha dev -t '<task>' [--base <branch>] [--no-merge]`
 Runs a single Junie agent in an isolated worktree specifically for making changes to the ocha source code itself. Prevents the running ocha process from being modified mid-execution.
 
-Flow: auth check → create worktree on `ocha-dev-session` branch → spawn Junie `--brave` → auto-merge back into base → cleanup.
+Flow: auth check → create worktree on `ocha-dev-session` branch → spawn Junie `--brave` → push branch → merge back into base branch (unless `--no-merge`) → cleanup worktree.
 
 ---
 
 ### `ocha self-update`
-Runs `git pull origin main && npm install` from the install directory (`~/.ocha`) to update ocha to the latest version.
+Runs `git pull --rebase` from the install directory (`~/.ocha`), then `npm install --production` and re-links the global `ocha` command. Prints a summary of commits added since the previous version.
 
 ---
 
@@ -95,7 +95,7 @@ Runs `git pull origin main && npm install` from the install directory (`~/.ocha`
 ```
 ocha/
 ├── bin/
-│   └── ocha.js              # CLI entry point (Commander.js)
+│   └── ocha.js              # CLI entry point (Commander.js); launches TUI when run bare
 ├── src/
 │   ├── commands/
 │   │   ├── init.js          # ocha init
@@ -105,14 +105,24 @@ ocha/
 │   │   └── dev.js           # ocha dev
 │   └── lib/
 │       ├── agent.js         # Spawn Junie agents, auth check, git push
-│       ├── coordinator.js   # Task loop, lead review, merge/cleanup
+│       ├── coordinator.js   # Task loop, batched agent concurrency
 │       ├── decompose.js     # Task decomposition via Junie
-│       ├── worktree.js      # git worktree create/remove/list/lookup/clean
-│       ├── status.js        # Read/write .ocha/status.json
-│       ├── roles.js         # Role prompt templates
-│       ├── paths.js         # Shared path constants
+│       ├── enhance.js       # Prompt enhancement with project context
 │       ├── files.js         # Safe file I/O utilities
-│       └── spinner.js       # CLI spinner wrapper
+│       ├── lead.js          # Lead agent runner (produces task plan JSON)
+│       ├── paths.js         # Shared path constants
+│       ├── prompt.js        # Interactive multi-line task prompt
+│       ├── roles.js         # Role prompt templates
+│       ├── spinner.js       # CLI spinner wrapper
+│       ├── status.js        # Read/write .ocha/status.json
+│       ├── test-reporter.js # Custom Node.js test reporter
+│       ├── tree.js          # Live agent progress tree renderer
+│       ├── tui.js           # OchaTUI class — main TUI controller
+│       ├── tui-agents.js    # TUI agent spawn/kill/persist helpers
+│       ├── tui-layout.js    # blessed screen layout and prompt dialog
+│       ├── tui-utils.js     # TUI display utilities (elapsed, badges, truncation)
+│       ├── ui.js            # Shared UI helper utilities
+│       └── worktree.js      # git worktree create/remove/list/lookup/clean
 ├── install.sh               # One-command installer
 └── .ocha/                   # Per-project config (gitignored)
     ├── status.json
@@ -188,6 +198,47 @@ when constructing the directory name, so `ocha/task-1` maps to `.ocha-worktrees/
 - `removeWorktree` catches git errors and returns `false` instead of throwing, so callers
   can log warnings without crashing the session loop.
 - `cleanOchaWorktrees` prunes stale git registrations before and after bulk removal.
+
+---
+
+## TUI (Interactive Dashboard)
+
+Running `ocha` with no arguments launches the interactive TUI — a persistent, btop/lazygit-style terminal dashboard.
+
+### Layout
+
+```
+┌─ Agents ──────┬─ Log ──────────────────────────────┐
+│ [agent list]  │ [selected agent live log]           │
+└───────────────┴─────────────────────────────────────┘
+[ hint bar                                            ]
+[ status bar                                          ]
+```
+
+### Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `n` | Open new-task prompt |
+| `↑` / `↓` | Navigate agent list |
+| `K` | Kill selected agent |
+| `l` / `→` | Focus log pane |
+| `h` / `←` | Focus agent list |
+| `C` / `Shift+C` / `x` | Clear completed agents |
+| `q` / `Ctrl+C` | Quit (confirms if agents running) |
+
+### TUI modules
+
+| Module | Responsibility |
+|--------|----------------|
+| `tui.js` | `OchaTUI` class — screen lifecycle, key bindings, render loop |
+| `tui-layout.js` | Builds the blessed screen, panels, and new-task prompt dialog |
+| `tui-agents.js` | Spawns agents via `--tui-agent` mode, kills them, persists state across restarts |
+| `tui-utils.js` | Display helpers: elapsed time, status badges, task truncation |
+
+### `--tui-agent` internal mode
+
+When the TUI spawns a task it re-invokes `ocha --tui-agent --task <task> --branch <branch>`, which runs a single `cord start` with `maxAgents=1` and streams output back to the TUI log pane.
 
 ---
 

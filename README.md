@@ -9,8 +9,8 @@ Ocha turns a single Junie session into a multi-agent team. A high-level task is 
 ```
 ┌──────────────────────────────────────────────┐
 │                  ocha CLI                    │
-│       init · cord start · cord status        │
-│                cord stop                     │
+│  TUI (default) · init · cord start · status  │
+│         cord stop · dev · self-update        │
 └──────────┬───────────────┬───────────────────┘
            │               │
      ┌─────▼──────┐  ┌─────▼──────┐
@@ -70,13 +70,16 @@ ocha self-update
 cd /path/to/your/project
 ocha init
 
-# 2. Start a coordinated multi-agent session
+# 2. Launch the interactive TUI (default when no command given)
+ocha
+
+# 3. Or start a coordinated multi-agent session from the CLI
 ocha cord start -t "Implement user authentication with OAuth2"
 
-# 3. Check progress while agents are running
+# 4. Check progress while agents are running
 ocha cord status
 
-# 4. Stop the session and clean up
+# 5. Stop the session and clean up
 ocha cord stop
 ```
 
@@ -102,6 +105,8 @@ ocha init
 ```
 
 If `.ocha/` already exists, the command will warn you to remove it first or run `ocha cord stop`.
+
+Use `--yes` to reinitialize anyway (refreshes role prompts after an ocha update).
 
 ### `ocha cord start`
 
@@ -178,10 +183,18 @@ ocha cord stop
 Runs a single Junie agent in an isolated worktree to make changes to the ocha source code itself, preventing the running ocha process from being modified mid-execution.
 
 ```bash
-ocha dev -t "<task>"
+ocha dev -t "<task>" [-b <branch>] [--no-merge]
 ```
 
-Flow: auth check → create worktree on `ocha-dev-session` branch → spawn Junie `--brave` → push branch + open PR → cleanup.
+**Options:**
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-t, --task <task>` | Task description (required) | — |
+| `-b, --base-branch <branch>` | Base branch to create worktree from | `main` |
+| `--no-merge` | Skip auto-merge after completion | — |
+
+Flow: auth check → create worktree on `ocha-dev-session` branch → spawn Junie `--brave` → push branch → merge back into base branch (unless `--no-merge`) → cleanup worktree.
 
 ### `ocha self-update`
 
@@ -191,7 +204,33 @@ Updates ocha to the latest version by pulling from the remote and reinstalling d
 ocha self-update
 ```
 
-Runs `git pull origin main && npm install` from the install directory (`~/.ocha`).
+Runs `git pull --rebase` from the install directory (`~/.ocha`), then `npm install --production` and re-links the global `ocha` command. Prints a summary of what changed between the previous and new version.
+
+### `ocha` (no arguments)
+
+Launches the interactive TUI — a persistent, btop/lazygit-style dashboard for managing agents.
+
+**TUI layout:**
+
+```
+┌─ Agents ──────┬─ Log ──────────────────────────────┐
+│ [agent list]  │ [selected agent live log]           │
+└───────────────┴─────────────────────────────────────┘
+[ hint bar                                            ]
+[ status bar                                          ]
+```
+
+**Keyboard shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `n` | Open new-task prompt |
+| `↑` / `↓` | Navigate agent list |
+| `K` | Kill selected agent |
+| `l` / `→` | Focus log pane |
+| `h` / `←` | Focus agent list |
+| `C` / `Shift+C` / `x` | Clear completed agents |
+| `q` / `Ctrl+C` | Quit (confirms if agents are running) |
 
 ## Agent Roles
 
@@ -211,7 +250,7 @@ Role prompts are stored in `.ocha/roles/` and are automatically prepended to eac
 ```
 ocha/
 ├── bin/
-│   └── ocha.js              # CLI entry point (commander-based)
+│   └── ocha.js              # CLI entry point (Commander.js); launches TUI when run bare
 ├── src/
 │   ├── commands/
 │   │   ├── init.js           # ocha init command
@@ -220,7 +259,7 @@ ocha/
 │   │   ├── cord-stop.js      # ocha cord stop command
 │   │   └── dev.js            # ocha dev command
 │   └── lib/
-│       ├── agent.js          # Agent spawning and lifecycle management
+│       ├── agent.js          # Agent spawning, auth check, git push
 │       ├── coordinator.js    # Batched parallel agent coordination
 │       ├── decompose.js      # Task decomposition via Junie AI
 │       ├── enhance.js        # Prompt enhancement with project context
@@ -231,7 +270,13 @@ ocha/
 │       ├── roles.js          # Agent role prompt definitions
 │       ├── spinner.js        # CLI spinner wrapper
 │       ├── status.js         # Session status read/write/update
+│       ├── test-reporter.js  # Custom Node.js test reporter
 │       ├── tree.js           # Live agent progress tree renderer
+│       ├── tui.js            # OchaTUI class — main TUI controller
+│       ├── tui-agents.js     # TUI agent spawn/kill/persist helpers
+│       ├── tui-layout.js     # blessed screen layout and prompt dialog
+│       ├── tui-utils.js      # TUI display utilities (elapsed, badges, truncation)
+│       ├── ui.js             # Shared UI helper utilities
 │       └── worktree.js       # Git worktree create/remove/list
 ├── install.sh               # One-command installer
 ├── package.json
@@ -261,4 +306,4 @@ ocha/
 ISC
 
 ## Changelog
-- v1.0.0: Initial release with cord-start, cord-status, cord-stop, dev, init, and self-update commands
+- v1.0.0: Initial release with cord-start, cord-status, cord-stop, dev, init, and self-update commands; interactive TUI launched when `ocha` is run with no arguments
