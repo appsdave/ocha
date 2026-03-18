@@ -47,27 +47,27 @@ Use `--yes` to reinitialize if `.ocha/` already exists (refreshes prompts after 
 
 ---
 
-### `ocha cord start -t '<task>' [--base <branch>] [--no-merge]`
+### `ocha cord start [-t '<task>'] [-b <branch>] [--max-agents <n>] [-r <path>] [--no-merge]`
 Main orchestration command. Full flow:
 
 1. Initializes `.ocha/` if not present
-2. Checks Junie authentication
-3. Decomposes the task into subtasks (Junie runs in a temp dir — no project changes)
-4. Lead agent reviews and refines each subtask prompt
-5. For each subtask (up to 3 in parallel):
+2. Validates git repo and base branch
+3. Checks Junie authentication
+4. Enhances the prompt with project context (git log, source snippets, Junie guidelines)
+5. Lead agent analyzes the project and produces a structured task plan
+6. For each subtask (up to `--max-agents` in parallel, default 3):
    - Creates a git worktree on a new branch (`ocha/<task-slug>`)
-   - Spawns a builder agent (`junie --brave --project <worktree>`)
+   - Spawns a builder agent (`junie --brave --project <worktree>`), with up to 2 retries on failure
    - Spawns a reviewer agent in the same worktree
-   - On pass: auto-merges branch into base, pushes to origin, removes worktree
-   - On conflict: falls back to `git merge -X theirs`, then creates a PR via `gh`
-6. Prints a session summary
+   - Pushes the branch to origin and creates a PR via `gh`
+7. Prints a session summary with PR links
 
-Supports comma-separated tasks: `-t 'task one, task two, task three'`
+If `-t` is omitted, an interactive multi-line prompt opens. Supports `-r` to target multiple repos.
 
 ---
 
-### `ocha cord status`
-Reads `.ocha/status.json` and displays current session progress — running, completed, and failed tasks.
+### `ocha cord status [-w]`
+Reads `.ocha/status.json` and displays current session progress — running, completed, and failed tasks. Use `-w` / `--watch` to poll and redraw every 3 seconds until the session ends.
 
 ---
 
@@ -141,7 +141,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 - Node.js v18+
 - Git
 - Junie CLI (installed and authenticated)
-- `gh` CLI (for PR creation fallback)
+- `gh` CLI (for PR creation)
 
 ---
 
@@ -150,7 +150,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 - **Worktree isolation** — every agent gets its own `git worktree` so agents never conflict with each other or the running ocha process
 - **Brave mode** — all agents run with `--brave` so they don't pause for confirmations
 - **Coordinator doesn't code** — the decompose step runs in a temp directory; only builder/reviewer agents touch project files
-- **Auto-merge with fallback** — normal merge first, then `-X theirs` on conflict, then PR creation as last resort
-- **Stash before merge** — local uncommitted changes are stashed before merging agent branches to prevent conflicts
+- **PR-based workflow** — every completed branch is pushed to origin and a PR is opened via `gh`; no auto-merge
+- **Builder retries** — each builder agent is retried up to 2 times on failure before marking the task failed
 - **Git validation** — `cord start` checks for a valid git repo and base branch before doing anything, with clear fix instructions if not set up
 - **npm link symlink** — the global `ocha` command is a symlink to the source directory, so all changes are live immediately without reinstalling

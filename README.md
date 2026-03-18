@@ -9,13 +9,13 @@ Ocha turns a single Junie session into a multi-agent team. A high-level task is 
 ```
 ┌──────────────────────────────────────────────┐
 │                  ocha CLI                    │
-│       init · cord start · cord status        │
-│                cord stop                     │
+│  init · cord start · cord status · cord stop │
+│              dev · self-update               │
 └──────────┬───────────────┬───────────────────┘
            │               │
      ┌─────▼──────┐  ┌─────▼──────┐
-     │  Decompose  │  │ Coordinator│
-     │  (Junie AI) │  │   Loop     │
+     │  Enhance   │  │    Lead    │
+     │  (context) │  │  (planner) │
      └─────┬──────┘  └─────┬──────┘
            │               │
      ┌─────▼───────────────▼────────┐
@@ -24,15 +24,15 @@ Ocha turns a single Junie session into a multi-agent team. A high-level task is 
      └─────┬───────────────┬────────┘
            │               │
      ┌─────▼──────┐  ┌────▼───────┐
-     │  Worktree   │  │  Status    │
-     │  Manager    │  │  Tracker   │
+     │  Builder   │  │  Reviewer  │
+     │  (worktree)│  │  (checker) │
      └─────┬──────┘  └────┬───────┘
            │               │
      ┌─────▼───────────────▼────────┐
      │        Git Repository        │
-     │   main ← ocha/task-1         │
-     │        ← ocha/task-2         │
-     └─────────────────────────────-┘
+     │   main ← PR: ocha/task-1     │
+     │        ← PR: ocha/task-2     │
+     └──────────────────────────────┘
 ```
 
 ## Prerequisites
@@ -40,6 +40,7 @@ Ocha turns a single Junie session into a multi-agent team. A high-level task is 
 - [Node.js](https://nodejs.org/) (v18+)
 - [Git](https://git-scm.com/)
 - [Junie CLI](https://www.jetbrains.com/junie/) (installed and authenticated)
+- [gh CLI](https://cli.github.com/) (for pull request creation)
 
 ## Installation
 
@@ -55,6 +56,12 @@ git clone git@github.com:appsdave/ocha.git /tmp/ocha-install && bash /tmp/ocha-i
 git clone git@github.com:appsdave/ocha.git ~/.ocha
 cd ~/.ocha && npm install
 ln -sf ~/.ocha/bin/ocha.js ~/.local/bin/ocha
+```
+
+Add to PATH if needed:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
 **Update to latest:**
@@ -80,6 +87,12 @@ ocha cord status
 ocha cord stop
 ```
 
+Or just run `ocha` with no arguments for an interactive multi-line prompt:
+
+```bash
+ocha
+```
+
 ## Commands
 
 ### `ocha init`
@@ -87,8 +100,14 @@ ocha cord stop
 Initializes the `.ocha/` directory in the current project with role prompt files for each agent type.
 
 ```bash
-ocha init
+ocha init [-y]
 ```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `-y, --yes` | Reinitialize even if `.ocha/` already exists (refreshes prompts after an ocha update) |
 
 **What it creates:**
 
@@ -101,46 +120,59 @@ ocha init
     └── reviewer.md
 ```
 
-If `.ocha/` already exists, the command will warn you to remove it first or run `ocha cord stop`.
-
 ### `ocha cord start`
 
 Decomposes a high-level task into subtasks and spawns parallel Junie agents to work on them.
 
 ```bash
-ocha cord start -t <task> [-b <branch>] [--max-agents <n>]
+ocha cord start [-t <task>] [-b <branch>] [--max-agents <n>] [-r <path>] [--no-merge]
 ```
+
+If `-t` is omitted, an interactive multi-line prompt opens so you can type your task directly.
 
 **Options:**
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-t, --task <task>` | High-level task description (required) | — |
+| `-t, --task <task>` | High-level task description (omit for interactive prompt) | — |
 | `-b, --base-branch <branch>` | Base branch to create worktrees from | `main` |
 | `--max-agents <n>` | Maximum number of parallel agents | `3` |
+| `-r, --repo <path>` | Repo path(s) to target — repeat for multiple repos | cwd |
+| `--no-merge` | Skip auto-merge after completion | — |
 
 **How it works:**
 
 1. Auto-initializes `.ocha/` if not present
-2. Uses Junie to decompose the task into independent subtasks (with a 2-minute timeout)
-3. Falls back to a single builder task if decomposition fails
-4. Creates a `status.json` to track all task progress
-5. Spawns agents in batches (up to `--max-agents` at a time)
-6. Each agent gets its own git worktree and branch (prefixed with `ocha/`)
-7. Prints a summary with merge commands when all agents complete
+2. Validates the git repository and base branch
+3. Checks Junie authentication
+4. **Enhances** the prompt with project context (git log, source snippets, Junie guidelines)
+5. **Lead agent** analyzes the project and produces a structured task plan
+6. Falls back to a single builder task if the lead agent fails
+7. Writes `.ocha/status.json` to track all task progress
+8. Spawns builder agents in batches (up to `--max-agents` at a time), each in its own git worktree on a new branch (`ocha/<task-slug>`)
+9. Each builder is retried up to 2 times on failure
+10. A **reviewer agent** runs in the same worktree after each builder completes
+11. The branch is pushed to origin and a **pull request** is created via `gh`
+12. Prints a session summary with PR links when all agents complete
 
 ### `ocha cord status`
 
 Displays the current session status including all tasks and their states.
 
 ```bash
-ocha cord status
+ocha cord status [-w]
 ```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `-w, --watch` | Poll and redraw every 3 seconds until the session ends |
 
 **Output shows:**
 - Session task description and state
 - Each subtask's ID, role, state (⏳ pending / 🔄 running / ✅ completed / ❌ failed)
-- Branch names and worktree paths
+- Branch names and PR links
 
 ### `ocha cord stop`
 
@@ -158,6 +190,32 @@ ocha cord stop
 4. Removes the `.ocha-worktrees/` and `.ocha/` directories
 5. Marks the session as stopped
 
+### `ocha dev`
+
+Runs a single Junie agent in an isolated worktree. Useful for making changes to the ocha source code itself without the running process being modified mid-execution.
+
+```bash
+ocha dev -t <task> [-b <branch>] [--no-merge]
+```
+
+**Options:**
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-t, --task <task>` | Task description (required) | — |
+| `-b, --base-branch <branch>` | Base branch | `main` |
+| `--no-merge` | Skip auto-merge after completion | — |
+
+### `ocha self-update`
+
+Updates ocha to the latest version.
+
+```bash
+ocha self-update
+```
+
+Runs `git pull origin main && npm install` from the install directory (`~/.ocha`).
+
 ## Agent Roles
 
 Ocha supports four agent roles, each with a specialized prompt:
@@ -165,7 +223,7 @@ Ocha supports four agent roles, each with a specialized prompt:
 | Role | Description |
 |------|-------------|
 | **coordinator** | Decomposes tasks, spawns sub-agents, and tracks progress. Does not write code directly. |
-| **lead** | Plans implementation, coordinates with the codebase, implements solutions, and documents changes. |
+| **lead** | Analyzes the project and produces a structured task plan for builders. |
 | **builder** | Implements assigned subtasks, writes tests, follows project conventions, and commits work. |
 | **reviewer** | Reviews code changes for bugs, security issues, and style violations. Reports findings without making changes. |
 
@@ -179,37 +237,47 @@ ocha/
 │   └── ocha.js              # CLI entry point (commander-based)
 ├── src/
 │   ├── commands/
-│   │   ├── init.js           # ocha init command
-│   │   ├── cord-start.js     # ocha cord start command
-│   │   ├── cord-status.js    # ocha cord status command
-│   │   └── cord-stop.js      # ocha cord stop command
+│   │   ├── init.js          # ocha init command
+│   │   ├── cord-start.js    # ocha cord start command
+│   │   ├── cord-status.js   # ocha cord status command
+│   │   ├── cord-stop.js     # ocha cord stop command
+│   │   └── dev.js           # ocha dev command
 │   └── lib/
-│       ├── agent.js          # Agent spawning and lifecycle management
-│       ├── coordinator.js    # Batched parallel agent coordination
-│       ├── decompose.js      # Task decomposition via Junie AI
-│       ├── paths.js          # Shared path constants
-│       ├── roles.js          # Agent role prompt definitions
-│       ├── status.js         # Session status read/write/update
-│       └── worktree.js       # Git worktree create/remove/list
+│       ├── agent.js         # Agent spawning, auth check, git push
+│       ├── coordinator.js   # Full pipeline: enhance→lead→build→review
+│       ├── decompose.js     # Task decomposition via Junie AI
+│       ├── enhance.js       # Prompt enhancement with project context
+│       ├── files.js         # Safe file I/O utilities
+│       ├── lead.js          # Lead agent: project analysis & task planning
+│       ├── paths.js         # Shared path constants
+│       ├── prompt.js        # Interactive multi-line task prompt
+│       ├── roles.js         # Agent role prompt definitions
+│       ├── spinner.js       # CLI spinner wrapper
+│       ├── status.js        # Session status read/write/update
+│       ├── tree.js          # Live agent-tree display
+│       └── worktree.js      # Git worktree create/remove/list
+├── install.sh               # One-command installer
 ├── package.json
 └── README.md
 ```
 
 ## How It Works
 
-1. **`ocha init`** creates the `.ocha/` directory with role prompt markdown files for each agent type (coordinator, lead, builder, reviewer).
+1. **`ocha init`** creates the `.ocha/` directory with role prompt markdown files for each agent type (coordinator, lead, builder, reviewer). Use `--yes` to refresh prompts after updating ocha.
 
 2. **`ocha cord start`** kicks off a full session:
-   - The task is sent to Junie for AI-powered decomposition into independent, parallelizable subtasks
+   - The prompt is **enhanced** with project context (recent commits, source snippets, Junie guidelines)
+   - A **lead agent** analyzes the project and decomposes the work into independent, parallelizable subtasks
    - Each subtask gets a dedicated git worktree on a new branch (`ocha/<task-name>`)
-   - Agents are spawned as child Junie processes, running in batches for controlled parallelism
-   - Agent output is filtered to show only key events (results, errors, commits)
+   - **Builder** agents are spawned as child Junie processes in batches, with up to 2 automatic retries on failure
+   - A **reviewer** agent checks each builder's output for bugs, security issues, and code quality
+   - The branch is pushed to origin and a **pull request** is opened via `gh`
 
-3. **Status tracking** is maintained in `.ocha/status.json`, recording each task's state, timing, PID, worktree path, and results.
+3. **Status tracking** is maintained in `.ocha/status.json`, recording each task's state, timing, PID, worktree path, and PR URL.
 
 4. **`ocha cord stop`** gracefully terminates all agents (via SIGTERM), cleans up worktrees and the `.ocha/` directory.
 
-5. After completion, **merge completed branches** back into your main branch using the git commands shown in the session summary.
+5. After completion, **review and merge the open pull requests** shown in the session summary.
 
 ## License
 
