@@ -105,10 +105,12 @@ ocha/
 │   │   └── dev.js           # ocha dev
 │   └── lib/
 │       ├── agent.js         # Spawn Junie agents, auth check, git push
+│       ├── beads.js         # beads (bd) issue tracker integration
 │       ├── coordinator.js   # Task loop, batched agent concurrency
 │       ├── decompose.js     # Task decomposition via Junie
 │       ├── enhance.js       # Prompt enhancement with project context
 │       ├── files.js         # Safe file I/O utilities
+│       ├── issues.js        # Agent issue feed (problems, warnings, notes)
 │       ├── lead.js          # Lead agent runner (produces task plan JSON)
 │       ├── paths.js         # Shared path constants
 │       ├── prompt.js        # Interactive multi-line task prompt
@@ -242,6 +244,18 @@ When the TUI spawns a task it re-invokes `ocha --tui-agent --task <task> --branc
 
 ---
 
+## Issue Tracking
+
+Ocha integrates with [beads (bd)](https://github.com/appsdave/beads) for issue tracking across multi-agent sessions. The `src/lib/beads.js` module handles:
+
+- Creating and claiming issues before agent work begins
+- Closing issues when work completes
+- Linking discovered sub-issues back to parent tasks via `discovered-from` dependencies
+
+See `AGENTS.md` for the full bd workflow.
+
+---
+
 ## Key Design Decisions
 
 - **Worktree isolation** — every agent gets its own `git worktree` so agents never conflict with each other or the running ocha process
@@ -251,3 +265,4 @@ When the TUI spawns a task it re-invokes `ocha --tui-agent --task <task> --branc
 - **Builder retries** — each builder is retried up to 2 times (3 total attempts) before being marked failed
 - **Git validation** — `cord start` checks for a valid git repo and base branch before doing anything, with clear fix instructions if not set up
 - **npm link symlink** — the global `ocha` command is a symlink to the source directory, so all changes are live immediately without reinstalling
+- **Issue tracking** — beads (bd) provides dependency-aware, Dolt-powered issue tracking that prevents conflicts in multi-agent workflows

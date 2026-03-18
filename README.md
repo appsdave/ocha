@@ -230,8 +230,8 @@ ocha/
 │       ├── decompose.js     # task decomposition logic
 │       ├── enhance.js       # prompt enhancer
 │       ├── agent.js         # Junie process spawner
+│       ├── beads.js         # beads (bd) issue tracker integration
 │       ├── worktree.js      # git worktree management
-│       ├── beads.js         # beads issue-tracking integration
 │       ├── issues.js        # agent issue feed
 │       ├── files.js         # filesystem helpers
 │       ├── status.js        # .ocha/status.json r/w
@@ -241,12 +241,44 @@ ocha/
 │       ├── tree.js          # directory tree builder
 │       ├── ui.js            # terminal box/progress utilities
 │       ├── spinner.js       # ora spinner helpers
+│       ├── exec.js          # safe command execution utilities
+│       ├── validate.js      # input validation helpers
 │       └── test-reporter.js # custom test reporter
 ├── install.sh               # one-liner installer
 └── .github/
     └── workflows/
         ├── junie-review.yml # Junie AI code review on PRs
         └── junie-tag.yml    # Junie triggered by label
+```
+
+## Development
+
+### Running Tests
+
+```bash
+npm test
+```
+
+Tests use Node.js built-in test runner with a custom reporter (`src/lib/test-reporter.js`).
+
+### Linting & Formatting
+
+```bash
+npm run lint          # check for lint errors
+npm run lint:fix      # auto-fix lint errors
+npm run format:check  # check formatting
+npm run format        # auto-format
+```
+
+### Issue Tracking
+
+This project uses [beads (bd)](https://github.com/appsdave/beads) for issue tracking. See `AGENTS.md` for the full workflow.
+
+```bash
+bd ready              # find available work
+bd show <id>          # view issue details
+bd update <id> --claim  # claim work
+bd close <id>         # complete work
 ```
 
 ## GitHub Actions
