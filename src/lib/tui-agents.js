@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { readStatus, writeStatus } from './status.js';
 import { OCHA_DIR, STATUS_FILE } from './paths.js';
 import { slugify, formatCompletionSummary } from './tui-utils.js';
+import { stripAnsi } from './ui.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const OCHA_ROOT = resolve(__dirname, '../..');
@@ -123,7 +124,7 @@ export function spawnAgent(task, agents, onUpdate) {
 
   const appendLine = (line) => {
     if (!line) return;
-    agent.logs.push(line);
+    agent.logs.push(stripAnsi(line));
     if (agent.logs.length > 2000) agent.logs.shift();
     onUpdate(agent);
   };

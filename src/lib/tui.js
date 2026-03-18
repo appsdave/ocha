@@ -105,7 +105,7 @@ export class OchaTUI {
       if (this.selectedIdx > 0) {
         this.selectedIdx--;
         this._renderAgentList();
-        this._renderLog();
+        this._clearAndRenderLog();
         this.screen.render();
       }
     });
@@ -115,7 +115,7 @@ export class OchaTUI {
       if (this.selectedIdx < this.agents.length - 1) {
         this.selectedIdx++;
         this._renderAgentList();
-        this._renderLog();
+        this._clearAndRenderLog();
         this.screen.render();
       }
     });
@@ -277,6 +277,16 @@ export class OchaTUI {
     this.logBox.setScrollPerc(100);
   }
 
+  /**
+   * Clear log and task header before rendering to prevent stale content
+   * from bleeding through when switching between agents.
+   */
+  _clearAndRenderLog() {
+    this.logBox.setContent('');
+    this.taskHeader.setContent('');
+    this._renderLog();
+  }
+
   _updateStatusBar() {
     const running = this.agents.filter(a => a.state === 'running').length;
     const done    = this.agents.filter(a => a.state === 'completed').length;
@@ -300,6 +310,7 @@ export class OchaTUI {
     this.tickInterval = setInterval(() => {
       if (this.agents.some(a => a.state === 'running')) {
         this._renderAgentList();
+        this._renderLog();
         this.screen.render();
       }
     }, 1000);
