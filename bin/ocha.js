@@ -85,9 +85,14 @@ if (process.argv.includes('--tui-agent')) {
 
 // Default action: launch TUI when no subcommand given
 if (process.argv.length === 2) {
-  const { OchaTUI } = await import('../src/lib/tui.js');
-  const tui = new OchaTUI();
-  tui.launch();
+  try {
+    const { OchaTUI } = await import('../src/lib/tui.js');
+    const tui = new OchaTUI();
+    tui.launch();
+  } catch (err) {
+    process.stderr.write(`[ocha] TUI failed to launch: ${err.message}\n${err.stack}\n`);
+    process.exit(1);
+  }
 } else {
   program.parse();
 }

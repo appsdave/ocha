@@ -45,6 +45,12 @@ export class OchaTUI {
     this.inputBar  = inputBar;
     this.statusBar = statusBar;
 
+    screen.on('error', (err) => {
+      screen.destroy();
+      process.stderr.write(`[ocha] TUI error: ${err.message}\n${err.stack}\n`);
+      process.exit(1);
+    });
+
     this._bindKeys();
     this._renderAgentList();
     this._renderLog();
