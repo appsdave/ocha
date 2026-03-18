@@ -36,15 +36,27 @@ export function buildLayout() {
     vi: false,
   });
 
-  // ── Right pane: log output ────────────────────────────────────────────────
-  const logBox = blessed.box({
+  // ── Right pane: task header ─────────────────────────────────────────────
+  const taskHeader = blessed.box({
     top: 0,
     left: '30%',
     width: '70%',
-    height: '100%-3',
+    height: 5,
+    border: { type: 'line' },
+    style: { border: { fg: 'blue' }, bg: 'black' },
+    label: ' Task ',
+    tags: true,
+  });
+
+  // ── Right pane: log output ────────────────────────────────────────────────
+  const logBox = blessed.box({
+    top: 5,
+    left: '30%',
+    width: '70%',
+    height: '100%-8',
     border: { type: 'line' },
     style: { border: { fg: 'blue' } },
-    label: ' Log ',
+    label: ' Output ',
     tags: false,
     scrollable: true,
     alwaysScroll: true,
@@ -77,11 +89,12 @@ export function buildLayout() {
   });
 
   screen.append(agentList);
+  screen.append(taskHeader);
   screen.append(logBox);
   screen.append(inputBar);
   screen.append(statusBar);
 
-  return { screen, agentList, logBox, inputBar, statusBar };
+  return { screen, agentList, taskHeader, logBox, inputBar, statusBar };
 }
 
 /**
@@ -144,13 +157,11 @@ export function openPromptDialog(screen, onSubmit) {
   // Clear any stale value from previous open, then focus
   textarea.setValue('');
   textarea.focus();
-  screen.clearRegion(0, screen.width, 0, screen.height);
   screen.render();
 
   // Enter submits, Escape cancels
   const close = (value) => {
     screen.remove(overlay);
-    screen.clearRegion(0, screen.width, 0, screen.height);
     screen.render();
     onSubmit(value || null);
   };

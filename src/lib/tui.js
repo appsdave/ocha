@@ -23,12 +23,43 @@ import { buildLayout, openPromptDialog } from './tui-layout.js';
 import { loadPersistedAgents, persistAgents, spawnAgent, killAgent } from './tui-agents.js';
 import { elapsed, badgeText, badgeColor, truncateTask } from './tui-utils.js';
 
+/**
+ * Detect which pipeline phases have started/completed from log lines.
+ * Returns an array of { name, done, active } in pipeline order.
+ * @param {string[]} logs
+ * @returns {{ name: string, done: boolean, active: boolean }[]}
+ */
+function _detectPhases(logs) {
+  const joined = logs.join('\n');
+  const phases = [
+    { name: 'coordinator', patterns: ['Prompt enhanced', 'project context', 'ocha cord start', 'Checking prerequisites'] },
+    { name: 'lead',        patterns: ['Lead agent', 'Planned ', 'Planning tasks'] },
+    { name: 'builder',     patterns: ['Builder', 'builder', 'createWorktree', 'Dispatching'] },
+    { name: 'reviewer',    patterns: ['Reviewer', 'reviewer', 'Review'] },
+    { name: 'PR',          patterns: ['pull/'] },
+  ];
+
+  let lastActive = -1;
+  const result = phases.map((p, i) => {
+    const seen = p.patterns.some(pat => joined.includes(pat));
+    if (seen) lastActive = i;
+    return { name: p.name, seen };
+  });
+
+  return result.map((p, i) => ({
+    name: p.name,
+    done:   p.seen && i < lastActive,
+    active: p.seen && i === lastActive,
+  }));
+}
+
 export class OchaTUI {
   constructor() {
     this.agents = loadPersistedAgents();
     this.selectedIdx = 0;
     this.screen = null;
     this.agentList = null;
+    this.taskHeader = null;
     this.logBox = null;
     this.inputBar = null;
     this.statusBar = null;
@@ -39,12 +70,13 @@ export class OchaTUI {
   // ── Public entry point ────────────────────────────────────────────────────
 
   launch() {
-    const { screen, agentList, logBox, inputBar, statusBar } = buildLayout();
-    this.screen    = screen;
-    this.agentList = agentList;
-    this.logBox    = logBox;
-    this.inputBar  = inputBar;
-    this.statusBar = statusBar;
+    const { screen, agentList, taskHeader, logBox, inputBar, statusBar } = buildLayout();
+    this.screen     = screen;
+    this.agentList  = agentList;
+    this.taskHeader = taskHeader;
+    this.logBox     = logBox;
+    this.inputBar   = inputBar;
+    this.statusBar  = statusBar;
 
     screen.on('error', (err) => {
       screen.destroy();
@@ -137,7 +169,7 @@ export class OchaTUI {
   _spawnAgent(task) {
     // Clear log immediately so no previous agent's text shows before new logs arrive
     this.logBox.setContent('');
-    this.screen.clearRegion(0, this.screen.width, 0, this.screen.height);
+    this.taskHeader.setContent('');
     this.screen.render();
 
     spawnAgent(task, this.agents, (agent) => {
@@ -210,22 +242,37 @@ export class OchaTUI {
     if (!this.logBox) return;
     const agent = this.agents[this.selectedIdx];
     if (!agent) {
-      this.logBox.setLabel(' Log ');
-      this.logBox.setContent('No agent selected');
+      this.taskHeader.setContent('{grey-fg}  No agent selected{/grey-fg}');
+      this.logBox.setLabel(' Output ');
+      this.logBox.setContent('');
       return;
     }
+
+    // ── Task header: task name + phase pipeline ──────────────────────────
+    const stateColor = agent.state === 'running' ? '{yellow-fg}'
+      : agent.state === 'completed' ? '{green-fg}'
+      : agent.state === 'failed'    ? '{red-fg}'
+      : '{grey-fg}';
     const stateLabel = agent.state === 'running' ? '⟳ running'
       : agent.state === 'completed' ? '✔ done'
       : agent.state === 'failed'    ? '✗ failed'
       : agent.state === 'stopped'   ? '■ stopped' : agent.state;
 
-    // Truncate task label to fit the pane header cleanly
-    const taskLabel = agent.task.length > 50 ? agent.task.slice(0, 49) + '…' : agent.task;
-    this.logBox.setLabel(` ${taskLabel} [${stateLabel}] `);
+    const taskLine = agent.task.length > 70 ? agent.task.slice(0, 69) + '…' : agent.task;
+    const phases = _detectPhases(agent.logs);
+    const phaseBar = phases.map(p =>
+      p.active   ? `{cyan-fg}{bold}[${p.name}]{/bold}{/cyan-fg}`
+      : p.done   ? `{green-fg}[${p.name}]{/green-fg}`
+      : `{grey-fg}[${p.name}]{/grey-fg}`
+    ).join(' → ');
 
-    // Force full content replacement so switching agents always clears previous output
-    this.logBox.setContent('');
-    this.screen.clearRegion(0, this.screen.width, 0, this.screen.height);
+    this.taskHeader.setContent(
+      `  {bold}{white-fg}${taskLine}{/white-fg}{/bold}  ${stateColor}${stateLabel}{/}\n` +
+      `  ${phaseBar}\n` +
+      (agent.branch ? `  {grey-fg}⎇ ${agent.branch}{/grey-fg}` : '')
+    );
+
+    // ── Log pane: raw output ─────────────────────────────────────────────
     this.logBox.setContent(agent.logs.join('\n'));
     this.logBox.setScrollPerc(100);
   }
