@@ -39,6 +39,14 @@ import {
  * @param {string} opts.projectDir  - Absolute path to the project root.
  * @param {boolean} [opts.noMerge]  - Skip auto-merge (kept for compat).
  */
+/** Strip markdown headers/context block — return just the human task line. */
+function extractRawTask(enhanced, original) {
+  // Enhanced format: "## Task\n<original>\n\n---\n## Project Context..."
+  const m = enhanced.match(/^##\s*Task\s*\n([\s\S]*?)(?:\n---\n|$)/);
+  if (m) return m[1].trim();
+  return original;
+}
+
 export async function runCoordinator(task, opts) {
   const maxAgents = parseInt(opts.maxAgents, 10);
   const baseBranch = opts.baseBranch;
@@ -76,13 +84,14 @@ export async function runCoordinator(task, opts) {
       setLeadNode('completed', `Planned ${tasks.length} task(s)`);
       succeedSpinner(`👔 Lead planned ${tasks.length} task(s) (${Math.floor((Date.now() - leadStart) / 1000)}s)`);
       for (const t of tasks) {
-        console.log(chalk.gray(`   • [${t.branch}] ${t.description.split('\n')[0].slice(0, 80)}${t.description.length > 80 ? '…' : ''}`));
+        const tDesc = extractRawTask(t.description, t.description).split('\n')[0].slice(0, 80);
+        console.log(chalk.gray(`   • [${t.branch}] ${tDesc}${t.description.length > 80 ? '…' : ''}`));
       }
     } catch (err) {
       clearInterval(leadTimer);
       setLeadNode('failed', 'Planning failed — using fallback');
       failSpinner(`👔 Lead agent failed: ${err.message} — falling back to single task`);
-      tasks = [{ description: enhancedTask, role: 'builder', branch: 'ocha/main-task' }];
+      tasks = [{ description: enhancedTask, role: 'builder', branch: 'ocha/main-task', displayDesc: task }];
     }
   }
 
@@ -137,7 +146,7 @@ export async function runCoordinator(task, opts) {
 const MAX_RETRIES = 2;
 
 async function runBuilderWithReview(task, status, baseBranch) {
-  const cleanDesc = shortDesc(task.description.split('\n')[0]);
+  const cleanDesc = task.displayDesc ? shortDesc(task.displayDesc) : shortDesc(task.description.split('\n')[0]);
   setBuilderNode(task.id, 'pending', cleanDesc);
 
   const worktreePath = createWorktree(task.branch, baseBranch);
@@ -263,7 +272,9 @@ function cleanupWorktrees(status) {
 }
 
 function shortDesc(description) {
-  const words = description.split(/\s+/);
+  // Strip leading markdown header lines (e.g. "## Task") before summarising
+  const clean = description.replace(/^(##?\s*\w+\s*\n)+/, '').trim();
+  const words = clean.split(/\s+/);
   return words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : '');
 }
 
@@ -283,7 +294,7 @@ function printSummary(status) {
   if (withPR.length > 0) {
     console.log(chalk.cyan('\n  Open pull requests:'));
     for (const task of withPR) {
-      const desc = task.description.split('\n')[0].slice(0, 60);
+      const desc = (task.displayDesc || task.description).replace(/^##\s*Task\s*\n/, '').split('\n')[0].slice(0, 60);
       console.log(chalk.cyan(`    🔗 ${task.prUrl}`));
       console.log(chalk.dim(`       ${task.branch} — ${desc}`));
     }
@@ -292,7 +303,7 @@ function printSummary(status) {
   if (noPR.length > 0) {
     console.log(chalk.yellow('\n  Completed (no PR):'));
     for (const task of noPR) {
-      const desc = task.description.split('\n')[0].slice(0, 60);
+      const desc = (task.displayDesc || task.description).replace(/^##\s*Task\s*\n/, '').split('\n')[0].slice(0, 60);
       console.log(chalk.yellow(`    ⚠  ${task.branch} — ${desc}`));
     }
   }
@@ -300,7 +311,7 @@ function printSummary(status) {
   if (failed.length > 0) {
     console.log(chalk.red('\n  Failed tasks:'));
     for (const task of failed) {
-      const desc = shortDesc(task.description.split('\n')[0]);
+      const desc = task.displayDesc ? shortDesc(task.displayDesc) : shortDesc(task.description.split('\n')[0]);
       console.log(chalk.red(`    ✗  ${task.branch} — ${desc}`));
     }
   }
