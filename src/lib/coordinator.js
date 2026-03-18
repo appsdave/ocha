@@ -16,6 +16,8 @@ import { readStatus, writeStatus, createInitialStatus } from './status.js';
 import { enhanceTask } from './enhance.js';
 import { runLeadAgent } from './lead.js';
 import { execSync } from 'child_process';
+import { safeDelete } from './files.js';
+import { WORKTREES_DIR } from './paths.js';
 import chalk from 'chalk';
 import { startSpinner, succeedSpinner, failSpinner, stopSpinner, logWithSpinner } from './spinner.js';
 import {
@@ -120,11 +122,14 @@ export async function runCoordinator(task, opts) {
 
   showDiffStats(finalStatus, baseBranch);
   cleanupWorktrees(finalStatus);
-  printSummary(finalStatus);
+  safeDelete(WORKTREES_DIR, { recursive: true });
 
+  // Auto-stop: mark session completed
   finalStatus.session.state = 'completed';
   finalStatus.session.completedAt = new Date().toISOString();
   writeStatus(finalStatus);
+
+  printSummary(finalStatus);
 }
 
 // ─── Builder + Reviewer runner (with retry) ───────────────────────────────────
@@ -293,14 +298,6 @@ function printSummary(status) {
     for (const task of failed) {
       const desc = shortDesc(task.description.split('\n')[0]);
       console.log(chalk.red(`    ✗  ${task.branch} — ${desc}`));
-    }
-  }
-
-  if (merged.length > 0) {
-    console.log(chalk.green('\n  Merged to main:'));
-    for (const task of merged) {
-      const desc = shortDesc(task.description.split('\n')[0]);
-      console.log(chalk.green(`    ✓  ${task.branch} — ${desc}`));
     }
   }
 
