@@ -25,3 +25,7 @@ tmp-ocha-test/
 .DS_Store
 *.swp
 .output.txt
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
