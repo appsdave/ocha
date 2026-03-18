@@ -100,7 +100,7 @@ export function buildLayout() {
     height: 1,
     style: { fg: 'white', bg: 'black' },
     tags: true,
-    content: '{grey-fg}  {bold}n{/bold} new   {bold}↑↓{/bold} navigate   {bold}K{/bold} kill   {bold}C{/bold} clear done   {bold}←→{/bold} switch pane   {bold}q{/bold} quit{/grey-fg}',
+    content: '{grey-fg}  {bold}n{/bold} new   {bold}↑↓{/bold} navigate   {bold}k{/bold} kill   {bold}c{/bold} clear done   {bold}←→{/bold} switch pane   {bold}q{/bold} quit{/grey-fg}',
   });
 
   // ── Status bar ────────────────────────────────────────────────────────────

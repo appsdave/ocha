@@ -63,13 +63,14 @@ function _detectPhases(logs) {
  * @returns {{ agents: object[], selectedIdx: number }}
  */
 export function clearCompletedAgents(agents, selectedIdx) {
-  const remainingAgents = agents.filter(agent => agent.state !== 'completed');
+  const remainingAgents = agents.filter(agent => agent.state !== 'completed' && agent.state !== 'stopped' && agent.state !== 'failed');
   if (remainingAgents.length === 0) return { agents: remainingAgents, selectedIdx: 0 };
 
   const clampedIdx = Math.min(Math.max(selectedIdx, 0), Math.max(0, agents.length - 1));
   const selectedAgent = agents[clampedIdx];
 
-  if (selectedAgent && selectedAgent.state !== 'completed') {
+  const doneStates = new Set(['completed', 'stopped', 'failed']);
+  if (selectedAgent && !doneStates.has(selectedAgent.state)) {
     const nextIdx = remainingAgents.findIndex(agent => agent.id === selectedAgent.id);
     if (nextIdx >= 0) return { agents: remainingAgents, selectedIdx: nextIdx };
   }
@@ -170,9 +171,10 @@ export class OchaTUI {
       });
     });
 
-    screen.key(['K'], () => {
+    screen.key(['k'], () => {
       if (this.inputMode) return;
       killAgent(this.agents, this.selectedIdx);
+      persistAgents(this.agents);
       this._renderAgentList();
       this._renderLog();
       this.screen.render();
@@ -188,10 +190,10 @@ export class OchaTUI {
       this._renderLog();
       this.screen.render();
     };
-    // Bind all forms: 'C' (uppercase), 'S-c' (shift+c), and 'x' as fallback
-    screen.key(['C', 'S-c', 'x'], clearDone);
-    this.agentList.key(['C', 'S-c', 'x'], clearDone);
-    this.logBox.key(['C', 'S-c', 'x'], clearDone);
+    // Bind 'c' for clear done (lowercase to avoid conflict with C-c)
+    screen.key(['c'], clearDone);
+    this.agentList.key(['c'], clearDone);
+    this.logBox.key(['c'], clearDone);
 
     screen.key(['l', 'right'], () => {
       if (this.inputMode) return;

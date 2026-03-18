@@ -178,6 +178,7 @@ export function killAgent(agents, idx) {
       try { agent.proc.kill('SIGTERM'); } catch {}
     }
     agent.state = 'stopped';
+    agent.completedAt = new Date().toISOString();
     agent.logs.push('[ocha] Agent killed by user');
   }
 }
