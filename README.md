@@ -106,6 +106,57 @@ Creates:
     └── reviewer.md
 ```
 
+### `ocha cord start`
+
+Decomposes a task and runs it across parallel agents in isolated git worktrees.
+
+```bash
+ocha cord start -t "refactor auth flow"
+ocha cord start -t "add user settings page" -b develop -n 5
+ocha cord start -t "update docs" --no-merge
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-t, --task <task>` | High-level task description | *(required)* |
+| `-b, --base-branch <branch>` | Base git branch for worktrees | `main` |
+| `-n, --max-agents <n>` | Maximum parallel agents | `3` |
+| `-r, --repo <path...>` | Repo path(s) to operate on | cwd |
+| `--no-merge` | Skip auto-merge after completion | — |
+
+### `ocha cord status`
+
+Shows current session status and task states.
+
+```bash
+ocha cord status        # one-time snapshot
+ocha cord status -w     # watch mode (polls every 3s)
+```
+
+### `ocha cord stop`
+
+Stops all running agents and cleans up worktrees.
+
+```bash
+ocha cord stop
+```
+
+### `ocha dev`
+
+Runs a task in an isolated dev worktree — safe for self-development on ocha itself.
+
+```bash
+ocha dev -t "add retry logic to agent spawner"
+ocha dev -t "fix spinner tests" -b develop
+ocha dev -t "refactor config loader" --no-merge
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-t, --task <task>` | Task description | *(required)* |
+| `-b, --base-branch <branch>` | Base branch | `main` |
+| `--no-merge` | Skip auto-merge after completion | — |
+
 ### `ocha self-update`
 
 Updates ocha to the latest version from GitHub, shows what changed, and re-links the global command.
@@ -166,7 +217,9 @@ ocha/
 │   ├── commands/
 │   │   ├── init.js          # ocha init
 │   │   ├── dev.js           # ocha dev (safe self-dev mode)
-│   │   └── cord-start.js    # coordinator entry
+│   │   ├── cord-start.js    # ocha cord start
+│   │   ├── cord-status.js   # ocha cord status
+│   │   └── cord-stop.js     # ocha cord stop
 │   └── lib/
 │       ├── tui.js           # TUI orchestrator
 │       ├── tui-layout.js    # blessed widget construction
@@ -174,19 +227,35 @@ ocha/
 │       ├── tui-utils.js     # slugify, elapsed, badges
 │       ├── coordinator.js   # full pipeline runner
 │       ├── lead.js          # lead agent (task planner)
+│       ├── decompose.js     # task decomposition logic
 │       ├── enhance.js       # prompt enhancer
 │       ├── agent.js         # Junie process spawner
 │       ├── worktree.js      # git worktree management
+│       ├── config.js        # configuration loader
+│       ├── issues.js        # agent issue feed
+│       ├── files.js         # filesystem helpers
 │       ├── status.js        # .ocha/status.json r/w
 │       ├── paths.js         # shared path constants
+│       ├── preflight.js     # pre-run checks
+│       ├── prompt.js        # prompt utilities
+│       ├── roles.js         # role prompt installer
+│       ├── tree.js          # directory tree builder
 │       ├── ui.js            # terminal box/progress utilities
-│       └── spinner.js       # ora spinner helpers
+│       ├── spinner.js       # ora spinner helpers
+│       └── test-reporter.js # custom test reporter
 ├── install.sh               # one-liner installer
 └── .github/
     └── workflows/
-        └── junie-review.yml # Junie AI code review on PRs
+        ├── junie-review.yml # Junie AI code review on PRs
+        └── junie-tag.yml    # Junie triggered by label
 ```
 
-## GitHub Actions — Junie Code Review
+## GitHub Actions
+
+### Junie Code Review
 
 Every PR automatically gets an AI code review from Junie. Requires `JUNIE_API_KEY` in repository secrets (Settings → Secrets and variables → Actions).
+
+### Junie Label Trigger
+
+Add the `junie` label to any issue or PR to trigger a Junie run. Also requires `JUNIE_API_KEY` in repository secrets.
