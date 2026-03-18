@@ -53,7 +53,7 @@ export function formatCompletionSummary(agent) {
   if (agent.repo) {
     lines.push(`  Repo     : ${agent.repo}`);
   }
-  lines.push(`  Branch   : ${agent.branch}`);
+  lines.push(`  Branch   : ${agent.branch || 'unknown'}`);
   if (agent.startedAt && agent.completedAt) {
     const secs = Math.round((new Date(agent.completedAt) - new Date(agent.startedAt)) / 1000);
     const mins = Math.floor(secs / 60);

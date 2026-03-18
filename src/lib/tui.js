@@ -53,6 +53,42 @@ function _detectPhases(logs) {
   }));
 }
 
+/**
+ * Remove completed agents while keeping selection aligned to a stable agent.
+ * If the selected agent is removed, selection moves to the next remaining
+ * agent, or the previous one when there is no next agent.
+ *
+ * @param {object[]} agents
+ * @param {number} selectedIdx
+ * @returns {{ agents: object[], selectedIdx: number }}
+ */
+export function clearCompletedAgents(agents, selectedIdx) {
+  const remainingAgents = agents.filter(agent => agent.state !== 'completed');
+  if (remainingAgents.length === 0) return { agents: remainingAgents, selectedIdx: 0 };
+
+  const clampedIdx = Math.min(Math.max(selectedIdx, 0), Math.max(0, agents.length - 1));
+  const selectedAgent = agents[clampedIdx];
+
+  if (selectedAgent && selectedAgent.state !== 'completed') {
+    const nextIdx = remainingAgents.findIndex(agent => agent.id === selectedAgent.id);
+    if (nextIdx >= 0) return { agents: remainingAgents, selectedIdx: nextIdx };
+  }
+
+  for (let idx = clampedIdx + 1; idx < agents.length; idx++) {
+    if (agents[idx].state === 'completed') continue;
+    const nextIdx = remainingAgents.findIndex(agent => agent.id === agents[idx].id);
+    if (nextIdx >= 0) return { agents: remainingAgents, selectedIdx: nextIdx };
+  }
+
+  for (let idx = clampedIdx - 1; idx >= 0; idx--) {
+    if (agents[idx].state === 'completed') continue;
+    const nextIdx = remainingAgents.findIndex(agent => agent.id === agents[idx].id);
+    if (nextIdx >= 0) return { agents: remainingAgents, selectedIdx: nextIdx };
+  }
+
+  return { agents: remainingAgents, selectedIdx: 0 };
+}
+
 export class OchaTUI {
   constructor() {
     this.agents = loadPersistedAgents();
@@ -105,7 +141,7 @@ export class OchaTUI {
       if (this.selectedIdx > 0) {
         this.selectedIdx--;
         this._renderAgentList();
-        this._renderLog();
+        this._clearAndRenderLog();
         this.screen.render();
       }
     });
@@ -115,7 +151,7 @@ export class OchaTUI {
       if (this.selectedIdx < this.agents.length - 1) {
         this.selectedIdx++;
         this._renderAgentList();
-        this._renderLog();
+        this._clearAndRenderLog();
         this.screen.render();
       }
     });
@@ -141,8 +177,9 @@ export class OchaTUI {
 
     const clearDone = () => {
       if (this.inputMode) return;
-      this.agents = this.agents.filter(a => a.state === 'running');
-      this.selectedIdx = Math.min(this.selectedIdx, Math.max(0, this.agents.length - 1));
+      const nextState = clearCompletedAgents(this.agents, this.selectedIdx);
+      this.agents = nextState.agents;
+      this.selectedIdx = nextState.selectedIdx;
       persistAgents(this.agents);
       this._renderAgentList();
       this._renderLog();
@@ -283,6 +320,16 @@ export class OchaTUI {
     this.logBox.setScrollPerc(100);
   }
 
+  /**
+   * Clear log and task header before rendering to prevent stale content
+   * from bleeding through when switching between agents.
+   */
+  _clearAndRenderLog() {
+    this.logBox.setContent('');
+    this.taskHeader.setContent('');
+    this._renderLog();
+  }
+
   _updateStatusBar() {
     const running = this.agents.filter(a => a.state === 'running').length;
     const done    = this.agents.filter(a => a.state === 'completed').length;
@@ -293,7 +340,7 @@ export class OchaTUI {
       const repoPrefix = agent.repo ? `${agent.repo}/` : '';
       right = agent.prUrl
         ? ` | PR: ${agent.prUrl}`
-        : ` | ${repoPrefix}${agent.branch}`;
+        : agent.branch ? ` | ${repoPrefix}${agent.branch}` : '';
     }
     this.statusBar.setContent(
       ` ocha  |  ${total} task(s)  ${running} running  ${done} done${right} `
@@ -306,6 +353,7 @@ export class OchaTUI {
     this.tickInterval = setInterval(() => {
       if (this.agents.some(a => a.state === 'running')) {
         this._renderAgentList();
+        this._renderLog();
         this.screen.render();
       }
     }, 1000);
