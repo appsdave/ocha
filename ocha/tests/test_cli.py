@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from app.cli import build_parser, resolve_target
-from app.install import default_install_dir
+from app.install import DEFAULT_REPO_URL, default_install_dir
 
 
 class CliTests(unittest.TestCase):
@@ -18,6 +18,10 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.target, "./repo")
         self.assertEqual(args.branch, "agent")
         self.assertTrue(args.force)
+
+    def test_download_parser_defaults_to_public_repo_url(self) -> None:
+        args = build_parser().parse_args(["download"])
+        self.assertEqual(args.repo_url, DEFAULT_REPO_URL)
 
     def test_tui_subcommand_is_not_exposed(self) -> None:
         with self.assertRaises(SystemExit):

@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import NoReturn
 
 
-DEFAULT_REPO_URL = "git@github.com:appsdave/ocha.git"
+DEFAULT_REPO_URL = "https://github.com/appsdave/ocha.git"
 DEFAULT_BRANCH = "main"
 DEFAULT_INSTALL_DIRNAME = ".ocha"
 DEFAULT_VENV_DIRNAME = ".venv"
+DEFAULT_PROJECT_DIRNAME = "ocha"
 
 
 class InstallError(RuntimeError):
@@ -41,6 +42,17 @@ def default_install_dir(home_dir: Path | None = None) -> Path:
 
 def default_checkout_dir(base_dir: Path | None = None) -> Path:
     return default_install_dir(base_dir)
+
+
+def resolve_project_dir(target: Path) -> Path:
+    target = target.expanduser().resolve()
+    direct = target / "pyproject.toml"
+    nested = target / DEFAULT_PROJECT_DIRNAME / "pyproject.toml"
+    if direct.exists():
+        return target
+    if nested.exists():
+        return nested.parent
+    raise InstallError(f"Could not find ocha Python project inside: {target}")
 
 
 def run_git(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -81,6 +93,7 @@ def resolve_revision(target: Path) -> str:
 
 def ensure_bootstrap(target: Path) -> BootstrapResult:
     target = target.expanduser().resolve()
+    project_dir = resolve_project_dir(target)
     venv_dir = target / DEFAULT_VENV_DIRNAME
 
     if shutil.which("python3") is None:
@@ -91,7 +104,7 @@ def ensure_bootstrap(target: Path) -> BootstrapResult:
 
     venv_python = venv_dir / "bin" / "python"
     launcher = venv_dir / "bin" / "ocha"
-    run_command([str(venv_python), "-m", "pip", "install", "-e", str(target)])
+    run_command([str(venv_python), "-m", "pip", "install", "-e", str(project_dir)])
 
     return BootstrapResult(target=target, venv_python=venv_python, launcher=launcher)
 

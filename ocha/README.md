@@ -4,6 +4,35 @@ This folder is a concept-focused explanation of what `ocha` does today and how i
 
 ## Python rebuild command surface
 
+### First-time install for a brand-new user
+
+The new bootstrap flow is a true one-line installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/appsdave/ocha/main/install.sh | bash
+```
+
+That installer will:
+
+- install missing system prerequisites with `apt` when available (`git`, `python3`, `python3-pip`, `python3-venv`)
+- clone this repo into `~/.ocha`
+- create `~/.ocha/.venv`
+- install the Python app from the repo's `ocha/` project directory
+- symlink `~/.local/bin/ocha` to the managed launcher
+
+After that, the normal commands are:
+
+```bash
+ocha
+ocha update
+```
+
+If `~/.local/bin` is not already on `PATH`, add it in your shell profile:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 The current Python/Textual rebuild now ships a small command surface behind `ocha`:
 
 - `ocha` — launch the Textual dashboard
@@ -12,7 +41,7 @@ The current Python/Textual rebuild now ships a small command surface behind `och
 
 If no target is provided for `download` or `update`, `ocha` uses `~/.ocha`.
 
-The intended install model is self-managed: the `ocha` command keeps its checked-out project and virtual environment under `~/.ocha`, and first-run/bootstrap setup prepares the needed dependencies there.
+The intended install model is self-managed: the `ocha` command keeps its checked-out project and virtual environment under `~/.ocha`, and first-run/bootstrap setup prepares the needed dependencies there. The repository checkout lives in `~/.ocha`, while the Python package itself is installed from `~/.ocha/ocha`.
 
 ## What ocha is
 
