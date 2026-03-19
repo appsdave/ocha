@@ -45,29 +45,52 @@ class WorkerListItem(ListItem):
 
 
 class AgentsPane(Widget):
-    _last_snapshot: list[tuple[str, str, str]] = []
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._last_task_ids: list[str] = []
+        self._last_status_snap: list[tuple[str, str]] = []
 
     def compose(self):
         yield Static("[b][#b8bb26]Tasks[/][/b]", classes="pane-title")
         yield ListView(id="workers-list")
 
-    def _snapshot(self, state: AppState) -> list[tuple[str, str, str]]:
-        """Return a lightweight fingerprint of the task list for change detection."""
-        return [
-            (t.task_id, t.status.value, t.elapsed)
-            for t in state.tasks
-        ]
+    def _structure_snapshot(self, state: AppState) -> list[str]:
+        """Return task IDs only — used to detect when full rebuild is needed."""
+        return [t.task_id for t in state.tasks]
+
+    def _status_snapshot(self, state: AppState) -> list[tuple[str, str]]:
+        """Return (status, elapsed) per task — used for in-place text updates."""
+        return [(t.status.value, t.elapsed) for t in state.tasks]
 
     def load(self, state: AppState) -> None:
-        snap = self._snapshot(state)
         list_view = self.query_one(ListView)
-        if snap == self._last_snapshot and list_view.index == state.selected_index:
-            return  # nothing changed — skip rebuild to avoid flicker
-        self._last_snapshot = snap
-        list_view.clear()
-        for i, task in enumerate(state.tasks):
-            list_view.append(WorkerListItem(task, selected=(i == state.selected_index)))
-        list_view.index = state.selected_index if state.tasks else None
+        task_ids = self._structure_snapshot(state)
+        status_snap = self._status_snapshot(state)
+
+        needs_rebuild = task_ids != self._last_task_ids
+
+        if needs_rebuild:
+            # Structure changed — full rebuild required
+            self._last_task_ids = task_ids
+            self._last_status_snap = status_snap
+            list_view.clear()
+            for i, task in enumerate(state.tasks):
+                list_view.append(WorkerListItem(task, selected=(i == state.selected_index)))
+            list_view.index = state.selected_index if state.tasks else None
+            return
+
+        # Structure same — update labels in-place to avoid flicker
+        if status_snap != self._last_status_snap:
+            self._last_status_snap = status_snap
+            children = list(list_view.children)
+            for i, task in enumerate(state.tasks):
+                if i < len(children):
+                    item = children[i]
+                    label_widget = item.query_one(Static)
+                    label_widget.update(WorkerListItem._format_task(task))
+
+        if list_view.index != state.selected_index:
+            list_view.index = state.selected_index if state.tasks else None
 
 
 class TaskHeader(Static):
@@ -104,19 +127,29 @@ class TaskHeader(Static):
 
 class OutputPane(VerticalScroll):
     mode: reactive[OutputMode] = reactive(OutputMode.WORKFLOW)
+    _last_content: str = ""
 
     def compose(self):
         yield Static(id="output-content")
+
+    def _is_at_bottom(self) -> bool:
+        """Check if the scroll position is at (or near) the bottom."""
+        if self.max_scroll_y == 0:
+            return True
+        return self.scroll_y >= self.max_scroll_y - 2
 
     def update_task(self, task: OchaTask | None, mode: OutputMode) -> None:
         self.mode = mode
         title_label = "Workflow" if mode == OutputMode.WORKFLOW else "Raw Logs"
         content = self.query_one("#output-content", Static)
         if task is None:
-            content.update(
+            new_text = (
                 f"[b][#b8bb26]{title_label}[/][/b]\n\n"
                 f"[#928374]No task selected.[/]"
             )
+            if new_text != self._last_content:
+                self._last_content = new_text
+                content.update(new_text)
             return
         lines = task.output_lines(mode)
         body_parts = []
@@ -132,9 +165,18 @@ class OutputPane(VerticalScroll):
             else:
                 body_parts.append(f"  [#ebdbb2]{line}[/]")
         body = "\n".join(body_parts)
-        content.update(f"[b][#b8bb26]{title_label}[/][/b]\n\n{body}")
-        # Auto-scroll to bottom so latest output is visible
-        self.scroll_end(animate=False)
+        new_text = f"[b][#b8bb26]{title_label}[/][/b]\n\n{body}"
+
+        if new_text == self._last_content:
+            return  # nothing changed — skip update to avoid scroll glitch
+
+        was_at_bottom = self._is_at_bottom()
+        self._last_content = new_text
+        content.update(new_text)
+
+        # Only auto-scroll if user was already at the bottom
+        if was_at_bottom:
+            self.scroll_end(animate=False)
 
 
 class HelpBar(Static):

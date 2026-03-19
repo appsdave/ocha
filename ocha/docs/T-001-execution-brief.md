@@ -89,7 +89,7 @@ function in `orchestrator.py` and call it from `launch_task()`.
   CLI `--task` argument, so extremely long input can hit OS argument limits.
 - Prevent double-open of the overlay.
 
-### Gap 4 — Test coverage (builder → `tests/`)
+### Gap 4 — Add test coverage (builder → `tests/`)
 
 - **`test_orchestrator.py`**: Add a test that round-trips a multi-line prompt
   through `build_launch_specs` and verifies it appears in each role prompt
@@ -193,4 +193,4 @@ boundary.
 > (1) upgrade `NewTaskOverlay` from single-line `Input` to `TextArea`,
 > (2) persist prompts to `.ocha/tasks/`, (3) harden input validation,
 > (4) add multi-line and edge-case test coverage, (5) update README
-> keybindings.  Four phases scoped for lead breakdown.
+> keybindings.  Five phases scoped for lead breakdown.
