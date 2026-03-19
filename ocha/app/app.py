@@ -112,24 +112,26 @@ ListView > ListItem {
     color: #ebdbb2;
 }
 
-ListView > ListItem.--highlight {
-    background: #282828;
-    background-tint: transparent;
-}
-
 ListView > ListItem.-highlight {
     background: #282828;
-    background-tint: transparent;
-}
-
-ListView:focus > ListItem.--highlight {
-    background: #282828;
+    color: #ebdbb2;
+    text-style: none;
     background-tint: transparent;
 }
 
 ListView:focus > ListItem.-highlight {
     background: #282828;
+    color: #ebdbb2;
+    text-style: none;
     background-tint: transparent;
+}
+
+ListView:focus {
+    background-tint: transparent;
+}
+
+ListView > ListItem:hover {
+    background: #282828;
 }
 
 /* ── Floating new-task overlay ── */
@@ -780,8 +782,11 @@ class OchaApp(App[None]):
                 )
             log.append(f"On branch {branch_name}.")
 
-            # Stage all changes
-            subprocess.run(["git", "add", "-A"], capture_output=True, text=True, timeout=10)
+            # Stage all changes (scoped to avoid committing worktree artifacts)
+            subprocess.run(
+                ["git", "add", "-A", "--", ".", ":!.worktrees", ":!.env"],
+                capture_output=True, text=True, timeout=10,
+            )
             log.append("Staged all changes.")
 
             # Commit
