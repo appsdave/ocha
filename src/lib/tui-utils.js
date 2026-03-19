@@ -108,11 +108,22 @@ export function sortAgentsForDisplay(agents) {
  * Apply blessed strikethrough styling to text.
  * Uses Unicode combining long stroke overlay (U+0336) since blessed
  * does not support native strikethrough escape sequences.
+ * Skips blessed escape sequences (\{ and \}) so tag parsing is preserved.
  * @param {string} text
  * @returns {string}
  */
 export function strikethrough(text) {
-  return text.split('').map(ch => ch + '\u0336').join('');
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\\' && i + 1 < text.length && (text[i + 1] === '{' || text[i + 1] === '}')) {
+      // Preserve blessed escape sequences without strikethrough
+      result += text[i] + text[i + 1];
+      i++;
+    } else {
+      result += text[i] + '\u0336';
+    }
+  }
+  return result;
 }
 
 /** Status badge blessed color tag */
