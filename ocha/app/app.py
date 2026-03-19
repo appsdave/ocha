@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -454,28 +455,56 @@ class OchaApp(App[None]):
         else:
             self.notify("Task launched.")
 
+    def _load_junie_api_key(self) -> str | None:
+        """Load JUNIE_API_KEY from environment or .env file."""
+        key = os.environ.get("JUNIE_API_KEY")
+        if key:
+            return key
+        # Try loading from .env in the install directory
+        for env_path in [Path.cwd() / ".env", Path.home() / ".ocha" / ".env"]:
+            if env_path.exists():
+                for line in env_path.read_text().splitlines():
+                    line = line.strip()
+                    if line.startswith("JUNIE_API_KEY=") and len(line) > len("JUNIE_API_KEY="):
+                        return line.split("=", 1)[1].strip()
+        return None
+
     def _spawn_junie_workers(self, task_obj) -> None:
         """Spawn Junie CLI headless for each RUNNING worker in the task."""
         junie_bin = shutil.which("junie")
         if not junie_bin:
             self.notify("[#fb4934]junie CLI not found on PATH[/]", severity="error")
             return
+        api_key = self._load_junie_api_key()
+        if not api_key:
+            self.notify(
+                "[#fb4934]JUNIE_API_KEY not set — add it to .env or run install.sh[/]",
+                severity="error",
+            )
+            return
         for worker in task_obj.workers:
             if worker.status == WorkerStatus.RUNNING:
-                self.run_worker(self._run_junie_for_worker(worker, task_obj))
+                self.run_worker(self._run_junie_for_worker(worker, task_obj, api_key))
 
-    async def _run_junie_for_worker(self, worker, task_obj) -> None:
+    async def _run_junie_for_worker(self, worker, task_obj, api_key: str | None = None) -> None:
         """Run Junie headless CLI for a single worker and stream output."""
         try:
             # Use the actual project directory, not a worktree
             project_path = Path.cwd().resolve()
 
+            # Load API key if not passed (for pipeline-advanced workers)
+            if not api_key:
+                api_key = self._load_junie_api_key()
+
             cmd = [
                 "junie",
+                f"--auth={api_key}" if api_key else None,
                 "--project", str(project_path),
                 "--output-format", "text",
-                "--task", worker.task_prompt,
+                worker.task_prompt,
             ]
+            # Remove None entries
+            cmd = [c for c in cmd if c is not None]
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -553,7 +582,7 @@ class OchaApp(App[None]):
             next_worker.summary = "junie CLI not found"
             next_worker.workflow_log.append("junie CLI not found on PATH.")
             return
-        self.run_worker(self._run_junie_for_worker(next_worker, task_obj))
+        self.run_worker(self._run_junie_for_worker(next_worker, task_obj, self._load_junie_api_key()))
 
     async def _post_pipeline_git_flow(self, task_obj) -> None:
         """After all workers finish, commit changes, push branch, and open a PR."""
