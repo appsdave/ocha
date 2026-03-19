@@ -220,7 +220,7 @@ export function openPromptDialog(screen, onSubmit) {
   // Enter is intentionally left unbound so the textarea keeps its default
   // behaviour of inserting a newline, enabling multi-line task descriptions.
   textarea.key(['C-s'], () => {
-    close(textarea.getValue().trim());
+    close(textarea.getValue().replace(/\r?\n/g, ' ').trim());
   });
 
   textarea.key(['escape'], () => {
