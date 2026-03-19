@@ -114,7 +114,6 @@ ListView > ListItem {
 
 ListView > ListItem.--highlight {
     background: #282828;
-    border-left: thick #928374;
 }
 
 ListView:focus > ListItem.--highlight {
