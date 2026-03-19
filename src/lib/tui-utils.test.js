@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { sortAgentsForDisplay, strikethrough, slugify, elapsed, badgeText, badgeColor, truncateTask, parseWorkflowEvents, renderWorkflowOutput } from './tui-utils.js';
+import { sortAgentsForDisplay, strikethrough, slugify, elapsed, badgeText, badgeColor, truncateTask, wrapText, parseWorkflowEvents, renderWorkflowOutput } from './tui-utils.js';
 
 describe('sortAgentsForDisplay', () => {
   it('returns empty array for empty input', () => {
@@ -104,6 +104,56 @@ describe('strikethrough', () => {
   it('handles text with only blessed escape sequences', () => {
     const result = strikethrough('\\{\\}');
     assert.equal(result, '\\{\\}');
+  });
+});
+
+describe('wrapText', () => {
+  it('returns single-element array for empty input', () => {
+    assert.deepEqual(wrapText('', 40), ['']);
+  });
+
+  it('returns text as-is when it fits within width', () => {
+    assert.deepEqual(wrapText('short text', 40), ['short text']);
+  });
+
+  it('wraps long text at word boundaries', () => {
+    const result = wrapText('the quick brown fox jumps over the lazy dog', 20);
+    assert.deepEqual(result, [
+      'the quick brown fox',
+      'jumps over the lazy',
+      'dog',
+    ]);
+  });
+
+  it('breaks long words that exceed the width', () => {
+    const result = wrapText('abcdefghij', 5);
+    assert.deepEqual(result, ['abcde', 'fghij']);
+  });
+
+  it('handles mixed short and long words', () => {
+    const result = wrapText('hi abcdefghijklmnop bye', 10);
+    assert.deepEqual(result, ['hi', 'abcdefghij', 'klmnop bye']);
+  });
+
+  it('truncates to maxLines with ellipsis', () => {
+    const result = wrapText('one two three four five six seven eight', 10, 2);
+    assert.equal(result.length, 2);
+    assert.ok(result[1].endsWith('…'));
+  });
+
+  it('does not add ellipsis when lines fit within maxLines', () => {
+    const result = wrapText('hello world', 20, 3);
+    assert.deepEqual(result, ['hello world']);
+  });
+
+  it('returns text as-is for zero or negative width', () => {
+    assert.deepEqual(wrapText('hello', 0), ['hello']);
+    assert.deepEqual(wrapText('hello', -5), ['hello']);
+  });
+
+  it('handles null/undefined input gracefully', () => {
+    assert.deepEqual(wrapText(null, 40), ['']);
+    assert.deepEqual(wrapText(undefined, 40), ['']);
   });
 });
 
