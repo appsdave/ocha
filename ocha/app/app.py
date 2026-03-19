@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
@@ -9,6 +11,8 @@ from textual.widgets import Button, Input, ListView, Static
 from .orchestrator import launch_task
 from .state import AppState, OutputMode, WorkerStatus, clear_finished_tasks, sample_state
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
+
+OCHA_BRANCH = "ocha"
 
 
 # ── Gruvbox Dark Green theme ──────────────────────────────────────────
@@ -102,15 +106,16 @@ NewTaskOverlay {
 }
 
 #new-task-box {
-    width: 72;
+    width: 60;
     height: auto;
-    border: solid #b8bb26;
+    border: solid #504945;
     background: #282828;
     padding: 1 2;
 }
 
-#new-task-box Static {
+#new-task-title {
     color: #ebdbb2;
+    padding: 0 0 1 0;
 }
 
 #new-task-box Input {
@@ -123,26 +128,10 @@ NewTaskOverlay {
     border: solid #b8bb26;
 }
 
-#new-task-box Button {
-    background: #3c3836;
-    color: #ebdbb2;
-    border: solid #504945;
-}
-
-#new-task-box #submit-task {
-    background: #b8bb26;
-    color: #282828;
-    border: solid #b8bb26;
-}
-
-#new-task-actions {
-    width: 1fr;
-    height: auto;
-    layout: horizontal;
-}
-
-.new-task-button {
-    margin-right: 1;
+#new-task-hint {
+    color: #928374;
+    padding: 1 0 0 0;
+    height: 1;
 }
 
 /* ── Kill-confirm overlay ── */
@@ -188,17 +177,19 @@ KillConfirmOverlay {
 
 
 class NewTaskOverlay(ModalScreen[str | None]):
-    """Floating overlay for creating a new task."""
+    """Minimal floating overlay for creating a new task."""
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
         with Container(id="new-task-box"):
-            yield Static("[b][#b8bb26]New ocha task[/][/b]\nDescribe the task for ocha to launch.")
-            yield Input(placeholder="Enter task prompt…", id="new-task-input")
-            with Horizontal(id="new-task-actions"):
-                yield Button("Launch", id="submit-task", variant="primary", classes="new-task-button")
-                yield Button("Cancel", id="cancel-task")
+            yield Static("[#b8bb26]>[/] [b]new task[/b]", id="new-task-title")
+            yield Input(placeholder="what should ocha do?", id="new-task-input")
+            yield Static(
+                "[#504945]enter[/] [#928374]submit[/]  "
+                "[#504945]esc[/] [#928374]cancel[/]",
+                id="new-task-hint",
+            )
 
     def on_mount(self) -> None:
         self.query_one(Input).focus()
@@ -275,8 +266,30 @@ class OchaApp(App[None]):
         yield MainLayout()
 
     def on_mount(self) -> None:
+        self._ensure_ocha_branch()
         self.refresh_from_state()
         self.action_focus_agents()
+
+    def _ensure_ocha_branch(self) -> None:
+        """Create and checkout the ocha branch if it doesn't already exist."""
+        try:
+            current = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if current.returncode == 0 and current.stdout.strip() == OCHA_BRANCH:
+                return
+            # Check if branch exists
+            check = subprocess.run(
+                ["git", "rev-parse", "--verify", OCHA_BRANCH],
+                capture_output=True, text=True, timeout=5,
+            )
+            if check.returncode == 0:
+                subprocess.run(["git", "checkout", OCHA_BRANCH], capture_output=True, timeout=5)
+            else:
+                subprocess.run(["git", "checkout", "-b", OCHA_BRANCH], capture_output=True, timeout=5)
+        except Exception:
+            pass  # non-fatal — works fine without git
 
     def refresh_from_state(self) -> None:
         self.query_one(AgentsPane).load(self.state)
@@ -362,7 +375,17 @@ class OchaApp(App[None]):
             return
         self.state = launch_task(self.state, task)
         self.refresh_from_state()
-        self.notify("Prepared coordinator, lead, builder, and reviewer Junie sessions for the new task.")
+        task_obj = self.state.selected_task
+        if task_obj:
+            running = sum(1 for w in task_obj.workers if w.status == WorkerStatus.RUNNING)
+            queued = sum(1 for w in task_obj.workers if w.status == WorkerStatus.QUEUED)
+            self.notify(
+                f"[#b8bb26]●[/] Task {task_obj.task_id} launched — "
+                f"{running} running, {queued} queued",
+                severity="information",
+            )
+        else:
+            self.notify("Task launched.")
 
     def _sync_selection_from_sidebar(self, list_view: ListView) -> None:
         if list_view.index is None or list_view.index == self.state.selected_index:
