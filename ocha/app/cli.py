@@ -4,7 +4,16 @@ import argparse
 import sys
 from pathlib import Path
 
-from .install import DEFAULT_BRANCH, DEFAULT_REPO_URL, InstallError, clone_repo, default_checkout_dir, update_repo
+from .install import (
+    DEFAULT_BRANCH,
+    DEFAULT_REPO_URL,
+    InstallError,
+    clone_repo,
+    default_install_dir,
+    ensure_bootstrap,
+    relaunch_from_bootstrap,
+    update_repo,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -16,28 +25,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    download = subparsers.add_parser("download", help="Clone the ocha repository to a local checkout")
-    download.add_argument("target", nargs="?", default=None, help="Destination directory for the checkout")
+    download = subparsers.add_parser("download", help="Clone the ocha repository to ~/.ocha and install its runtime")
+    download.add_argument("target", nargs="?", default=None, help="Destination directory for the managed ocha install")
     download.add_argument("--repo-url", default=DEFAULT_REPO_URL, help="Git repository to clone")
     download.add_argument("--branch", default=DEFAULT_BRANCH, help="Branch to clone")
     download.add_argument("--force", action="store_true", help="Replace an existing target directory")
 
-    update = subparsers.add_parser("update", help="Fast-forward an existing ocha checkout from origin")
-    update.add_argument("target", nargs="?", default=None, help="Checkout directory to update")
+    update = subparsers.add_parser("update", help="Update an existing ~/.ocha install from origin and refresh its runtime")
+    update.add_argument("target", nargs="?", default=None, help="Managed ocha install directory to update")
     update.add_argument("--branch", default=DEFAULT_BRANCH, help="Branch to update")
-
-    subparsers.add_parser("tui", help="Launch the Textual TUI")
     return parser
 
 
 def resolve_target(raw_target: str | None) -> Path:
     if raw_target:
         return Path(raw_target).expanduser()
-    return default_checkout_dir()
+    return default_install_dir()
 
 
 def launch_tui() -> int:
-    from .app import OchaApp
+    try:
+        from .app import OchaApp
+    except ModuleNotFoundError as error:
+        if error.name != "textual":
+            raise
+
+        target = default_install_dir()
+        if not target.exists() or not (target / "pyproject.toml").exists():
+            clone_repo(target)
+        bootstrap = ensure_bootstrap(target)
+        relaunch_from_bootstrap(bootstrap)
+        return 0
 
     OchaApp().run()
     return 0
@@ -47,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    command = args.command or "tui"
+    command = args.command
     try:
         if command == "download":
             result = clone_repo(
@@ -62,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
             result = update_repo(resolve_target(args.target), branch=args.branch)
             print(f"Updated {result.target} from {result.repo_url} on {result.branch} @ {result.revision}")
             return 0
-        if command == "tui":
+        if command is None:
             return launch_tui()
         parser.error(f"Unknown command: {command}")
     except InstallError as error:

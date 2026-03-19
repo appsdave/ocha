@@ -5,10 +5,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.install import InstallError, clone_repo, update_repo
+from app.install import InstallError, clone_repo, default_install_dir, update_repo
 
 
 class InstallTests(unittest.TestCase):
+    def test_default_install_dir_uses_home_dot_ocha(self) -> None:
+        self.assertEqual(default_install_dir(Path("/tmp/home")), Path("/tmp/home/.ocha"))
+
     def test_clone_repo_rejects_non_empty_target_without_force(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "checkout"
@@ -33,13 +36,15 @@ class InstallTests(unittest.TestCase):
             (target / "old.txt").write_text("old")
 
             with patch("app.install.run_git") as run_git:
-                run_git.side_effect = [
-                    None,
-                    type("Result", (), {"stdout": "abc123\n"})(),
-                ]
+                with patch("app.install.ensure_bootstrap") as ensure_bootstrap:
+                    run_git.side_effect = [
+                        None,
+                        type("Result", (), {"stdout": "abc123\n"})(),
+                    ]
 
-                result = clone_repo(target, force=True)
+                    result = clone_repo(target, force=True)
 
             self.assertEqual(result.action, "downloaded")
             self.assertEqual(result.revision, "abc123")
             self.assertFalse((target / "old.txt").exists())
+            ensure_bootstrap.assert_called_once_with(target)

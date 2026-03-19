@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from app.cli import build_parser, resolve_target
-from app.install import default_checkout_dir
+from app.install import default_install_dir
 
 
 class CliTests(unittest.TestCase):
@@ -19,8 +19,12 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.branch, "agent")
         self.assertTrue(args.force)
 
-    def test_resolve_target_uses_default_checkout(self) -> None:
-        self.assertEqual(resolve_target(None), default_checkout_dir())
+    def test_tui_subcommand_is_not_exposed(self) -> None:
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(["tui"])
+
+    def test_resolve_target_uses_default_install_dir(self) -> None:
+        self.assertEqual(resolve_target(None), default_install_dir())
 
     def test_resolve_target_expands_user_path(self) -> None:
         resolved = resolve_target("~/ocha-test-target")

@@ -6,11 +6,13 @@ This folder is a concept-focused explanation of what `ocha` does today and how i
 
 The current Python/Textual rebuild now ships a small command surface behind `ocha`:
 
-- `ocha` or `ocha tui` — launch the Textual dashboard
-- `ocha download [target]` — clone the canonical repo checkout from `git@github.com:appsdave/ocha.git`
-- `ocha update [target]` — fast-forward an existing checkout from `origin/main`
+- `ocha` — launch the Textual dashboard
+- `ocha download [target]` — clone the canonical repo into `~/.ocha` and install its runtime dependencies
+- `ocha update [target]` — fast-forward an existing `~/.ocha` install from `origin/main` and refresh dependencies
 
-If no target is provided for `download` or `update`, `ocha` uses `~/.local/share/ocha/checkout`.
+If no target is provided for `download` or `update`, `ocha` uses `~/.ocha`.
+
+The intended install model is self-managed: the `ocha` command keeps its checked-out project and virtual environment under `~/.ocha`, and first-run/bootstrap setup prepares the needed dependencies there.
 
 ## What ocha is
 
