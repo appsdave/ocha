@@ -78,6 +78,22 @@ Kills all running agent processes (by PID from status file), removes all active 
 
 ---
 
+### `ocha cord resolve [--pr <number>] [--branch <name>] [-b <branch>]`
+Resolves merge conflicts on a PR branch by rebasing onto the base branch. When conflicts are detected, a Junie builder agent is automatically spawned to resolve them.
+
+Flow:
+1. Resolves the branch name (from `--pr` via `gh pr view` or directly from `--branch`)
+2. Fetches the latest refs for the base branch and PR branch
+3. Creates a temporary worktree and checks out the PR branch
+4. Attempts `git rebase origin/<baseBranch>`
+5. If conflicts arise, spawns a Junie builder agent with conflict resolution instructions
+6. Force-pushes the rebased branch (`--force-with-lease`, falling back to `--force`)
+7. Cleans up the temporary worktree on success; leaves it for manual resolution on failure
+
+Requires `gh` CLI when using `--pr`.
+
+---
+
 ### `ocha dev -t '<task>' [--base <branch>] [--no-merge]`
 Runs a single Junie agent in an isolated worktree specifically for making changes to the ocha source code itself. Prevents the running ocha process from being modified mid-execution.
 
@@ -102,6 +118,7 @@ ocha/
 │   │   ├── cord-start.js    # ocha cord start
 │   │   ├── cord-status.js   # ocha cord status
 │   │   ├── cord-stop.js     # ocha cord stop
+│   │   ├── cord-resolve.js  # ocha cord resolve (merge conflict resolution)
 │   │   └── dev.js           # ocha dev
 │   └── lib/
 │       ├── agent.js         # Spawn Junie agents, auth check, git push
@@ -264,6 +281,8 @@ See `AGENTS.md` for the full bd workflow.
 - **Brave mode** — all agents run with `--brave` so they don't pause for confirmations
 - **Coordinator doesn't code** — the decompose step runs in a temp directory; only builder/reviewer agents touch project files
 - **Push + PR always** — after each builder/reviewer pair completes, the branch is pushed to origin and a PR is opened via `gh`; no auto-merge occurs
+- **Auto-rebase before PR** — builders rebase onto the latest base branch before pushing to minimize merge conflicts
+- **Conflict resolution** — `cord resolve` can automatically rebase a PR branch and spawn an agent to fix conflicts when they occur
 - **Builder retries** — each builder is retried up to 2 times (3 total attempts) before being marked failed
 - **Git validation** — `cord start` checks for a valid git repo and base branch before doing anything, with clear fix instructions if not set up
 - **npm link symlink** — the global `ocha` command is a symlink to the source directory, so all changes are live immediately without reinstalling
