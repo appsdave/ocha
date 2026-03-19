@@ -48,13 +48,15 @@ export function taskSlug(description, maxWords = 6) {
  * The model picks the descriptive part; the slug provides human-readable context.
  */
 function ensureUniqueBranch(branch, index, description, prefix = 'ocha') {
-  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15).replace(/(\d{8})(\d{6})/, '$1-$2');
+  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14).replace(/(\d{8})(\d{6})/, '$1-$2');
   const slug = taskSlug(description);
+  // Sanitize: collapse consecutive dots (git forbids ".."), strip leading/trailing dots
+  const sanitize = (name) => name.replace(/\.{2,}/g, '.').replace(/(^\.|\.$)/g, '');
   if (branch) {
     const raw = branch.replace(/^ocha\//, '');
-    return `${prefix}/${raw}-${ts}.${slug}`;
+    return `${prefix}/${sanitize(`${raw}-${ts}.${slug}`)}`;
   }
-  return `${prefix}/task-${index}-${ts}.${slug}`;
+  return `${prefix}/${sanitize(`task-${index}-${ts}.${slug}`)}`;
 }
 
 /**
