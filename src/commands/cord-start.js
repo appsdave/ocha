@@ -5,8 +5,8 @@
  * the full pipeline: enhance → lead → builders → reviewers.
  */
 import chalk from 'chalk';
-import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { git } from '../lib/exec.js';
 import { ensureDir, pathExists } from '../lib/files.js';
 import { OCHA_DIR, ROLES_DIR } from '../lib/paths.js';
 import { runCoordinator } from '../lib/coordinator.js';
@@ -62,7 +62,7 @@ export async function cordStart(opts) {
   // Check git repo
   console.log(chalk.blue('\n  🔍 Checking prerequisites…'));
   try {
-    execSync('git rev-parse --is-inside-work-tree', { stdio: 'pipe' });
+    git(['rev-parse', '--is-inside-work-tree']);
   } catch {
     console.log(chalk.red('  ✗ Not a git repository'));
     console.log(chalk.yellow('\n  To fix this, run:'));
@@ -72,7 +72,7 @@ export async function cordStart(opts) {
 
   // Check base branch exists
   try {
-    execSync(`git rev-parse --verify ${opts.baseBranch}`, { stdio: 'pipe' });
+    git(['rev-parse', '--verify', opts.baseBranch]);
   } catch {
     console.log(chalk.red(`  ✗ Branch "${opts.baseBranch}" does not exist`));
     console.log(chalk.yellow(`\n  Make sure you have at least one commit on "${opts.baseBranch}":`));

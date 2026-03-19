@@ -10,18 +10,53 @@ import { existsSync, readFileSync } from 'fs';
 import { readText } from './files.js';
 import { OCHA_DIR, ROLES_DIR } from './paths.js';
 
+/** Common stop words filtered out when building a task slug. */
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'and',
+  'or', 'but', 'not', 'this', 'that', 'it', 'its', 'as', 'do', 'does',
+  'did', 'will', 'would', 'should', 'could', 'can', 'may', 'might',
+  'has', 'have', 'had', 'so', 'if', 'then', 'than', 'when', 'what',
+  'which', 'who', 'how', 'all', 'each', 'every', 'both', 'few', 'more',
+  'some', 'any', 'no', 'just', 'about', 'up', 'out', 'into', 'over',
+]);
+
 /**
- * Add a timestamp + short random suffix to a model-chosen branch name for uniqueness.
- * The model picks the descriptive part; this just prevents collisions.
+ * Build a short slug (up to `maxWords` meaningful words) from a task description.
+ * Strips markdown, stop words, and non-alphanumeric characters.
+ *
+ * @param {string} description - Free-form task description.
+ * @param {number} [maxWords=6] - Maximum number of words in the slug.
+ * @returns {string} Hyphen-separated lowercase slug, e.g. "fix-retry-logic-config-parser".
  */
-function ensureUniqueBranch(branch, index, prefix = 'ocha') {
-  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15).replace(/(\d{8})(\d{6})/, '$1-$2');
-  const suffix = Math.random().toString(36).slice(2, 6);
+export function taskSlug(description, maxWords = 6) {
+  if (!description) return '';
+  const cleaned = description
+    .replace(/^##\s*Task\s*\n/i, '')       // strip markdown task header
+    .replace(/\n---\n[\s\S]*$/, '')         // strip context block
+    .replace(/[^a-zA-Z0-9\s-]/g, ' ')      // keep only alphanumeric, spaces, hyphens
+    .toLowerCase();
+  const words = cleaned
+    .split(/[\s-]+/)
+    .filter(w => w.length > 1 && !STOP_WORDS.has(w));
+  const slug = words.slice(0, maxWords).join('-');
+  return slug || 'task';
+}
+
+/**
+ * Add a timestamp + task-summary slug to a model-chosen branch name for uniqueness.
+ * The model picks the descriptive part; the slug provides human-readable context.
+ */
+function ensureUniqueBranch(branch, index, description, prefix = 'ocha') {
+  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14).replace(/(\d{8})(\d{6})/, '$1-$2');
+  const slug = taskSlug(description);
+  // Sanitize: collapse consecutive dots (git forbids ".."), strip leading/trailing dots
+  const sanitize = (name) => name.replace(/\.{2,}/g, '.').replace(/(^\.|\.$)/g, '');
   if (branch) {
     const raw = branch.replace(/^ocha\//, '');
-    return `${prefix}/${raw}-${ts}-${suffix}`;
+    return `${prefix}/${sanitize(`${raw}-${ts}.${slug}`)}`;
   }
-  return `${prefix}/task-${index}-${ts}-${suffix}`;
+  return `${prefix}/${sanitize(`task-${index}-${ts}.${slug}`)}`;
 }
 
 /**
@@ -42,7 +77,7 @@ export async function runLeadAgent(enhancedTask, projectDir) {
       return result.tasks.map((t, i) => ({
         description: t.description,
         role: 'builder',
-        branch: ensureUniqueBranch(t.branch, i + 1),
+        branch: ensureUniqueBranch(t.branch, i + 1, t.description),
       }));
     }
   } catch {
@@ -53,7 +88,7 @@ export async function runLeadAgent(enhancedTask, projectDir) {
   return [{
     description: enhancedTask,
     role: 'builder',
-    branch: ensureUniqueBranch(null, 1),
+    branch: ensureUniqueBranch(null, 1, enhancedTask),
   }];
 }
 

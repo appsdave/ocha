@@ -15,11 +15,13 @@ import { createWorktree, removeWorktree } from './worktree.js';
 import { readStatus, writeStatus, createInitialStatus } from './status.js';
 import { enhanceTask } from './enhance.js';
 import { runLeadAgent } from './lead.js';
-import { execSync } from 'child_process';
+import { git, exec } from './exec.js';
+import { validateBranchName, validateMaxAgents } from './validate.js';
 import { safeDelete } from './files.js';
 import { WORKTREES_DIR } from './paths.js';
 import chalk from 'chalk';
 import { startSpinner, succeedSpinner, failSpinner, stopSpinner, logWithSpinner } from './spinner.js';
+import { isBeadsInitialized, ensureDoltServer, createBeadsIssue, claimBeadsIssue, closeBeadsIssue, pushBeadsData } from './beads.js';
 import {
   initTree,
   setLeadNode,
@@ -48,10 +50,22 @@ function extractRawTask(enhanced, original) {
 }
 
 export async function runCoordinator(task, opts) {
-  const maxAgents = parseInt(opts.maxAgents, 10);
-  const baseBranch = opts.baseBranch;
+  const maxAgents = validateMaxAgents(opts.maxAgents);
+  const baseBranch = validateBranchName(opts.baseBranch);
   const projectDir = opts.projectDir || process.cwd();
   const repoDirs = (opts.repoDirs && opts.repoDirs.length > 0) ? opts.repoDirs : [projectDir];
+
+  // ── Step 0: Start beads if available ─────────────────────────────────────
+  let beadsEnabled = false;
+  try {
+    ensureDoltServer(projectDir);
+    beadsEnabled = isBeadsInitialized(projectDir);
+    if (beadsEnabled) {
+      console.log(chalk.green('✔ 🔗 Beads (bd) issue tracking active'));
+    }
+  } catch {
+    // Beads not available — continue without it
+  }
 
   // ── Step 1: Coordinator enhances the prompt ──────────────────────────────
   initTree(task);
@@ -100,8 +114,19 @@ export async function runCoordinator(task, opts) {
     }
   }
 
-  // ── Step 3: Assign repoDir round-robin to each task ─────────────────────
+  // ── Step 3: Assign repoDir round-robin & create beads issues ────────────
   tasks.forEach((t, i) => { if (!t.repoDir) t.repoDir = repoDirs[i % repoDirs.length]; });
+
+  if (beadsEnabled) {
+    for (const t of tasks) {
+      const title = extractRawTask(t.description, t.description).split('\n')[0].slice(0, 80) || shortDesc(t.description);
+      const issueId = createBeadsIssue(title, t.description, { cwd: projectDir });
+      if (issueId) {
+        t.beadsId = issueId;
+        logWithSpinner(chalk.dim(`  🔗 Beads issue ${issueId} → ${t.branch}`));
+      }
+    }
+  }
 
   // ── Step 4: Write initial status ─────────────────────────────────────────
   const status = createInitialStatus(enhancedTask, tasks);
@@ -141,6 +166,18 @@ export async function runCoordinator(task, opts) {
   cleanupWorktrees(finalStatus);
   safeDelete(WORKTREES_DIR, { recursive: true });
 
+  // Push beads data if active
+  if (beadsEnabled) {
+    // Close completed task issues
+    for (const t of finalStatus.tasks) {
+      if (t.state === 'completed' && t.beadsId) {
+        closeBeadsIssue(t.beadsId, `Completed — PR: ${t.prUrl || 'none'}`, projectDir);
+      }
+    }
+    pushBeadsData(projectDir);
+    logWithSpinner(chalk.dim('  🔗 Beads data synced'));
+  }
+
   // Auto-stop: mark session completed
   finalStatus.session.state = 'completed';
   finalStatus.session.completedAt = new Date().toISOString();
@@ -156,6 +193,14 @@ const MAX_RETRIES = 2;
 async function runBuilderWithReview(task, status, baseBranch) {
   const cleanDesc = task.displayDesc ? shortDesc(task.displayDesc) : shortDesc(task.description.split('\n')[0]);
   setBuilderNode(task.id, 'pending', cleanDesc);
+
+  // Claim beads issue atomically before starting work
+  if (task.beadsId) {
+    const claimed = claimBeadsIssue(task.beadsId, task.repoDir || process.cwd());
+    if (claimed) {
+      logWithSpinner(chalk.dim(`  🔗 Beads issue ${task.beadsId} claimed by builder`));
+    }
+  }
 
   const taskRepoDir = task.repoDir || process.cwd();
   const worktreePath = createWorktree(task.branch, baseBranch, taskRepoDir);
@@ -182,6 +227,9 @@ async function runBuilderWithReview(task, status, baseBranch) {
     setBuilderNode(task.id, 'failed', cleanDesc);
     logWithSpinner(chalk.red(`  ✗ Builder failed after ${MAX_RETRIES + 1} attempts: ${cleanDesc}`));
     task.state = 'failed';
+    if (task.beadsId) {
+      closeBeadsIssue(task.beadsId, `Failed after ${MAX_RETRIES + 1} attempts`, task.repoDir || process.cwd());
+    }
     writeStatus(status);
     return;
   }
@@ -214,28 +262,30 @@ async function runBuilderWithReview(task, status, baseBranch) {
       logWithSpinner(chalk.yellow(`  ⚠ Review flagged issues: ${cleanDesc}`));
     }
 
-    // Always push branch and open a PR — never auto-merge
+    // Rebase onto latest base branch to avoid merge conflicts in the PR
     try {
-      execSync(`cd "${worktreePath}" && git push -u origin ${task.branch} --force`, { stdio: 'pipe' });
-      logWithSpinner(chalk.green(`  ✓ Pushed branch ${task.branch} to origin`));
-    } catch (pushErr) {
-      logWithSpinner(chalk.yellow(`  ⚠ Could not push ${task.branch}: ${pushErr.message}`));
+      git(['fetch', 'origin', baseBranch], { cwd: worktreePath });
+      git(['rebase', `origin/${baseBranch}`], { cwd: worktreePath });
+      logWithSpinner(chalk.green(`  ✓ Rebased ${task.branch} onto ${baseBranch}`));
+    } catch (rebaseErr) {
+      // If rebase fails (conflict), abort and continue — PR will show conflicts
+      try { git(['rebase', '--abort'], { cwd: worktreePath }); } catch {}
+      logWithSpinner(chalk.yellow(`  ⚠ Auto-rebase failed, PR may have conflicts: ${rebaseErr.message.split('\n')[0]}`));
     }
 
+    // Always push branch and open a PR — never auto-merge
+    pushBranch(task.branch, worktreePath);
+
+    let prUrl = null;
     try {
       const prTitle = `ocha: ${shortDesc(cleanDesc)}`;
 
       // Build a git log summary of what changed vs base branch
       let diffSummary = '';
       try {
-        const logLines = execSync(
-          `git log --oneline ${baseBranch}..${task.branch}`,
-          { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-        ).trim();
-        const statLines = execSync(
-          `git diff --stat ${baseBranch}..${task.branch}`,
-          { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-        ).trim();
+        const range = `${baseBranch}..${task.branch}`;
+        const logLines = git(['log', '--oneline', range], { cwd: worktreePath }).trim();
+        const statLines = git(['diff', '--stat', range], { cwd: worktreePath }).trim();
         if (logLines) diffSummary = `\n\n### Commits\n\`\`\`\n${logLines}\n\`\`\``;
         if (statLines) diffSummary += `\n\n### Files changed\n\`\`\`\n${statLines}\n\`\`\``;
       } catch {}
@@ -244,12 +294,15 @@ async function runBuilderWithReview(task, status, baseBranch) {
         ? '✅ Reviewed and approved by ocha reviewer.'
         : '⚠️ Reviewer flagged issues — needs manual review.';
       const prBody = `${reviewStatus}\n\n**Task:** ${cleanDesc}${diffSummary}`;
-      const prOutput = execSync(
-        `gh pr create --base ${baseBranch} --head ${task.branch} --title "${prTitle}" --body "${prBody}"`,
-        { cwd: taskRepoDir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-      );
+      const prOutput = exec('gh', [
+        'pr', 'create',
+        '--base', baseBranch,
+        '--head', task.branch,
+        '--title', prTitle,
+        '--body', prBody,
+      ], { cwd: taskRepoDir });
       // gh pr create prints the URL as the last line
-      const prUrl = prOutput.trim().split('\n').filter(l => l.startsWith('http')).pop()
+      prUrl = prOutput.trim().split('\n').filter(l => l.startsWith('http')).pop()
         || prOutput.trim().split('\n').pop();
       task.prUrl = prUrl;
       writeStatus(status);
@@ -257,7 +310,7 @@ async function runBuilderWithReview(task, status, baseBranch) {
     } catch (prErr) {
       // PR may already exist — try to get the URL
       try {
-        const prUrl = execSync(`gh pr view ${task.branch} --json url -q .url`, { cwd: taskRepoDir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+        prUrl = exec('gh', ['pr', 'view', task.branch, '--json', 'url', '-q', '.url'], { cwd: taskRepoDir }).trim();
         task.prUrl = prUrl;
         writeStatus(status);
         console.log(chalk.cyan(`  🔗 PR already exists: ${prUrl}`));
@@ -265,12 +318,160 @@ async function runBuilderWithReview(task, status, baseBranch) {
         console.log(chalk.yellow(`  ⚠ Could not create PR for ${task.branch}: ${prErr.message.split('\n')[0]}`));
       }
     }
+
+    // ── Post-PR: check mergeability and auto-resolve conflicts ────────────
+    if (task.prUrl) {
+      await ensurePRMergeable(task, baseBranch, worktreePath, taskRepoDir, cleanDesc);
+    }
   } catch (reviewErr) {
     setReviewerNode(task.id, 'failed');
     logWithSpinner(chalk.yellow(`  ⚠ Reviewer failed to run: ${reviewErr.message}`));
   }
 
   writeStatus(status);
+}
+
+// ─── Push & Merge-conflict resolution ────────────────────────────────────────
+
+function pushBranch(branch, worktreePath) {
+  try {
+    git(['push', '-u', 'origin', branch, '--force-with-lease'], { cwd: worktreePath });
+    logWithSpinner(chalk.green(`  ✓ Pushed branch ${branch} to origin`));
+  } catch {
+    try {
+      git(['push', '-u', 'origin', branch, '--force'], { cwd: worktreePath });
+      logWithSpinner(chalk.green(`  ✓ Pushed branch ${branch} to origin`));
+    } catch (err) {
+      logWithSpinner(chalk.yellow(`  ⚠ Could not push ${branch}: ${err.message}`));
+    }
+  }
+}
+
+/** Wait ms milliseconds. */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Poll GitHub for PR mergeability status.
+ * GitHub computes mergeability asynchronously, so we poll up to `maxAttempts` times.
+ * Returns 'MERGEABLE', 'CONFLICTING', or 'UNKNOWN'.
+ */
+function checkPRMergeability(branch, repoDir, maxAttempts = 5) {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const json = exec('gh', [
+        'pr', 'view', branch,
+        '--json', 'mergeable',
+        '-q', '.mergeable',
+      ], { cwd: repoDir }).trim();
+      if (json === 'MERGEABLE' || json === 'CONFLICTING') return json;
+      // UNKNOWN — GitHub is still computing, wait and retry
+    } catch { /* gh failed — skip */ }
+    if (i < maxAttempts - 1) {
+      // Synchronous sleep via Atomics (avoids needing async in a sync helper)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
+    }
+  }
+  return 'UNKNOWN';
+}
+
+/**
+ * After a PR is created, check if it's mergeable. If conflicting, rebase onto
+ * the base branch, spawn a Junie agent to resolve conflicts if needed, and
+ * force-push the result. Retries up to MAX_CONFLICT_RETRIES times.
+ */
+const MAX_CONFLICT_RETRIES = 2;
+
+async function ensurePRMergeable(task, baseBranch, worktreePath, repoDir, cleanDesc) {
+  for (let attempt = 1; attempt <= MAX_CONFLICT_RETRIES; attempt++) {
+    // Give GitHub a moment to compute mergeability
+    await sleep(5000);
+
+    const mergeable = checkPRMergeability(task.branch, repoDir);
+    if (mergeable === 'MERGEABLE') {
+      logWithSpinner(chalk.green(`  ✓ PR is mergeable`));
+      return;
+    }
+    if (mergeable === 'UNKNOWN') {
+      logWithSpinner(chalk.dim(`  ℹ PR mergeability unknown — skipping auto-resolve`));
+      return;
+    }
+
+    // CONFLICTING — attempt to fix
+    logWithSpinner(chalk.yellow(`  ⚠ PR has merge conflicts — auto-resolving (attempt ${attempt}/${MAX_CONFLICT_RETRIES})`));
+
+    // Fetch latest base and try rebase
+    try {
+      git(['fetch', 'origin', baseBranch], { cwd: worktreePath });
+    } catch {}
+
+    let rebaseClean = false;
+    try {
+      git(['rebase', `origin/${baseBranch}`], { cwd: worktreePath });
+      rebaseClean = true;
+      logWithSpinner(chalk.green(`  ✓ Rebase succeeded — no conflicts`));
+    } catch {
+      logWithSpinner(chalk.yellow(`  ⚠ Rebase has conflicts — spawning agent to resolve`));
+    }
+
+    // If rebase had conflicts, spawn a Junie agent to fix them
+    if (!rebaseClean) {
+      let conflictFiles = '';
+      try {
+        conflictFiles = git(['diff', '--name-only', '--diff-filter=U'], { cwd: worktreePath }).trim();
+      } catch {
+        try {
+          conflictFiles = exec('grep', ['-rl', '<<<<<<<', '.'], { cwd: worktreePath }).trim();
+        } catch {}
+      }
+
+      const resolveTask = {
+        id: `${task.id}-resolve-${attempt}`,
+        description: [
+          `Resolve the git merge conflicts in this worktree.`,
+          ``,
+          `The branch \`${task.branch}\` is being rebased onto \`origin/${baseBranch}\`.`,
+          `Git has paused the rebase because of conflicts.`,
+          ``,
+          `Conflicted files:`,
+          conflictFiles || '(run `git diff --name-only --diff-filter=U` to find them)',
+          ``,
+          `Original task: ${cleanDesc}`,
+          ``,
+          `Instructions:`,
+          `1. Open each conflicted file and resolve the <<<<<<< / ======= / >>>>>>> markers`,
+          `2. Keep the intent of BOTH sides — the base branch changes AND the PR branch changes`,
+          `3. Run \`git add <file>\` for each resolved file`,
+          `4. Run \`GIT_EDITOR=true git rebase --continue\` to finish the rebase`,
+          `5. If the rebase has more conflicts, repeat steps 1-4`,
+          `6. Do NOT run git push — that will be handled automatically`,
+        ].join('\n'),
+        branch: task.branch,
+        role: 'builder',
+      };
+
+      try {
+        const { code } = await spawnAgent(resolveTask, worktreePath, 'builder');
+        if (code === 0) {
+          rebaseClean = true;
+          logWithSpinner(chalk.green(`  ✓ Agent resolved merge conflicts`));
+        } else {
+          logWithSpinner(chalk.red(`  ✗ Agent could not resolve conflicts`));
+        }
+      } catch (err) {
+        logWithSpinner(chalk.red(`  ✗ Conflict resolver error: ${err.message}`));
+      }
+    }
+
+    if (!rebaseClean) {
+      // Abort the failed rebase so the worktree is clean
+      try { git(['rebase', '--abort'], { cwd: worktreePath }); } catch {}
+      logWithSpinner(chalk.yellow(`  ⚠ Could not auto-resolve conflicts — PR will need manual resolution`));
+      return;
+    }
+
+    // Force-push the resolved branch
+    pushBranch(task.branch, worktreePath);
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -281,7 +482,7 @@ function showDiffStats(status, baseBranch) {
     if (task.merged) continue;
     try {
       const repoDir = task.repoDir || process.cwd();
-      const diff = execSync(`git diff ${baseBranch}..${task.branch} --stat`, { cwd: repoDir, encoding: 'utf-8' }).trim();
+      const diff = git(['diff', `${baseBranch}..${task.branch}`, '--stat'], { cwd: repoDir }).trim();
       if (diff) {
         console.log(chalk.blue(`\n  📋 Changes in ${task.branch}:`));
         console.log(chalk.gray(diff.split('\n').map(l => `     ${l}`).join('\n')));

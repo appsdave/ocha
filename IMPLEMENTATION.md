@@ -78,6 +78,22 @@ Kills all running agent processes (by PID from status file), removes all active 
 
 ---
 
+### `ocha cord resolve [--pr <number>] [--branch <name>] [-b <branch>]`
+Resolves merge conflicts on a PR branch by rebasing onto the base branch. When conflicts are detected, a Junie builder agent is automatically spawned to resolve them.
+
+Flow:
+1. Resolves the branch name (from `--pr` via `gh pr view` or directly from `--branch`)
+2. Fetches the latest refs for the base branch and PR branch
+3. Creates a temporary worktree and checks out the PR branch
+4. Attempts `git rebase origin/<baseBranch>`
+5. If conflicts arise, spawns a Junie builder agent with conflict resolution instructions
+6. Force-pushes the rebased branch (`--force-with-lease`, falling back to `--force`)
+7. Cleans up the temporary worktree on success; leaves it for manual resolution on failure
+
+Requires `gh` CLI when using `--pr`.
+
+---
+
 ### `ocha dev -t '<task>' [--base <branch>] [--no-merge]`
 Runs a single Junie agent in an isolated worktree specifically for making changes to the ocha source code itself. Prevents the running ocha process from being modified mid-execution.
 
@@ -102,13 +118,17 @@ ocha/
 │   │   ├── cord-start.js    # ocha cord start
 │   │   ├── cord-status.js   # ocha cord status
 │   │   ├── cord-stop.js     # ocha cord stop
+│   │   ├── cord-resolve.js  # ocha cord resolve (merge conflict resolution)
 │   │   └── dev.js           # ocha dev
 │   └── lib/
 │       ├── agent.js         # Spawn Junie agents, auth check, git push
+│       ├── beads.js         # beads (bd) issue tracker integration
 │       ├── coordinator.js   # Task loop, batched agent concurrency
 │       ├── decompose.js     # Task decomposition via Junie
 │       ├── enhance.js       # Prompt enhancement with project context
+│       ├── exec.js          # Safe command execution utilities
 │       ├── files.js         # Safe file I/O utilities
+│       ├── issues.js        # Agent issue feed (problems, warnings, notes)
 │       ├── lead.js          # Lead agent runner (produces task plan JSON)
 │       ├── paths.js         # Shared path constants
 │       ├── prompt.js        # Interactive multi-line task prompt
@@ -122,6 +142,7 @@ ocha/
 │       ├── tui-layout.js    # blessed screen layout and prompt dialog
 │       ├── tui-utils.js     # TUI display utilities (elapsed, badges, truncation)
 │       ├── ui.js            # Shared UI helper utilities
+│       ├── validate.js      # Input validation helpers
 │       └── worktree.js      # git worktree create/remove/list/lookup/clean
 ├── install.sh               # One-command installer
 └── .ocha/                   # Per-project config (gitignored)
@@ -221,10 +242,10 @@ Running `ocha` with no arguments launches the interactive TUI — a persistent, 
 |-----|--------|
 | `n` | Open new-task prompt |
 | `↑` / `↓` | Navigate agent list |
-| `K` | Kill selected agent |
+| `k` | Kill selected agent |
 | `l` / `→` | Focus log pane |
 | `h` / `←` | Focus agent list |
-| `C` / `Shift+C` / `x` | Clear completed agents |
+| `c` | Clear completed/failed agents |
 | `q` / `Ctrl+C` | Quit (confirms if agents running) |
 
 ### TUI modules
@@ -242,12 +263,27 @@ When the TUI spawns a task it re-invokes `ocha --tui-agent --task <task> --branc
 
 ---
 
+## Issue Tracking
+
+Ocha integrates with [beads (bd)](https://github.com/appsdave/beads) for issue tracking across multi-agent sessions. The `src/lib/beads.js` module handles:
+
+- Creating and claiming issues before agent work begins
+- Closing issues when work completes
+- Linking discovered sub-issues back to parent tasks via `discovered-from` dependencies
+
+See `AGENTS.md` for the full bd workflow.
+
+---
+
 ## Key Design Decisions
 
 - **Worktree isolation** — every agent gets its own `git worktree` so agents never conflict with each other or the running ocha process
 - **Brave mode** — all agents run with `--brave` so they don't pause for confirmations
 - **Coordinator doesn't code** — the decompose step runs in a temp directory; only builder/reviewer agents touch project files
 - **Push + PR always** — after each builder/reviewer pair completes, the branch is pushed to origin and a PR is opened via `gh`; no auto-merge occurs
+- **Auto-rebase before PR** — builders rebase onto the latest base branch before pushing to minimize merge conflicts
+- **Conflict resolution** — `cord resolve` can automatically rebase a PR branch and spawn an agent to fix conflicts when they occur
 - **Builder retries** — each builder is retried up to 2 times (3 total attempts) before being marked failed
 - **Git validation** — `cord start` checks for a valid git repo and base branch before doing anything, with clear fix instructions if not set up
 - **npm link symlink** — the global `ocha` command is a symlink to the source directory, so all changes are live immediately without reinstalling
+- **Issue tracking** — beads (bd) provides dependency-aware, Dolt-powered issue tracking that prevents conflicts in multi-agent workflows

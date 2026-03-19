@@ -20,7 +20,7 @@ Ocha turns a single Junie session into a multi-agent team. You describe a high-l
 │                       │  ✅ Agent completed successfully              │
 │                       │  PR: https://github.com/org/repo/pull/42     │
 └───────────────────────┴─────────────────────────────────────────────┘
-  n new  ↑↓ navigate  K kill  C clear done  ←→ switch pane  q quit
+  n new  ↑↓ navigate  k kill  c clear done  ←→ switch pane  q quit
   ocha  |  2 task(s)  1 running  1 done  | ocha/update-docs-...
 ```
 
@@ -141,6 +141,30 @@ Stops all running agents and cleans up worktrees.
 ocha cord stop
 ```
 
+### `ocha cord resolve`
+
+Resolves merge conflicts on a PR branch by rebasing onto the base branch. If conflicts are found during the rebase, a Junie agent is automatically spawned to resolve them.
+
+```bash
+ocha cord resolve --pr 42
+ocha cord resolve --branch ocha/my-feature-branch
+ocha cord resolve --pr 42 -b develop
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-p, --pr <number>` | PR number to resolve | — |
+| `--branch <name>` | Branch name to resolve (alternative to `--pr`) | — |
+| `-b, --base-branch <branch>` | Base branch to rebase onto | `main` |
+
+Flow:
+1. Identifies the PR branch (from `--pr` via `gh` or `--branch`)
+2. Fetches the latest base branch and PR branch refs
+3. Creates a temporary worktree and attempts a rebase
+4. If conflicts arise, spawns a Junie agent to resolve them automatically
+5. Force-pushes the rebased branch so the PR is mergeable
+6. Cleans up the temporary worktree
+
 ### `ocha dev`
 
 Runs a task in an isolated dev worktree — safe for self-development on ocha itself.
@@ -171,8 +195,8 @@ ocha self-update
 |-----|--------|
 | `n` | Open new task prompt |
 | `↑` / `↓` | Navigate agent list |
-| `K` | Kill selected agent |
-| `C` | Clear completed/failed agents |
+| `k` | Kill selected agent |
+| `c` | Clear completed/failed agents |
 | `←` / `h` | Focus agent list |
 | `→` / `l` | Focus log pane |
 | `q` / `Ctrl+C` | Quit (confirms if agents running) |
@@ -219,7 +243,8 @@ ocha/
 │   │   ├── dev.js           # ocha dev (safe self-dev mode)
 │   │   ├── cord-start.js    # ocha cord start
 │   │   ├── cord-status.js   # ocha cord status
-│   │   └── cord-stop.js     # ocha cord stop
+│   │   ├── cord-stop.js     # ocha cord stop
+│   │   └── cord-resolve.js  # ocha cord resolve
 │   └── lib/
 │       ├── tui.js           # TUI orchestrator
 │       ├── tui-layout.js    # blessed widget construction
@@ -230,24 +255,55 @@ ocha/
 │       ├── decompose.js     # task decomposition logic
 │       ├── enhance.js       # prompt enhancer
 │       ├── agent.js         # Junie process spawner
+│       ├── beads.js         # beads (bd) issue tracker integration
 │       ├── worktree.js      # git worktree management
-│       ├── config.js        # configuration loader
 │       ├── issues.js        # agent issue feed
 │       ├── files.js         # filesystem helpers
 │       ├── status.js        # .ocha/status.json r/w
 │       ├── paths.js         # shared path constants
-│       ├── preflight.js     # pre-run checks
 │       ├── prompt.js        # prompt utilities
 │       ├── roles.js         # role prompt installer
 │       ├── tree.js          # directory tree builder
 │       ├── ui.js            # terminal box/progress utilities
 │       ├── spinner.js       # ora spinner helpers
+│       ├── exec.js          # safe command execution utilities
+│       ├── validate.js      # input validation helpers
 │       └── test-reporter.js # custom test reporter
 ├── install.sh               # one-liner installer
 └── .github/
     └── workflows/
         ├── junie-review.yml # Junie AI code review on PRs
         └── junie-tag.yml    # Junie triggered by label
+```
+
+## Development
+
+### Running Tests
+
+```bash
+npm test
+```
+
+Tests use Node.js built-in test runner with a custom reporter (`src/lib/test-reporter.js`).
+
+### Linting & Formatting
+
+```bash
+npm run lint          # check for lint errors
+npm run lint:fix      # auto-fix lint errors
+npm run format:check  # check formatting
+npm run format        # auto-format
+```
+
+### Issue Tracking
+
+This project uses [beads (bd)](https://github.com/appsdave/beads) for issue tracking. See `AGENTS.md` for the full workflow.
+
+```bash
+bd ready              # find available work
+bd show <id>          # view issue details
+bd update <id> --claim  # claim work
+bd close <id>         # complete work
 ```
 
 ## GitHub Actions

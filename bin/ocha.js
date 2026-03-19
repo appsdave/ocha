@@ -5,6 +5,7 @@ import { ochaDev } from '../src/commands/dev.js';
 import { cordStart } from '../src/commands/cord-start.js';
 import { cordStatus } from '../src/commands/cord-status.js';
 import { cordStop } from '../src/commands/cord-stop.js';
+import { cordResolve } from '../src/commands/cord-resolve.js';
 
 program
   .name('ocha')
@@ -17,7 +18,7 @@ program
   .option('-y, --yes', 'Reinitialize even if .ocha/ already exists')
   .action(ochaInit);
 
-const cord = program.command('cord').description('Manage a coordinated multi-agent session');
+const cord = program.command('cord').description('(deprecated) Use top-level commands instead: ocha status, ocha stop, ocha resolve');
 
 cord
   .command('start')
@@ -39,6 +40,35 @@ cord
   .command('stop')
   .description('Stop all running agents and clean up worktrees')
   .action(cordStop);
+
+cord
+  .command('resolve')
+  .description('Resolve merge conflicts on a PR branch (rebase + agent)')
+  .option('-p, --pr <number>', 'PR number to resolve')
+  .option('--branch <name>', 'Branch name to resolve (alternative to --pr)')
+  .option('-b, --base-branch <branch>', 'Base branch to rebase onto', 'main')
+  .action(cordResolve);
+
+// ── Top-level commands (preferred) ──────────────────────────────────────────
+
+program
+  .command('status')
+  .description('Show current session status and task states')
+  .option('-w, --watch', 'Poll and redraw every 3 seconds until done')
+  .action(cordStatus);
+
+program
+  .command('stop')
+  .description('Stop all running agents and clean up worktrees')
+  .action(cordStop);
+
+program
+  .command('resolve')
+  .description('Resolve merge conflicts on a PR branch (rebase + agent)')
+  .option('-p, --pr <number>', 'PR number to resolve')
+  .option('--branch <name>', 'Branch name to resolve (alternative to --pr)')
+  .option('-b, --base-branch <branch>', 'Base branch to rebase onto', 'main')
+  .action(cordResolve);
 
 program
   .command('dev')
@@ -100,6 +130,10 @@ if (process.argv.includes('--tui-agent')) {
     console.error('--tui-agent requires --task <task>');
     process.exit(1);
   }
+
+  // Suppress CLI tree rendering — the TUI has its own display
+  const { silenceTree } = await import('../src/lib/tree.js');
+  silenceTree();
 
   const { cordStart } = await import('../src/commands/cord-start.js');
   await cordStart({ task, baseBranch: 'main', maxAgents: '1' });

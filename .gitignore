@@ -25,3 +25,10 @@ tmp-ocha-test/
 .DS_Store
 *.swp
 .output.txt
+
+# Beads issue tracker
+.beads/
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db

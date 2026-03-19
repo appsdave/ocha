@@ -6,8 +6,8 @@
  * without spawning a Junie subprocess.
  */
 import { readdirSync, readFileSync, existsSync, statSync } from 'fs';
-import { join, relative } from 'path';
-import { execSync } from 'child_process';
+import { join } from 'path';
+import { git } from './exec.js';
 
 /**
  * Enhances a raw user task with project context by inspecting the project directly.
@@ -125,17 +125,8 @@ function gatherProjectContext(projectDir) {
  */
 function gatherGitContext(projectDir) {
   try {
-    const branch = execSync('git rev-parse --abbrev-ref HEAD', {
-      cwd: projectDir,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 3000,
-    }).toString().trim();
-
-    const log = execSync('git log --oneline -8', {
-      cwd: projectDir,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 3000,
-    }).toString().trim();
+    const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: projectDir, timeout: 3000 }).trim();
+    const log = git(['log', '--oneline', '-8'], { cwd: projectDir, timeout: 3000 }).trim();
 
     const lines = [`**Git branch:** ${branch}`];
     if (log) lines.push(`**Recent commits:**\n${log.split('\n').map(l => `  ${l}`).join('\n')}`);
@@ -235,7 +226,6 @@ function buildTree(rootDir, dir, depth, maxDepth) {
   for (const entry of entries.sort()) {
     if (SKIP.has(entry)) continue;
     const full = join(dir, entry);
-    const rel = relative(rootDir, full);
     const indent = '  '.repeat(depth);
     try {
       const stat = statSync(full);

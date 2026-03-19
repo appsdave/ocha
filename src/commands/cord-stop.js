@@ -5,7 +5,7 @@
  */
 import chalk from 'chalk';
 import { pathExists, safeDelete } from '../lib/files.js';
-import { OCHA_DIR, WORKTREES_DIR } from '../lib/paths.js';
+import { WORKTREES_DIR } from '../lib/paths.js';
 import { killAllAgents } from '../lib/agent.js';
 import { readStatus, writeStatus } from '../lib/status.js';
 import { removeWorktree } from '../lib/worktree.js';
