@@ -135,7 +135,16 @@ Ocha spawns builder agents in **git worktrees** — lightweight checkouts that s
 
 Since worktrees share the same `.git` data, merging a PR to `main` while an agent is still working causes the agent's branch to diverge from the updated `main`. When the agent finishes and opens a PR, it may have merge conflicts.
 
-**To resolve:**
+**To resolve (automated):**
+```bash
+ocha cord resolve --pr <number>
+# or
+ocha cord resolve --branch <agent-branch>
+```
+
+This creates a temporary worktree, rebases onto the base branch, spawns a Junie agent to fix any conflicts, and force-pushes the result.
+
+**To resolve (manually):**
 ```bash
 git fetch origin main
 git checkout <agent-branch>
@@ -146,7 +155,7 @@ GIT_EDITOR=true git rebase --continue
 git push --force-with-lease origin <agent-branch>
 ```
 
-**To prevent proactively:** Before opening a PR, agents should rebase onto the latest `main`. This is a planned feature for ocha's coordinator.
+**To prevent proactively:** Builders now auto-rebase onto the latest base branch before pushing to minimize merge conflicts.
 
 ### Important notes
 

@@ -141,6 +141,30 @@ Stops all running agents and cleans up worktrees.
 ocha cord stop
 ```
 
+### `ocha cord resolve`
+
+Resolves merge conflicts on a PR branch by rebasing onto the base branch. If conflicts are found during the rebase, a Junie agent is automatically spawned to resolve them.
+
+```bash
+ocha cord resolve --pr 42
+ocha cord resolve --branch ocha/my-feature-branch
+ocha cord resolve --pr 42 -b develop
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-p, --pr <number>` | PR number to resolve | — |
+| `--branch <name>` | Branch name to resolve (alternative to `--pr`) | — |
+| `-b, --base-branch <branch>` | Base branch to rebase onto | `main` |
+
+Flow:
+1. Identifies the PR branch (from `--pr` via `gh` or `--branch`)
+2. Fetches the latest base branch and PR branch refs
+3. Creates a temporary worktree and attempts a rebase
+4. If conflicts arise, spawns a Junie agent to resolve them automatically
+5. Force-pushes the rebased branch so the PR is mergeable
+6. Cleans up the temporary worktree
+
 ### `ocha dev`
 
 Runs a task in an isolated dev worktree — safe for self-development on ocha itself.
@@ -219,7 +243,8 @@ ocha/
 │   │   ├── dev.js           # ocha dev (safe self-dev mode)
 │   │   ├── cord-start.js    # ocha cord start
 │   │   ├── cord-status.js   # ocha cord status
-│   │   └── cord-stop.js     # ocha cord stop
+│   │   ├── cord-stop.js     # ocha cord stop
+│   │   └── cord-resolve.js  # ocha cord resolve
 │   └── lib/
 │       ├── tui.js           # TUI orchestrator
 │       ├── tui-layout.js    # blessed widget construction
