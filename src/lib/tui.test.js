@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clearCompletedAgents } from './tui.js';
+import { clearCompletedAgents, escapeTags } from './tui.js';
 
 function agent(id, task, state = 'running') {
   return {
@@ -13,6 +13,26 @@ function agent(id, task, state = 'running') {
     logs: [],
   };
 }
+
+describe('escapeTags', () => {
+  it('escapes curly braces so blessed does not interpret them as markup', () => {
+    assert.equal(escapeTags('{bold}hello{/bold}'), '\\{bold\\}hello\\{/bold\\}');
+  });
+
+  it('returns empty string for falsy input', () => {
+    assert.equal(escapeTags(''), '');
+    assert.equal(escapeTags(null), '');
+    assert.equal(escapeTags(undefined), '');
+  });
+
+  it('passes through text without braces unchanged', () => {
+    assert.equal(escapeTags('plain text'), 'plain text');
+  });
+
+  it('escapes braces in branch-like strings', () => {
+    assert.equal(escapeTags('feature/{scope}/fix'), 'feature/\\{scope\\}/fix');
+  });
+});
 
 describe('clearCompletedAgents', () => {
   it('keeps the same active agent selected when completed items above it are cleared', () => {

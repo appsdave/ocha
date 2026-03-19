@@ -33,7 +33,7 @@ export function getPromptDialogLayout(screen) {
  */
 export function buildLayout() {
   const screen = blessed.screen({
-    smartCSR: true,
+    smartCSR: false,
     title: 'ocha',
     fullUnicode: true,
     forceUnicode: true,

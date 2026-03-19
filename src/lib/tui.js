@@ -28,7 +28,7 @@ import { elapsed, badgeText, badgeColor, truncateTask, sortAgentsForDisplay, str
  * Escape blessed tag characters in user-supplied text so `{` and `}` are
  * rendered literally instead of being interpreted as markup.
  */
-function escapeTags(str) {
+export function escapeTags(str) {
   if (!str) return '';
   return str.replace(/\{/g, '\\{').replace(/\}/g, '\\}');
 }
@@ -136,7 +136,7 @@ export class OchaTUI {
 
     this._bindKeys();
     this._renderAgentList();
-    this._renderLog();
+    this._clearAndRenderLog();
     this._startTick();
 
     // Re-render all panes on terminal resize to prevent text bleaching/overlap
@@ -193,7 +193,7 @@ export class OchaTUI {
       killAgent(this.agents, this.selectedIdx);
       persistAgents(this.agents);
       this._renderAgentList();
-      this._renderLog();
+      this._clearAndRenderLog();
       this.screen.render();
     });
 
@@ -204,7 +204,7 @@ export class OchaTUI {
       this.selectedIdx = nextState.selectedIdx;
       persistAgents(this.agents);
       this._renderAgentList();
-      this._renderLog();
+      this._clearAndRenderLog();
       this.screen.render();
     };
     // Bind 'c' for clear done (lowercase to avoid conflict with C-c)
@@ -332,10 +332,11 @@ export class OchaTUI {
       : `{grey-fg}[${p.name}]{/grey-fg}`
     ).join(' → ');
 
+    const branchDisplay = agent.branch ? escapeTags(agent.branch) : '';
     this.taskHeader.setContent(
       `  {bold}{white-fg}${taskLine}{/white-fg}{/bold}  ${stateColor}${stateLabel}{/}\n` +
       `  ${phaseBar}\n` +
-      (agent.branch ? `  {grey-fg}⎇ ${agent.branch}{/grey-fg}` : '')
+      (branchDisplay ? `  {grey-fg}⎇ ${branchDisplay}{/grey-fg}` : '')
     );
 
     // ── Log pane: raw output ─────────────────────────────────────────────
@@ -362,8 +363,8 @@ export class OchaTUI {
     if (agent) {
       const repoPrefix = agent.repo ? `${agent.repo}/` : '';
       right = agent.prUrl
-        ? ` | PR: ${agent.prUrl}`
-        : agent.branch ? ` | ${repoPrefix}${agent.branch}` : '';
+        ? ` | PR: ${escapeTags(agent.prUrl)}`
+        : agent.branch ? ` | ${escapeTags(repoPrefix + agent.branch)}` : '';
     }
     this.statusBar.setContent(
       ` ocha  |  ${total} task(s)  ${running} running  ${done} done${right} `
@@ -398,6 +399,8 @@ export class OchaTUI {
         tags: true,
       });
       this.screen.append(confirm);
+      this.screen.alloc();
+      this.screen.render();
       confirm.ask(
         `${running.length} agent(s) still running. Kill all and quit? (y/n)`,
         (err, value) => {
@@ -406,6 +409,7 @@ export class OchaTUI {
             this._cleanup();
           } else {
             this.screen.remove(confirm);
+            this.screen.alloc();
             this.screen.render();
           }
         }
