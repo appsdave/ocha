@@ -296,6 +296,7 @@ class OchaApp(App[None]):
     def __init__(self) -> None:
         super().__init__()
         self.state: AppState = sample_state()
+        self._tick_fingerprint: tuple = ()
 
     def compose(self) -> ComposeResult:
         yield MainLayout()
@@ -312,7 +313,20 @@ class OchaApp(App[None]):
         if not self.state.tasks:
             return
         if any(t.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED) for t in self.state.tasks):
-            self.refresh_from_state()
+            # Build a lightweight fingerprint to skip refresh when nothing changed
+            selected = self.state.selected_task
+            if selected is not None:
+                fp = (
+                    selected.task_id,
+                    selected.status.value,
+                    self.state.output_mode,
+                    sum(len(w.workflow_log) + len(w.raw_log) for w in selected.workers),
+                )
+            else:
+                fp = ()
+            if fp != self._tick_fingerprint:
+                self._tick_fingerprint = fp
+                self.refresh_from_state()
 
     def _ensure_ocha_branch(self) -> None:
         """Create and checkout the agent branch if it doesn't already exist."""

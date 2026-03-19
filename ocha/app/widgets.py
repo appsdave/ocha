@@ -94,12 +94,17 @@ class AgentsPane(Widget):
 
 
 class TaskHeader(Static):
+    _last_content: str = ""
+
     def update_task(self, task: OchaTask | None) -> None:
         if task is None:
-            self.update(
+            new_text = (
                 "[b][#b8bb26]Task Detail[/][/b]\n\n"
                 "[#928374]No active tasks. Press [/][#fabd2f]n[/][#928374] to create a new task.[/]"
             )
+            if new_text != self._last_content:
+                self._last_content = new_text
+                self.update(new_text)
             return
         worker = task.primary_worker
         color = STATUS_LABEL_COLOR[task.status]
@@ -110,7 +115,7 @@ class TaskHeader(Static):
             pipeline_parts.append(f"[{wc}]{w.role}[/] [{wc}]{w.status.value}[/]")
         pipeline = "  [#504945]│[/]  ".join(pipeline_parts)
 
-        self.update(
+        new_text = (
             f"[b][#b8bb26]Task Detail[/][/b]\n\n"
             f"  {icon} [b]{task.title}[/b]\n"
             f"  [#928374]id[/] [#ebdbb2]{task.task_id}[/]  "
@@ -123,6 +128,9 @@ class TaskHeader(Static):
             f"  [#928374]pipeline[/]  {pipeline}\n"
             f"  [#928374]summary[/]  [#ebdbb2]{task.summary}[/]"
         )
+        if new_text != self._last_content:
+            self._last_content = new_text
+            self.update(new_text)
 
 
 class OutputPane(VerticalScroll):
@@ -136,7 +144,10 @@ class OutputPane(VerticalScroll):
         """Check if the scroll position is at (or near) the bottom."""
         if self.max_scroll_y == 0:
             return True
-        return self.scroll_y >= self.max_scroll_y - 2
+        tolerance = max(3, self.size.height // 4)
+        return self.scroll_y >= self.max_scroll_y - tolerance
+
+    _last_fingerprint: tuple = ()
 
     def update_task(self, task: OchaTask | None, mode: OutputMode) -> None:
         self.mode = mode
@@ -151,7 +162,15 @@ class OutputPane(VerticalScroll):
                 self._last_content = new_text
                 content.update(new_text)
             return
+
+        # Fast fingerprint check — avoid rebuilding markup when nothing changed
         lines = task.output_lines(mode)
+        line_count = len(lines)
+        fingerprint = (task.task_id, mode, line_count, task.status.value)
+        if fingerprint == self._last_fingerprint:
+            return
+        self._last_fingerprint = fingerprint
+
         body_parts = []
         for line in lines:
             if line.startswith("[coordinator]"):
@@ -174,9 +193,10 @@ class OutputPane(VerticalScroll):
         self._last_content = new_text
         content.update(new_text)
 
-        # Only auto-scroll if user was already at the bottom
+        # Only auto-scroll if user was already at the bottom;
+        # defer until after Textual commits the new layout height
         if was_at_bottom:
-            self.scroll_end(animate=False)
+            self.call_after_refresh(self.scroll_end, animate=False)
 
 
 class HelpBar(Static):
