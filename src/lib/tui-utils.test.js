@@ -183,11 +183,9 @@ describe('parseWorkflowEvents', () => {
 });
 
 describe('renderWorkflowOutput', () => {
-  it('returns phase bar even with no events', () => {
+  it('returns empty output with no events for running agent', () => {
     const lines = renderWorkflowOutput([], { state: 'running', logs: [] });
-    assert.ok(lines.length >= 1);
-    assert.ok(lines[0].includes('coordinator'));
-    assert.ok(lines[0].includes('PR'));
+    assert.equal(lines.length, 0);
   });
 
   it('includes workflow events as timeline entries', () => {
