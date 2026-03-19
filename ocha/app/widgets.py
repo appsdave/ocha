@@ -8,20 +8,21 @@ from textual.widgets import ListItem, ListView, Static
 from .state import AppState, OchaTask, OutputMode, WorkerStatus
 
 
+# ── Gruvbox Dark Green palette ────────────────────────────────────────
 STATUS_ICON = {
-    WorkerStatus.RUNNING: "[#41d995]●[/]",
-    WorkerStatus.COMPLETED: "[#7aa2f7]✓[/]",
-    WorkerStatus.FAILED: "[#f7768e]✕[/]",
-    WorkerStatus.STOPPED: "[#787c99]■[/]",
-    WorkerStatus.QUEUED: "[#e0af68]…[/]",
+    WorkerStatus.RUNNING: "[#b8bb26]●[/]",
+    WorkerStatus.COMPLETED: "[#83a598]✓[/]",
+    WorkerStatus.FAILED: "[#fb4934]✕[/]",
+    WorkerStatus.STOPPED: "[#928374]■[/]",
+    WorkerStatus.QUEUED: "[#fabd2f]…[/]",
 }
 
 STATUS_LABEL_COLOR = {
-    WorkerStatus.RUNNING: "#41d995",
-    WorkerStatus.COMPLETED: "#7aa2f7",
-    WorkerStatus.FAILED: "#f7768e",
-    WorkerStatus.STOPPED: "#787c99",
-    WorkerStatus.QUEUED: "#e0af68",
+    WorkerStatus.RUNNING: "#b8bb26",
+    WorkerStatus.COMPLETED: "#83a598",
+    WorkerStatus.FAILED: "#fb4934",
+    WorkerStatus.STOPPED: "#928374",
+    WorkerStatus.QUEUED: "#fabd2f",
 }
 
 
@@ -39,13 +40,13 @@ class WorkerListItem(ListItem):
         title = task.title if len(task.title) <= 40 else task.title[:37] + "..."
         return (
             f"{icon} [{color}]{task.task_id}[/]  {title}\n"
-            f"  [#565f89]{task.branch}[/] · [{color}]{task.status.value}[/] · [#565f89]{elapsed}[/]"
+            f"  [#928374]{task.branch}[/] · [{color}]{task.status.value}[/] · [#928374]{elapsed}[/]"
         )
 
 
 class AgentsPane(Widget):
     def compose(self):
-        yield Static("[b][#7aa2f7]Tasks[/][/b]", classes="pane-title")
+        yield Static("[b][#b8bb26]Tasks[/][/b]", classes="pane-title")
         yield ListView(id="workers-list")
 
     def load(self, state: AppState) -> None:
@@ -60,8 +61,8 @@ class TaskHeader(Static):
     def update_task(self, task: OchaTask | None) -> None:
         if task is None:
             self.update(
-                "[b][#7aa2f7]Task Detail[/][/b]\n\n"
-                "[#565f89]No active tasks. Press [/][#e0af68]n[/][#565f89] to create a new task.[/]"
+                "[b][#b8bb26]Task Detail[/][/b]\n\n"
+                "[#928374]No active tasks. Press [/][#fabd2f]n[/][#928374] to create a new task.[/]"
             )
             return
         worker = task.primary_worker
@@ -71,20 +72,20 @@ class TaskHeader(Static):
         for w in sorted(task.workers, key=lambda w: w.role.value):
             wc = STATUS_LABEL_COLOR[w.status]
             pipeline_parts.append(f"[{wc}]{w.role}[/] [{wc}]{w.status.value}[/]")
-        pipeline = "  [#3d4456]│[/]  ".join(pipeline_parts)
+        pipeline = "  [#504945]│[/]  ".join(pipeline_parts)
 
         self.update(
-            f"[b][#7aa2f7]Task Detail[/][/b]\n\n"
+            f"[b][#b8bb26]Task Detail[/][/b]\n\n"
             f"  {icon} [b]{task.title}[/b]\n"
-            f"  [#565f89]id[/] [#c0caf5]{task.task_id}[/]  "
-            f"[#565f89]state[/] [{color}]{task.status.value}[/]  "
-            f"[#565f89]branch[/] [#bb9af7]{task.branch}[/]  "
-            f"[#565f89]elapsed[/] [#c0caf5]{task.elapsed}[/]\n"
-            f"  [#565f89]role[/] [#c0caf5]{worker.role}[/]  "
-            f"[#565f89]worktree[/] [#565f89]{worker.worktree_path}[/]  "
-            f"[#565f89]retries[/] [#c0caf5]{worker.retry_count}[/]\n"
-            f"  [#565f89]pipeline[/]  {pipeline}\n"
-            f"  [#565f89]summary[/]  [#c0caf5]{task.summary}[/]"
+            f"  [#928374]id[/] [#ebdbb2]{task.task_id}[/]  "
+            f"[#928374]state[/] [{color}]{task.status.value}[/]  "
+            f"[#928374]branch[/] [#d3869b]{task.branch}[/]  "
+            f"[#928374]elapsed[/] [#ebdbb2]{task.elapsed}[/]\n"
+            f"  [#928374]role[/] [#ebdbb2]{worker.role}[/]  "
+            f"[#928374]worktree[/] [#928374]{worker.worktree_path}[/]  "
+            f"[#928374]retries[/] [#ebdbb2]{worker.retry_count}[/]\n"
+            f"  [#928374]pipeline[/]  {pipeline}\n"
+            f"  [#928374]summary[/]  [#ebdbb2]{task.summary}[/]"
         )
 
 
@@ -96,25 +97,25 @@ class OutputPane(Static):
         title_label = "Workflow" if mode == OutputMode.WORKFLOW else "Raw Logs"
         if task is None:
             self.update(
-                f"[b][#7aa2f7]{title_label}[/][/b]\n\n"
-                f"[#565f89]No task selected.[/]"
+                f"[b][#b8bb26]{title_label}[/][/b]\n\n"
+                f"[#928374]No task selected.[/]"
             )
             return
         lines = task.output_lines(mode)
         body_parts = []
         for line in lines:
             if line.startswith("[coordinator]"):
-                body_parts.append(f"  [#bb9af7]{line}[/]")
+                body_parts.append(f"  [#d3869b]{line}[/]")
             elif line.startswith("[lead]"):
-                body_parts.append(f"  [#7aa2f7]{line}[/]")
+                body_parts.append(f"  [#83a598]{line}[/]")
             elif line.startswith("[builder]"):
-                body_parts.append(f"  [#41d995]{line}[/]")
+                body_parts.append(f"  [#b8bb26]{line}[/]")
             elif line.startswith("[reviewer]"):
-                body_parts.append(f"  [#e0af68]{line}[/]")
+                body_parts.append(f"  [#fabd2f]{line}[/]")
             else:
-                body_parts.append(f"  [#a9b1d6]{line}[/]")
+                body_parts.append(f"  [#ebdbb2]{line}[/]")
         body = "\n".join(body_parts)
-        self.update(f"[b][#7aa2f7]{title_label}[/][/b]\n\n{body}")
+        self.update(f"[b][#b8bb26]{title_label}[/][/b]\n\n{body}")
 
 
 class HelpBar(Static):
@@ -128,14 +129,14 @@ class StatusBar(Static):
         sel_id = selected.task_id if selected else "n/a"
         sel_branch = selected.branch if selected else "n/a"
         self.update(
-            f"[#41d995]● {counts[WorkerStatus.RUNNING]} running[/]  "
-            f"[#e0af68]… {counts[WorkerStatus.QUEUED]} queued[/]  "
-            f"[#7aa2f7]✓ {counts[WorkerStatus.COMPLETED]} done[/]  "
-            f"[#f7768e]✕ {counts[WorkerStatus.FAILED]} failed[/]  "
-            f"[#3d4456]│[/]  "
-            f"[#c0caf5]{sel_id}[/] [#565f89]on[/] [#bb9af7]{sel_branch}[/]  "
-            f"[#3d4456]│[/]  "
-            f"[#565f89]view:[/] [#c0caf5]{state.output_mode}[/]"
+            f"[#b8bb26]● {counts[WorkerStatus.RUNNING]} running[/]  "
+            f"[#fabd2f]… {counts[WorkerStatus.QUEUED]} queued[/]  "
+            f"[#83a598]✓ {counts[WorkerStatus.COMPLETED]} done[/]  "
+            f"[#fb4934]✕ {counts[WorkerStatus.FAILED]} failed[/]  "
+            f"[#504945]│[/]  "
+            f"[#ebdbb2]{sel_id}[/] [#928374]on[/] [#d3869b]{sel_branch}[/]  "
+            f"[#504945]│[/]  "
+            f"[#928374]view:[/] [#ebdbb2]{state.output_mode}[/]"
         )
 
 
@@ -147,14 +148,15 @@ class MainLayout(Widget):
                 yield TaskHeader(id="task-header")
                 yield OutputPane(id="output-pane")
         yield HelpBar(
-            "[#3d4456]│[/] [#e0af68]n[/] [#a9b1d6]new[/] "
-            "[#3d4456]│[/] [#e0af68]↑↓[/] [#a9b1d6]move[/] "
-            "[#3d4456]│[/] [#e0af68]v[/] [#a9b1d6]view[/] "
-            "[#3d4456]│[/] [#e0af68]h/l[/] [#a9b1d6]focus[/] "
-            "[#3d4456]│[/] [#e0af68]c[/] [#a9b1d6]clear[/] "
-            "[#3d4456]│[/] [#e0af68]k[/] [#a9b1d6]kill[/] "
-            "[#3d4456]│[/] [#e0af68]q[/] [#a9b1d6]quit[/] "
-            "[#3d4456]│[/]",
+            "[#504945]│[/] [#fabd2f]n[/] [#ebdbb2]new[/] "
+            "[#504945]│[/] [#fabd2f]j/k[/] [#ebdbb2]move[/] "
+            "[#504945]│[/] [#fabd2f]v[/] [#ebdbb2]view[/] "
+            "[#504945]│[/] [#fabd2f]h/l[/] [#ebdbb2]focus[/] "
+            "[#504945]│[/] [#fabd2f]tab[/] [#ebdbb2]cycle[/] "
+            "[#504945]│[/] [#fabd2f]c[/] [#ebdbb2]clear[/] "
+            "[#504945]│[/] [#fabd2f]x[/] [#ebdbb2]kill[/] "
+            "[#504945]│[/] [#fabd2f]q[/] [#ebdbb2]quit[/] "
+            "[#504945]│[/]",
             id="help-bar",
         )
         yield StatusBar(id="status-bar")

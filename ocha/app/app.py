@@ -2,20 +2,21 @@ from __future__ import annotations
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, ListView, Static
 
 from .orchestrator import launch_task
-from .state import AppState, OutputMode, clear_finished_tasks, sample_state
+from .state import AppState, OutputMode, WorkerStatus, clear_finished_tasks, sample_state
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
 
 
+# ── Gruvbox Dark Green theme ──────────────────────────────────────────
 CSS = """
 Screen {
     layout: vertical;
-    background: #1a1b26;
-    color: #a9b1d6;
+    background: #282828;
+    color: #ebdbb2;
 }
 
 #main-row {
@@ -24,48 +25,51 @@ Screen {
 
 #agents-pane {
     width: 36;
-    border: solid #3d4456;
+    border: solid #504945;
     padding: 0 1;
-    background: #1a1b26;
+    background: #282828;
 }
 
 #detail-pane {
     width: 1fr;
+    height: 1fr;
 }
 
 #task-header {
     height: 9;
-    border: solid #3d4456;
+    border: solid #504945;
     padding: 0 1;
-    background: #1a1b26;
+    background: #282828;
 }
 
 #output-pane {
     height: 1fr;
-    border: solid #3d4456;
+    min-height: 4;
+    border: solid #504945;
     padding: 0 1;
-    background: #1a1b26;
+    background: #282828;
+    overflow-y: auto;
 }
 
 #help-bar {
     height: 1;
-    background: #24283b;
-    color: #a9b1d6;
+    background: #3c3836;
+    color: #ebdbb2;
     padding: 0 1;
     border: none;
 }
 
 #status-bar {
     height: 1;
-    background: #1a1b26;
-    color: #a9b1d6;
+    background: #282828;
+    color: #ebdbb2;
     padding: 0 1;
-    border-top: solid #3d4456;
+    border-top: solid #504945;
 }
 
 .pane-title {
     text-style: bold;
-    color: #7aa2f7;
+    color: #b8bb26;
     padding: 0 0 1 0;
 }
 
@@ -74,58 +78,60 @@ Screen {
 }
 
 ListView {
-    background: #1a1b26;
+    background: #282828;
 }
 
 ListView > ListItem {
-    background: #1a1b26;
-    color: #a9b1d6;
+    background: #282828;
+    color: #ebdbb2;
 }
 
 ListView > ListItem.--highlight {
-    background: #24283b;
+    background: #3c3836;
 }
 
 ListView:focus > ListItem.--highlight {
-    background: #292e42;
+    background: #504945;
 }
 
-NewTaskModal {
+/* ── Floating new-task overlay ── */
+NewTaskOverlay {
     align: center middle;
+    background: rgba(0, 0, 0, 0.65);
 }
 
-NewTaskModal > Container {
-    width: 70;
+#new-task-box {
+    width: 72;
     height: auto;
-    border: solid #3d4456;
-    background: #1a1b26;
+    border: solid #b8bb26;
+    background: #282828;
     padding: 1 2;
 }
 
-NewTaskModal Static {
-    color: #a9b1d6;
+#new-task-box Static {
+    color: #ebdbb2;
 }
 
-NewTaskModal Input {
-    background: #24283b;
-    color: #c0caf5;
-    border: solid #3d4456;
+#new-task-box Input {
+    background: #3c3836;
+    color: #fbf1c7;
+    border: solid #504945;
 }
 
-NewTaskModal Input:focus {
-    border: solid #7aa2f7;
+#new-task-box Input:focus {
+    border: solid #b8bb26;
 }
 
-NewTaskModal Button {
-    background: #24283b;
-    color: #a9b1d6;
-    border: solid #3d4456;
+#new-task-box Button {
+    background: #3c3836;
+    color: #ebdbb2;
+    border: solid #504945;
 }
 
-NewTaskModal #submit-task {
-    background: #7aa2f7;
-    color: #1a1b26;
-    border: solid #7aa2f7;
+#new-task-box #submit-task {
+    background: #b8bb26;
+    color: #282828;
+    border: solid #b8bb26;
 }
 
 #new-task-actions {
@@ -137,16 +143,58 @@ NewTaskModal #submit-task {
 .new-task-button {
     margin-right: 1;
 }
+
+/* ── Kill-confirm overlay ── */
+KillConfirmOverlay {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.65);
+}
+
+#kill-box {
+    width: 50;
+    height: auto;
+    border: solid #fb4934;
+    background: #282828;
+    padding: 1 2;
+}
+
+#kill-box Static {
+    color: #ebdbb2;
+}
+
+#kill-box Button {
+    background: #3c3836;
+    color: #ebdbb2;
+    border: solid #504945;
+}
+
+#kill-box #kill-yes {
+    background: #fb4934;
+    color: #282828;
+    border: solid #fb4934;
+}
+
+#kill-actions {
+    width: 1fr;
+    height: auto;
+    layout: horizontal;
+}
+
+.kill-button {
+    margin-right: 1;
+}
 """
 
 
-class NewTaskModal(ModalScreen[str | None]):
+class NewTaskOverlay(ModalScreen[str | None]):
+    """Floating overlay for creating a new task."""
+
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
-        with Container():
-            yield Static("[b]Create new ocha task[/b]\nEnter the operator task to turn into coordinated Junie sessions.")
-            yield Input(placeholder="Describe the task for ocha to launch", id="new-task-input")
+        with Container(id="new-task-box"):
+            yield Static("[b][#b8bb26]New ocha task[/][/b]\nDescribe the task for ocha to launch.")
+            yield Input(placeholder="Enter task prompt…", id="new-task-input")
             with Horizontal(id="new-task-actions"):
                 yield Button("Launch", id="submit-task", variant="primary", classes="new-task-button")
                 yield Button("Cancel", id="cancel-task")
@@ -174,20 +222,48 @@ class NewTaskModal(ModalScreen[str | None]):
         self.dismiss(task)
 
 
+class KillConfirmOverlay(ModalScreen[bool]):
+    """Floating confirmation before killing a task."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(self, task_id: str, task_title: str) -> None:
+        super().__init__()
+        self._task_id = task_id
+        self._task_title = task_title
+
+    def compose(self) -> ComposeResult:
+        with Container(id="kill-box"):
+            yield Static(
+                f"[b][#fb4934]Kill task?[/][/b]\n"
+                f"[#ebdbb2]{self._task_id}[/] — [#a89984]{self._task_title}[/]"
+            )
+            with Horizontal(id="kill-actions"):
+                yield Button("Kill", id="kill-yes", classes="kill-button")
+                yield Button("Cancel", id="kill-no")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "kill-yes")
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
 class OchaApp(App[None]):
     TITLE = "ocha"
     SUB_TITLE = "Python/Textual rebuild"
     CSS = CSS
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("up", "move_up", "Up"),
-        Binding("down", "move_down", "Down"),
+        Binding("up,k", "move_up", "Up", show=False),
+        Binding("down,j", "move_down", "Down", show=False),
         Binding("v", "toggle_view", "Toggle View"),
         Binding("h,left", "focus_agents", "Focus Agents"),
         Binding("l,right", "focus_output", "Focus Output"),
         Binding("n", "new_task", "New Task"),
         Binding("c", "clear_finished", "Clear Finished"),
-        Binding("k", "kill_selected", "Kill Selected"),
+        Binding("x", "kill_selected", "Kill Selected"),
+        Binding("tab", "cycle_focus", "Cycle Focus", show=False),
     ]
 
     def __init__(self) -> None:
@@ -230,6 +306,12 @@ class OchaApp(App[None]):
     def action_focus_output(self) -> None:
         self.query_one(OutputPane).focus()
 
+    def action_cycle_focus(self) -> None:
+        if self.query_one("#workers-list").has_focus:
+            self.action_focus_output()
+        else:
+            self.action_focus_agents()
+
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         if event.list_view.id != "workers-list" or event.item is None:
             return
@@ -241,7 +323,7 @@ class OchaApp(App[None]):
         self._sync_selection_from_sidebar(event.list_view)
 
     def action_new_task(self) -> None:
-        self.push_screen(NewTaskModal(), self._launch_task_from_prompt)
+        self.push_screen(NewTaskOverlay(), self._launch_task_from_prompt)
 
     def action_clear_finished(self) -> None:
         original_count = len(self.state.tasks)
@@ -254,7 +336,24 @@ class OchaApp(App[None]):
         self.notify(f"Cleared {cleared_count} finished task{'s' if cleared_count != 1 else ''}.")
 
     def action_kill_selected(self) -> None:
-        self.notify("Kill selected is a placeholder in the scaffold.")
+        task = self.state.selected_task
+        if task is None:
+            self.notify("No task selected to kill.")
+            return
+        self.push_screen(KillConfirmOverlay(task.task_id, task.title), self._handle_kill)
+
+    def _handle_kill(self, confirmed: bool) -> None:
+        if not confirmed:
+            self.notify("Kill cancelled.")
+            return
+        task = self.state.selected_task
+        if task is None:
+            return
+        for worker in task.workers:
+            if worker.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED):
+                worker.status = WorkerStatus.STOPPED
+        self.refresh_from_state()
+        self.notify(f"Killed task {task.task_id}.")
 
     def _launch_task_from_prompt(self, task: str | None) -> None:
         if task is None:
