@@ -301,11 +301,14 @@ class OchaApp(App[None]):
             pass  # non-fatal — works fine without git
 
     def refresh_from_state(self) -> None:
-        self.query_one(AgentsPane).load(self.state)
-        selected = self.state.selected_task
-        self.query_one(TaskHeader).update_task(selected)
-        self.query_one(OutputPane).update_task(selected, self.state.output_mode)
-        self.query_one(StatusBar).update_state(self.state)
+        try:
+            self.query_one(AgentsPane).load(self.state)
+            selected = self.state.selected_task
+            self.query_one(TaskHeader).update_task(selected)
+            self.query_one(OutputPane).update_task(selected, self.state.output_mode)
+            self.query_one(StatusBar).update_state(self.state)
+        except Exception:
+            pass  # widgets not yet mounted
 
     def action_move_up(self) -> None:
         if self.state.selected_index > 0:
