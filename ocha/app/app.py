@@ -36,7 +36,8 @@ Screen {
 }
 
 #task-header {
-    height: 9;
+    height: auto;
+    max-height: 12;
     border: solid #504945;
     padding: 0 1;
     background: #282828;
