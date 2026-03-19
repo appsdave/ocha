@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.containers import Container, Horizontal
+from textual.screen import ModalScreen
+from textual.widgets import Button, Input, Static
 
 from .orchestrator import launch_task
-from .state import AppState, OutputMode, sample_state
+from .state import AppState, OutputMode, clear_finished_tasks, sample_state
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
 
 
@@ -54,7 +57,63 @@ Screen {
 .worker-row {
     padding: 0 0 1 0;
 }
+
+NewTaskModal {
+    align: center middle;
+}
+
+NewTaskModal > Container {
+    width: 70;
+    height: auto;
+    border: solid #6b7280;
+    background: #1a1d27;
+    padding: 1 2;
+}
+
+#new-task-actions {
+    width: 1fr;
+    height: auto;
+    layout: horizontal;
+}
+
+.new-task-button {
+    margin-right: 1;
+}
 """
+
+
+class NewTaskModal(ModalScreen[str | None]):
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Container():
+            yield Static("[b]Create new ocha task[/b]\nEnter the operator task to turn into coordinated Junie sessions.")
+            yield Input(placeholder="Describe the task for ocha to launch", id="new-task-input")
+            with Horizontal(id="new-task-actions"):
+                yield Button("Launch", id="submit-task", variant="primary", classes="new-task-button")
+                yield Button("Cancel", id="cancel-task")
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self._submit(event.value)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "submit-task":
+            self._submit(self.query_one(Input).value)
+            return
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def _submit(self, value: str) -> None:
+        task = value.strip()
+        if not task:
+            self.notify("Task prompt cannot be empty.", severity="warning")
+            return
+        self.dismiss(task)
 
 
 class OchaApp(App[None]):
@@ -114,13 +173,25 @@ class OchaApp(App[None]):
         self.query_one(OutputPane).focus()
 
     def action_new_task(self) -> None:
-        task = "Launch a new ocha task through Junie headless mode using the packaged role markdown prompts."
-        self.state = launch_task(self.state, task)
-        self.refresh_from_state()
-        self.notify("Prepared coordinator, lead, builder, and reviewer Junie sessions for the new task.")
+        self.push_screen(NewTaskModal(), self._launch_task_from_prompt)
 
     def action_clear_finished(self) -> None:
-        self.notify("Clear finished is a placeholder in the scaffold.")
+        original_count = len(self.state.tasks)
+        self.state = clear_finished_tasks(self.state)
+        cleared_count = original_count - len(self.state.tasks)
+        if not cleared_count:
+            self.notify("No finished tasks to clear.")
+            return
+        self.refresh_from_state()
+        self.notify(f"Cleared {cleared_count} finished task{'s' if cleared_count != 1 else ''}.")
 
     def action_kill_selected(self) -> None:
         self.notify("Kill selected is a placeholder in the scaffold.")
+
+    def _launch_task_from_prompt(self, task: str | None) -> None:
+        if task is None:
+            self.notify("New task cancelled.")
+            return
+        self.state = launch_task(self.state, task)
+        self.refresh_from_state()
+        self.notify("Prepared coordinator, lead, builder, and reviewer Junie sessions for the new task.")

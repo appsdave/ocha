@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 
@@ -146,12 +146,19 @@ class AppState:
         return [worker for task in self.tasks for worker in task.workers]
 
     @property
-    def selected_task(self) -> OchaTask:
+    def has_tasks(self) -> bool:
+        return bool(self.tasks)
+
+    @property
+    def selected_task(self) -> OchaTask | None:
+        if not self.tasks:
+            return None
         return self.tasks[self.selected_index]
 
     @property
-    def selected_worker(self) -> WorkerSession:
-        return self.selected_task.primary_worker
+    def selected_worker(self) -> WorkerSession | None:
+        task = self.selected_task
+        return task.primary_worker if task else None
 
     @property
     def status_counts(self) -> dict[WorkerStatus, int]:
@@ -161,6 +168,21 @@ class AppState:
     def next_task_number(self) -> int:
         task_numbers = [int(task.task_id.split("-")[-1]) for task in self.tasks if task.task_id.startswith("T-")]
         return (max(task_numbers) + 1) if task_numbers else 1
+
+
+TERMINAL_TASK_STATUSES = {
+    WorkerStatus.COMPLETED,
+    WorkerStatus.FAILED,
+    WorkerStatus.STOPPED,
+}
+
+
+def clear_finished_tasks(state: AppState) -> AppState:
+    remaining_tasks = [task for task in state.tasks if task.status not in TERMINAL_TASK_STATUSES]
+    if len(remaining_tasks) == len(state.tasks):
+        return state
+    next_index = min(state.selected_index, len(remaining_tasks) - 1) if remaining_tasks else 0
+    return replace(state, tasks=remaining_tasks, selected_index=next_index)
 
 
 def sample_state() -> AppState:

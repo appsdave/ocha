@@ -5,7 +5,7 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import ListItem, ListView, Static
 
-from .state import AppState, OchaTask, OutputMode, WorkerSession, WorkerStatus
+from .state import AppState, OchaTask, OutputMode, WorkerStatus
 
 
 STATUS_ICON = {
@@ -38,11 +38,26 @@ class AgentsPane(Widget):
         list_view.clear()
         for task in state.tasks:
             list_view.append(WorkerListItem(task))
-        list_view.index = state.selected_index
+        list_view.index = state.selected_index if state.tasks else None
 
 
 class TaskHeader(Static):
-    def update_task(self, task: OchaTask) -> None:
+    def update_task(self, task: OchaTask | None) -> None:
+        if task is None:
+            self.update(
+                "\n".join(
+                    [
+                        "[b]No active tasks[/b]",
+                        "task=n/a   state=n/a   branch=n/a",
+                        "pipeline=n/a",
+                        "worktree=n/a",
+                        "active_role=n/a   owner=n/a   retries=0   elapsed=0s",
+                        "prompt=n/a   event=n/a",
+                        "summary=Press n to create a new task prompt.",
+                    ]
+                )
+            )
+            return
         worker = task.primary_worker
         self.update(
             "\n".join(
@@ -62,8 +77,12 @@ class TaskHeader(Static):
 class OutputPane(Static):
     mode: reactive[OutputMode] = reactive(OutputMode.WORKFLOW)
 
-    def update_task(self, task: OchaTask, mode: OutputMode) -> None:
+    def update_task(self, task: OchaTask | None, mode: OutputMode) -> None:
         self.mode = mode
+        if task is None:
+            title = "Workflow view" if mode == OutputMode.WORKFLOW else "Raw logs"
+            self.update(f"[b]{title}[/b]\n\n• No task selected.")
+            return
         lines = task.output_lines(mode)
         title = "Workflow view" if mode == OutputMode.WORKFLOW else "Raw logs"
         body = "\n".join(f"• {line}" for line in lines)
@@ -78,14 +97,16 @@ class StatusBar(Static):
     def update_state(self, state: AppState) -> None:
         counts = state.status_counts
         selected = state.selected_task
+        selected_task_id = selected.task_id if selected else "n/a"
+        selected_branch = selected.branch if selected else "n/a"
         self.update(
             "   ".join(
                 [
                     f"running {counts[WorkerStatus.RUNNING]}",
                     f"queued {counts[WorkerStatus.QUEUED]}",
                     f"done {counts[WorkerStatus.COMPLETED]}",
-                    f"selected {selected.task_id}",
-                    f"branch {selected.branch}",
+                    f"selected {selected_task_id}",
+                    f"branch {selected_branch}",
                     f"mode {state.output_mode}",
                 ]
             )
