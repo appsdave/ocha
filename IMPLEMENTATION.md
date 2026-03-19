@@ -9,7 +9,8 @@
 ## Architecture
 
 ```
-ocha cord start -t 'your task'
+ocha                          ← launches TUI (default)
+ocha cord start -t 'task'     ← CLI mode (deprecated, use TUI)
         │
         ├─ 🔐 Auth check (junie --version)
         ├─ 🧠 Enhance prompt with project context
@@ -18,7 +19,10 @@ ocha cord start -t 'your task'
               ├─ git worktree add  (isolated branch per task)
               ├─ Builder agent     (Junie --brave, up to 2 retries)
               ├─ Reviewer agent    (Junie --brave in same worktree)
-              └─ git push → gh pr create → cleanup worktree
+              ├─ git rebase origin/<base> (auto-rebase before push)
+              ├─ git push → gh pr create
+              ├─ Auto-resolve merge conflicts if PR is not mergeable
+              └─ cleanup worktree
 ```
 
 ### Agent Hierarchy
@@ -47,8 +51,13 @@ Use `--yes` to reinitialize if `.ocha/` already exists (refreshes prompts after 
 
 ---
 
-### `ocha cord start -t '<task>' [-b <branch>] [--max-agents <n>] [-r <repo>]`
-Main orchestration command. Full flow:
+### `ocha` (default — launches TUI)
+Running `ocha` with no arguments launches the interactive TUI dashboard. Press `n` to enter a task — ocha handles the full pipeline (enhance → lead → builders → reviewers → PR).
+
+---
+
+### `ocha cord start -t '<task>' [-b <branch>] [--max-agents <n>] [-r <repo>]` *(deprecated)*
+CLI orchestration command. Use the TUI instead. Full flow:
 
 1. Initializes `.ocha/` if not present
 2. Validates git repo and base branch
@@ -59,7 +68,9 @@ Main orchestration command. Full flow:
    - Creates a git worktree on a new branch (`ocha/<task-slug>`)
    - Spawns a **builder agent** (`junie --brave --project <worktree>`), with up to **2 automatic retries** on failure (3 total attempts)
    - Spawns a **reviewer agent** in the same worktree to check for bugs, security issues, and quality
+   - **Auto-rebases** onto the latest base branch before pushing
    - Pushes the branch to origin and **opens a PR** via `gh` (always — regardless of `--no-merge`)
+   - **Auto-resolves merge conflicts**: if the PR is not mergeable, rebases and spawns an agent to fix conflicts
 7. Prints a session summary with PR links
 
 If `-t` is omitted, an interactive multi-line prompt opens.
@@ -68,17 +79,17 @@ Supports multiple repos: `-r ~/projects/api -r ~/projects/frontend` (tasks distr
 
 ---
 
-### `ocha cord status`
+### `ocha status` / `ocha cord status` *(cord variant deprecated)*
 Reads `.ocha/status.json` and displays current session progress — running, completed, and failed tasks.
 
 ---
 
-### `ocha cord stop`
+### `ocha stop` / `ocha cord stop` *(cord variant deprecated)*
 Kills all running agent processes (by PID from status file), removes all active worktrees, and cleans up `.ocha/`.
 
 ---
 
-### `ocha cord resolve [--pr <number>] [--branch <name>] [-b <branch>]`
+### `ocha resolve [--pr <number>] [--branch <name>] [-b <branch>]` / `ocha cord resolve` *(cord variant deprecated)*
 Resolves merge conflicts on a PR branch by rebasing onto the base branch. When conflicts are detected, a Junie builder agent is automatically spawned to resolve them.
 
 Flow:
@@ -91,6 +102,8 @@ Flow:
 7. Cleans up the temporary worktree on success; leaves it for manual resolution on failure
 
 Requires `gh` CLI when using `--pr`.
+
+Note: Merge conflicts are also auto-resolved after PR creation during the normal build pipeline (see `ocha cord start` flow above).
 
 ---
 
@@ -282,7 +295,8 @@ See `AGENTS.md` for the full bd workflow.
 - **Coordinator doesn't code** — the decompose step runs in a temp directory; only builder/reviewer agents touch project files
 - **Push + PR always** — after each builder/reviewer pair completes, the branch is pushed to origin and a PR is opened via `gh`; no auto-merge occurs
 - **Auto-rebase before PR** — builders rebase onto the latest base branch before pushing to minimize merge conflicts
-- **Conflict resolution** — `cord resolve` can automatically rebase a PR branch and spawn an agent to fix conflicts when they occur
+- **Auto-resolve after PR** — after a PR is created, ocha checks mergeability and automatically rebases + spawns an agent to fix conflicts if needed
+- **Conflict resolution** — `ocha resolve` can manually trigger rebase and agent-based conflict resolution on any PR branch
 - **Builder retries** — each builder is retried up to 2 times (3 total attempts) before being marked failed
 - **Git validation** — `cord start` checks for a valid git repo and base branch before doing anything, with clear fix instructions if not set up
 - **npm link symlink** — the global `ocha` command is a symlink to the source directory, so all changes are live immediately without reinstalling

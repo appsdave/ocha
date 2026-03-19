@@ -106,49 +106,31 @@ Creates:
     └── reviewer.md
 ```
 
-### `ocha cord start`
-
-Decomposes a task and runs it across parallel agents in isolated git worktrees.
-
-```bash
-ocha cord start -t "refactor auth flow"
-ocha cord start -t "add user settings page" -b develop -n 5
-ocha cord start -t "update docs" --no-merge
-```
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `-t, --task <task>` | High-level task description | *(required)* |
-| `-b, --base-branch <branch>` | Base git branch for worktrees | `main` |
-| `-n, --max-agents <n>` | Maximum parallel agents | `3` |
-| `-r, --repo <path...>` | Repo path(s) to operate on | cwd |
-| `--no-merge` | Skip auto-merge after completion | — |
-
-### `ocha cord status`
+### `ocha status`
 
 Shows current session status and task states.
 
 ```bash
-ocha cord status        # one-time snapshot
-ocha cord status -w     # watch mode (polls every 3s)
+ocha status        # one-time snapshot
+ocha status -w     # watch mode (polls every 3s)
 ```
 
-### `ocha cord stop`
+### `ocha stop`
 
 Stops all running agents and cleans up worktrees.
 
 ```bash
-ocha cord stop
+ocha stop
 ```
 
-### `ocha cord resolve`
+### `ocha resolve`
 
 Resolves merge conflicts on a PR branch by rebasing onto the base branch. If conflicts are found during the rebase, a Junie agent is automatically spawned to resolve them.
 
 ```bash
-ocha cord resolve --pr 42
-ocha cord resolve --branch ocha/my-feature-branch
-ocha cord resolve --pr 42 -b develop
+ocha resolve --pr 42
+ocha resolve --branch ocha/my-feature-branch
+ocha resolve --pr 42 -b develop
 ```
 
 | Flag | Description | Default |
@@ -188,6 +170,10 @@ Updates ocha to the latest version from GitHub, shows what changed, and re-links
 ```bash
 ocha self-update
 ```
+
+### Deprecated: `ocha cord *`
+
+The `ocha cord start`, `ocha cord status`, `ocha cord stop`, and `ocha cord resolve` subcommands still work but are deprecated. Use the top-level equivalents (`ocha status`, `ocha stop`, `ocha resolve`) or the TUI instead. There is no top-level `ocha start` — use the TUI (`ocha`) to launch tasks interactively.
 
 ## Keyboard Shortcuts
 
@@ -269,11 +255,7 @@ ocha/
 │       ├── exec.js          # safe command execution utilities
 │       ├── validate.js      # input validation helpers
 │       └── test-reporter.js # custom test reporter
-├── install.sh               # one-liner installer
-└── .github/
-    └── workflows/
-        ├── junie-review.yml # Junie AI code review on PRs
-        └── junie-tag.yml    # Junie triggered by label
+└── install.sh               # one-liner installer
 ```
 
 ## Development
@@ -306,12 +288,3 @@ bd update <id> --claim  # claim work
 bd close <id>         # complete work
 ```
 
-## GitHub Actions
-
-### Junie Code Review
-
-Every PR automatically gets an AI code review from Junie. Requires `JUNIE_API_KEY` in repository secrets (Settings → Secrets and variables → Actions).
-
-### Junie Label Trigger
-
-Add the `junie` label to any issue or PR to trigger a Junie run. Also requires `JUNIE_API_KEY` in repository secrets.

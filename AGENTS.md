@@ -137,9 +137,9 @@ Since worktrees share the same `.git` data, merging a PR to `main` while an agen
 
 **To resolve (automated):**
 ```bash
-ocha cord resolve --pr <number>
+ocha resolve --pr <number>
 # or
-ocha cord resolve --branch <agent-branch>
+ocha resolve --branch <agent-branch>
 ```
 
 This creates a temporary worktree, rebases onto the base branch, spawns a Junie agent to fix any conflicts, and force-pushes the result.
