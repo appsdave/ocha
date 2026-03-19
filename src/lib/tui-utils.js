@@ -194,8 +194,7 @@ export function parseWorkflowEvents(logs) {
 
 /**
  * Render structured workflow output for the log pane using blessed tags.
- * Returns an array of blessed-tagged lines showing a clean event timeline,
- * plus a phase-progress summary bar at the top.
+ * Returns an array of blessed-tagged lines showing a clean event timeline.
  *
  * @param {string[]} logs   - Raw log lines from the agent.
  * @param {object}   agent  - The agent object (for state, branch, prUrl, etc.).
@@ -204,23 +203,6 @@ export function parseWorkflowEvents(logs) {
 export function renderWorkflowOutput(logs, agent) {
   const events = parseWorkflowEvents(logs);
   const lines = [];
-
-  // Phase progress bar
-  const phaseOrder = ['coordinator', 'lead', 'builder', 'reviewer', 'PR'];
-  const seenPhases = new Set(events.map(e => e.phase));
-  // Map dispatch to builder, push to PR, beads/diff to their nearest
-  if (seenPhases.has('dispatch')) seenPhases.add('builder');
-  if (seenPhases.has('push')) seenPhases.add('PR');
-
-  const lastSeenIdx = Math.max(...phaseOrder.map((p, i) => seenPhases.has(p) ? i : -1), -1);
-  const phaseBar = phaseOrder.map((p, i) => {
-    if (i < lastSeenIdx && seenPhases.has(p)) return `{green-fg}${p}{/green-fg}`;
-    if (i === lastSeenIdx) return `{cyan-fg}{bold}${p}{/bold}{/cyan-fg}`;
-    return `{grey-fg}${p}{/grey-fg}`;
-  }).join(' {grey-fg}→{/grey-fg} ');
-
-  lines.push(`  ${phaseBar}`);
-  lines.push('');
 
   // Event timeline
   const phaseColors = {
