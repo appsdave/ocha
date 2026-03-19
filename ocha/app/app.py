@@ -461,13 +461,12 @@ class OchaApp(App[None]):
     async def _run_junie_for_worker(self, worker, task_obj) -> None:
         """Run Junie headless CLI for a single worker and stream output."""
         try:
-            worktree_path = Path(worker.worktree_path)
-            worktree_path.mkdir(parents=True, exist_ok=True)
+            # Use the actual project directory, not a worktree
+            project_path = Path.cwd().resolve()
 
             cmd = [
                 "junie",
-                "--project", str(worktree_path),
-                "--session-id", worker.session_id,
+                "--project", str(project_path),
                 "--output-format", "text",
                 "--task", worker.task_prompt,
             ]
