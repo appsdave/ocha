@@ -296,8 +296,7 @@ class OchaApp(App[None]):
                 capture_output=True, text=True, timeout=5,
             )
             if current.returncode == 0 and current.stdout.strip() == OCHA_BRANCH:
-                self.notify(f"[#b8bb26]● On branch [b]{OCHA_BRANCH}[/b][/]", severity="information")
-                return
+                return  # already on ocha branch, silently continue
 
             # Check if branch exists
             check = subprocess.run(
@@ -328,10 +327,7 @@ class OchaApp(App[None]):
                 capture_output=True, text=True, timeout=5,
             )
             if verify.returncode == 0 and verify.stdout.strip() == OCHA_BRANCH:
-                self.notify(
-                    f"[#b8bb26]● Created and switched to branch [b]{OCHA_BRANCH}[/b][/]",
-                    severity="information",
-                )
+                pass  # silently on branch
             else:
                 self.notify(
                     f"[#fb4934]Branch switch failed — on {verify.stdout.strip()}[/]",
@@ -410,7 +406,6 @@ class OchaApp(App[None]):
 
     def _handle_kill(self, confirmed: bool) -> None:
         if not confirmed:
-            self.notify("Kill cancelled.")
             return
         task = self.state.selected_task
         if task is None:
@@ -540,19 +535,15 @@ class OchaApp(App[None]):
             # All done — summarize
             completed = sum(1 for w in task_obj.workers if w.status == WorkerStatus.COMPLETED)
             failed = sum(1 for w in task_obj.workers if w.status == WorkerStatus.FAILED)
-            self.notify(
-                f"[#b8bb26]Task {task_obj.task_id} pipeline finished[/] — "
-                f"{completed} completed, {failed} failed",
-                severity="information",
+            task_obj.workers[-1].workflow_log.append(
+                f"Pipeline finished — {completed} completed, {failed} failed."
             )
+            # Run the branch/push/PR process
+            self.run_worker(self._post_pipeline_git_flow(task_obj))
             return
         # Advance this worker to running and spawn junie
         next_worker.status = WorkerStatus.RUNNING
         next_worker.workflow_log.append(f"Pipeline advanced — starting {next_worker.role}.")
-        self.notify(
-            f"[#b8bb26]●[/] Pipeline advancing: {next_worker.role} now running for {task_obj.task_id}",
-            severity="information",
-        )
         junie_bin = shutil.which("junie")
         if not junie_bin:
             next_worker.status = WorkerStatus.FAILED
@@ -560,6 +551,80 @@ class OchaApp(App[None]):
             next_worker.workflow_log.append("junie CLI not found on PATH.")
             return
         self.run_worker(self._run_junie_for_worker(next_worker, task_obj))
+
+    async def _post_pipeline_git_flow(self, task_obj) -> None:
+        """After all workers finish, commit changes, push branch, and open a PR."""
+        log = task_obj.workers[-1].workflow_log
+        branch_name = f"ocha/{task_obj.task_id.lower()}"
+        try:
+            # Create a task-specific branch from current HEAD
+            result = subprocess.run(
+                ["git", "checkout", "-b", branch_name],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                # Branch may already exist, try checkout
+                subprocess.run(
+                    ["git", "checkout", branch_name],
+                    capture_output=True, text=True, timeout=10,
+                )
+            log.append(f"Checked out branch {branch_name}.")
+
+            # Stage all changes
+            subprocess.run(["git", "add", "-A"], capture_output=True, text=True, timeout=10)
+            log.append("Staged all changes.")
+
+            # Commit
+            commit_msg = f"ocha: {task_obj.title}"
+            commit_result = subprocess.run(
+                ["git", "commit", "-m", commit_msg, "--allow-empty"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if commit_result.returncode == 0:
+                log.append(f"Committed: {commit_msg}")
+            else:
+                log.append(f"Commit note: {commit_result.stdout.strip() or commit_result.stderr.strip()}")
+
+            # Push branch
+            push_result = subprocess.run(
+                ["git", "push", "-u", "origin", branch_name],
+                capture_output=True, text=True, timeout=30,
+            )
+            if push_result.returncode == 0:
+                log.append(f"Pushed branch {branch_name} to origin.")
+            else:
+                log.append(f"Push failed: {push_result.stderr.strip()}")
+
+            # Try to create a PR via gh CLI
+            gh_bin = shutil.which("gh")
+            if gh_bin:
+                pr_result = subprocess.run(
+                    [
+                        "gh", "pr", "create",
+                        "--title", task_obj.title,
+                        "--body", f"Automated PR from ocha task {task_obj.task_id}.",
+                        "--base", "main",
+                        "--head", branch_name,
+                    ],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if pr_result.returncode == 0:
+                    pr_url = pr_result.stdout.strip()
+                    log.append(f"PR created: {pr_url}")
+                else:
+                    log.append(f"PR creation: {pr_result.stderr.strip()}")
+            else:
+                log.append("gh CLI not found — push completed, create PR manually.")
+
+            # Switch back to main
+            subprocess.run(
+                ["git", "checkout", "main"],
+                capture_output=True, text=True, timeout=10,
+            )
+            log.append("Switched back to main.")
+
+        except Exception as exc:
+            log.append(f"Git flow error: {exc}")
 
     def _sync_selection_from_sidebar(self, list_view: ListView) -> None:
         if list_view.index is None or list_view.index == self.state.selected_index:
