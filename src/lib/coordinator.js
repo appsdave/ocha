@@ -196,7 +196,10 @@ async function runBuilderWithReview(task, status, baseBranch) {
 
   // Claim beads issue atomically before starting work
   if (task.beadsId) {
-    claimBeadsIssue(task.beadsId, task.repoDir || process.cwd());
+    const claimed = claimBeadsIssue(task.beadsId, task.repoDir || process.cwd());
+    if (claimed) {
+      logWithSpinner(chalk.dim(`  🔗 Beads issue ${task.beadsId} claimed by builder`));
+    }
   }
 
   const taskRepoDir = task.repoDir || process.cwd();

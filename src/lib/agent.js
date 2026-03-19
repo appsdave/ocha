@@ -66,6 +66,12 @@ export function spawnAgent(task, worktreePath, role) {
       if (trimmed.startsWith('● TASK RESULT:') || trimmed.startsWith('TASK RESULT:')) {
         summary = trimmed.replace(/^●?\s*TASK RESULT:\s*/, '');
       } else if (
+        // Pass through ocha progress lines (spinners, beads, status)
+        /^[✔✓✗⚠↺🔗🎯🚀🔍🧠👔]/.test(trimmed) ||
+        trimmed.startsWith('✔ ') || trimmed.startsWith('✓ ') || trimmed.startsWith('✗ ')
+      ) {
+        summary = trimmed;
+      } else if (
         !trimmed.startsWith('●') &&
         !trimmed.startsWith('│') &&
         !trimmed.startsWith('Authenticated') &&
