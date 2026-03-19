@@ -114,7 +114,6 @@ ListView > ListItem {
 
 ListView > ListItem.--highlight {
     background: #282828;
-    border-left: thick #928374;
 }
 
 ListView:focus > ListItem.--highlight {
@@ -518,6 +517,43 @@ class OchaApp(App[None]):
                         return line.split("=", 1)[1].strip()
         return None
 
+    def _ensure_worktree(self, worker) -> bool:
+        """Create a git worktree for the worker if it doesn't exist.
+
+        Returns True on success, False on failure.
+        """
+        wt = Path(worker.worktree_path)
+        if wt.exists():
+            return True
+        try:
+            wt.parent.mkdir(parents=True, exist_ok=True)
+            result = subprocess.run(
+                ["git", "worktree", "add", str(wt), OCHA_BRANCH],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                # Branch may already be checked out; try detached
+                result = subprocess.run(
+                    ["git", "worktree", "add", "--detach", str(wt)],
+                    capture_output=True, text=True, timeout=30,
+                )
+            if result.returncode == 0:
+                worker.workflow_log.append(f"Created worktree at {wt}.")
+                return True
+            worker.workflow_log.append(f"Worktree creation failed: {result.stderr.strip()}")
+            return False
+        except Exception as exc:
+            worker.workflow_log.append(f"Worktree error: {exc}")
+            return False
+
+    def _write_prompt_file(self, worker) -> Path:
+        """Write the worker's prompt to a file and return the path."""
+        task_dir = Path.cwd().resolve() / ".ocha" / "tasks" / worker.task_id
+        task_dir.mkdir(parents=True, exist_ok=True)
+        prompt_file = task_dir / f"{worker.session_id}-prompt.md"
+        prompt_file.write_text(worker.task_prompt, encoding="utf-8")
+        return prompt_file
+
     def _spawn_junie_workers(self, task_obj) -> None:
         """Spawn Junie CLI headless for each RUNNING worker in the task."""
         junie_bin = shutil.which("junie")
@@ -538,19 +574,31 @@ class OchaApp(App[None]):
     async def _run_junie_for_worker(self, worker, task_obj, api_key: str | None = None) -> None:
         """Run Junie headless CLI for a single worker and stream output."""
         try:
-            # Use the actual project directory, not a worktree
-            project_path = Path.cwd().resolve()
+            # Create worktree for this worker
+            if not self._ensure_worktree(worker):
+                from datetime import datetime
+                worker.finished_at = datetime.now()
+                worker.status = WorkerStatus.FAILED
+                worker.summary = "Failed to create worktree."
+                self._advance_pipeline(task_obj)
+                return
+
+            project_path = Path(worker.worktree_path)
 
             # Load API key if not passed (for pipeline-advanced workers)
             if not api_key:
                 api_key = self._load_junie_api_key()
+
+            # Write prompt to file to avoid shell arg-length limits
+            prompt_file = self._write_prompt_file(worker)
+            task_text = prompt_file.read_text(encoding="utf-8")
 
             cmd = [
                 "junie",
                 f"--auth={api_key}" if api_key else None,
                 "--project", str(project_path),
                 "--output-format", "text",
-                worker.task_prompt,
+                "--task", task_text,
             ]
             # Remove None entries
             cmd = [c for c in cmd if c is not None]
@@ -762,6 +810,23 @@ class OchaApp(App[None]):
                 log.append("gh CLI not found — push completed, create PR manually.")
 
             log.append(f"Staying on shared branch {branch_name}.")
+
+            # Clean up worktrees
+            for w in task_obj.workers:
+                wt = Path(w.worktree_path)
+                if wt.exists():
+                    try:
+                        subprocess.run(
+                            ["git", "worktree", "remove", "--force", str(wt)],
+                            capture_output=True, text=True, timeout=15,
+                        )
+                    except Exception:
+                        pass
+            subprocess.run(
+                ["git", "worktree", "prune"],
+                capture_output=True, text=True, timeout=10,
+            )
+            log.append("Cleaned up worktrees.")
 
         except Exception as exc:
             log.append(f"Git flow error: {exc}")
