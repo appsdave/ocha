@@ -272,12 +272,7 @@ class OchaApp(App[None]):
         self._ensure_ocha_branch()
         self.refresh_from_state()
         self.action_focus_agents()
-        self.set_interval(1.0, self._tick)
         self._running_procs: dict[str, asyncio.subprocess.Process] = {}
-
-    def _tick(self) -> None:
-        """Periodic refresh so elapsed timers and status updates appear."""
-        self.refresh_from_state()
 
     def _ensure_ocha_branch(self) -> None:
         """Create and checkout the ocha branch if it doesn't already exist."""
