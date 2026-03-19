@@ -134,6 +134,7 @@ Internally, each task moves through a fixed mental model:
    - reads the enhanced task
    - plans subtasks
    - assigns subtasks to separate worktrees and preferably separate repo areas
+   - assigns subtasks to separate worktrees and preferably separate repo areas
 
 3. **Builder**
    - runs in an isolated worktree

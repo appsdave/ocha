@@ -159,7 +159,6 @@ For the Python rebuild, the branch/worktree rules should be:
 4. require `fetch` + rebase validation before push
 5. push back to `agent` only after local conflicts are resolved
 6. treat same-file parallel edits as a scheduling problem to avoid upstream, not as the default git workflow
-
 ### 2. Textual presentation layer
 
 This is the UI.
