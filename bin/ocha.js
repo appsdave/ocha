@@ -5,6 +5,7 @@ import { ochaDev } from '../src/commands/dev.js';
 import { cordStart } from '../src/commands/cord-start.js';
 import { cordStatus } from '../src/commands/cord-status.js';
 import { cordStop } from '../src/commands/cord-stop.js';
+import { cordResolve } from '../src/commands/cord-resolve.js';
 
 program
   .name('ocha')
@@ -39,6 +40,14 @@ cord
   .command('stop')
   .description('Stop all running agents and clean up worktrees')
   .action(cordStop);
+
+cord
+  .command('resolve')
+  .description('Resolve merge conflicts on a PR branch (rebase + agent)')
+  .option('-p, --pr <number>', 'PR number to resolve')
+  .option('--branch <name>', 'Branch name to resolve (alternative to --pr)')
+  .option('-b, --base-branch <branch>', 'Base branch to rebase onto', 'main')
+  .action(cordResolve);
 
 program
   .command('dev')

@@ -262,12 +262,29 @@ async function runBuilderWithReview(task, status, baseBranch) {
       logWithSpinner(chalk.yellow(`  ⚠ Review flagged issues: ${cleanDesc}`));
     }
 
+    // Rebase onto latest base branch to avoid merge conflicts in the PR
+    try {
+      git(['fetch', 'origin', baseBranch], { cwd: worktreePath });
+      git(['rebase', `origin/${baseBranch}`], { cwd: worktreePath });
+      logWithSpinner(chalk.green(`  ✓ Rebased ${task.branch} onto ${baseBranch}`));
+    } catch (rebaseErr) {
+      // If rebase fails (conflict), abort and continue — PR will show conflicts
+      try { git(['rebase', '--abort'], { cwd: worktreePath }); } catch {}
+      logWithSpinner(chalk.yellow(`  ⚠ Auto-rebase failed, PR may have conflicts: ${rebaseErr.message.split('\n')[0]}`));
+    }
+
     // Always push branch and open a PR — never auto-merge
     try {
-      git(['push', '-u', 'origin', task.branch, '--force'], { cwd: worktreePath });
+      git(['push', '-u', 'origin', task.branch, '--force-with-lease'], { cwd: worktreePath });
       logWithSpinner(chalk.green(`  ✓ Pushed branch ${task.branch} to origin`));
     } catch (pushErr) {
-      logWithSpinner(chalk.yellow(`  ⚠ Could not push ${task.branch}: ${pushErr.message}`));
+      // Fall back to force push if force-with-lease fails (first push)
+      try {
+        git(['push', '-u', 'origin', task.branch, '--force'], { cwd: worktreePath });
+        logWithSpinner(chalk.green(`  ✓ Pushed branch ${task.branch} to origin`));
+      } catch (pushErr2) {
+        logWithSpinner(chalk.yellow(`  ⚠ Could not push ${task.branch}: ${pushErr2.message}`));
+      }
     }
 
     try {
