@@ -171,7 +171,8 @@ export function openPromptDialog(screen, onSubmit) {
     style: {
       fg: 'white',
       bg: 'black',
-      focus: { bg: 'black', border: { fg: 'cyan' } },
+      border: { fg: 'green' },
+      focus: { bg: 'black', border: { fg: 'green' } },
     },
     border: { type: 'line' },
     // Explicit padding prevents the first line of text from being hidden
