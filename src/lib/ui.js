@@ -14,12 +14,21 @@ export function getTerminalWidth() {
 
 /**
  * Strips ANSI escape codes from a string so its visible length can be measured.
+ * Handles CSI sequences (\x1B[…), OSC sequences (\x1B]…ST/BEL), and
+ * remaining Fe escape sequences (\x1B followed by a single byte).
  * @param {string} str
  * @returns {string}
  */
 export function stripAnsi(str) {
-   
-  return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
+  return str
+    // OSC sequences: ESC ] … terminated by BEL (\x07) or ST (ESC \\)
+    .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, '')
+    // CSI sequences: ESC [ … final byte
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+    // Remaining Fe escape sequences: ESC + single byte in 0x40-0x5F range
+    .replace(/\x1B[@-_]/g, '')
+    // Stray BEL characters
+    .replace(/\x07/g, '');
 }
 
 /**

@@ -125,7 +125,7 @@ export function spawnAgent(task, agents, onUpdate) {
   proc.stdout.on('data', (chunk) => {
     for (const line of chunk.toString().split('\n')) {
       // Skip lines that are only ANSI escape sequences (no readable content)
-      const stripped = line.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '').trim();
+      const stripped = stripAnsi(line).trim();
       if (!stripped && line.includes('\x1B')) continue;
       appendLine(line);
     }
@@ -136,7 +136,7 @@ export function spawnAgent(task, agents, onUpdate) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       // Skip lines that are only ANSI escape sequences (no readable content)
-      const stripped = trimmed.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '').trim();
+      const stripped = stripAnsi(trimmed).trim();
       if (!stripped) continue;
       appendLine(line);
     }
