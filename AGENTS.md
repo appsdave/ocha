@@ -121,6 +121,39 @@ bd automatically syncs via Dolt:
 
 For more details, see README.md and docs/QUICKSTART.md.
 
+## Git Worktrees & Merge Conflicts
+
+Ocha spawns builder agents in **git worktrees** — lightweight checkouts that share the same `.git` data (objects, refs, history) as the main repo. They do NOT clone the repository. Each worktree checks out a different branch simultaneously, so multiple agents can work in parallel without interfering with each other.
+
+### How it works
+
+1. `git worktree add <path> -b <branch>` creates a new working directory for the agent
+2. The agent works on its branch, commits, pushes, and opens a PR
+3. The worktree is removed after the agent finishes
+
+### Merge conflicts with running agents
+
+Since worktrees share the same `.git` data, merging a PR to `main` while an agent is still working causes the agent's branch to diverge from the updated `main`. When the agent finishes and opens a PR, it may have merge conflicts.
+
+**To resolve:**
+```bash
+git fetch origin main
+git checkout <agent-branch>
+git rebase origin/main
+# Resolve any conflicts
+git add -A
+GIT_EDITOR=true git rebase --continue
+git push --force-with-lease origin <agent-branch>
+```
+
+**To prevent proactively:** Before opening a PR, agents should rebase onto the latest `main`. This is a planned feature for ocha's coordinator.
+
+### Important notes
+
+- Worktrees are stored in `.ocha-worktrees/` and cleaned up automatically
+- If ocha is killed, orphaned worktrees may remain — clean them with `git worktree list` and `git worktree remove <path>`
+- Killing ocha now also kills child AI processes (process group kill), but always verify with `ps aux | grep junie` after a hard kill
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
