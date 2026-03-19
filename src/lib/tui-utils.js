@@ -21,6 +21,21 @@ export function elapsed(startedAt) {
   return `${m}:${s}`;
 }
 
+/**
+ * Format a duration between two ISO timestamps as a human-readable string.
+ * Returns compact forms like "1m 30s", "45s", or "--:--" if timestamps are missing.
+ * @param {string|null} startedAt
+ * @param {string|null} completedAt
+ * @returns {string}
+ */
+export function formatDuration(startedAt, completedAt) {
+  if (!startedAt || !completedAt) return '--:--';
+  const secs = Math.max(0, Math.round((new Date(completedAt) - new Date(startedAt)) / 1000));
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
 /** Status badge text */
 export function badgeText(state) {
   switch (state) {
