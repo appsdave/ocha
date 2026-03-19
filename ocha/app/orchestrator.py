@@ -35,7 +35,7 @@ class JunieLaunchSpec:
         return [
             "junie",
             "--project",
-            str(self.project_path),
+            str(self.worktree_path),
             "--session-id",
             self.session_id,
             "--output-format",
@@ -176,11 +176,26 @@ def build_launch_specs(
     return specs
 
 
+def persist_task_prompt(task_id: str, user_task: str, project_path: Path) -> Path:
+    """Write the operator prompt to ``.ocha/tasks/<task_id>/prompt.md``.
+
+    Provides crash recovery and an audit trail per task.
+    Returns the path to the written file.
+    """
+    task_dir = project_path / ".ocha" / "tasks" / task_id
+    task_dir.mkdir(parents=True, exist_ok=True)
+    prompt_path = task_dir / "prompt.md"
+    prompt_path.write_text(user_task, encoding="utf-8")
+    return prompt_path
+
+
 def launch_task(state: AppState, user_task: str, *, project_path: Path | None = None) -> AppState:
     next_number = state.next_task_number
     title = summarize_task(user_task)
     specs = build_launch_specs(user_task, title=title, project_path=project_path, task_number=next_number)
     task_id = f"T-{next_number:03d}"
+    repo_root = (project_path or Path.cwd()).resolve()
+    persist_task_prompt(task_id, user_task, repo_root)
     tasks = list(state.tasks)
     task_workers: list[WorkerSession] = []
 

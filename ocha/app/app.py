@@ -10,7 +10,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, ListView, Static
+from textual.widgets import Button, Input, ListView, Static, TextArea
 
 from .orchestrator import build_role_prompt, launch_task, load_role_definitions
 from .state import AppState, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
@@ -38,6 +38,10 @@ Screen {
     background: #282828;
 }
 
+#agents-pane:focus-within {
+    border: solid #b8bb26;
+}
+
 #detail-pane {
     width: 1fr;
     height: 1fr;
@@ -51,12 +55,20 @@ Screen {
     background: #282828;
 }
 
+#task-header:focus-within {
+    border: solid #b8bb26;
+}
+
 #output-pane {
     height: 1fr;
     min-height: 4;
     border: solid #504945;
     padding: 0 1;
     background: #282828;
+}
+
+#output-pane:focus-within {
+    border: solid #b8bb26;
 }
 
 #output-content {
@@ -129,13 +141,14 @@ NewTaskOverlay {
     padding: 0 0 1 0;
 }
 
-#new-task-box Input {
+#new-task-box TextArea {
     background: #3c3836;
     color: #fbf1c7;
     border: solid #504945;
+    height: 8;
 }
 
-#new-task-box Input:focus {
+#new-task-box TextArea:focus {
     border: solid #b8bb26;
 }
 
@@ -190,37 +203,48 @@ KillConfirmOverlay {
 class NewTaskOverlay(ModalScreen[str | None]):
     """Minimal floating overlay for creating a new task."""
 
-    BINDINGS = [("escape", "cancel", "Cancel")]
+    BINDINGS = [
+        ("escape", "cancel", "Cancel"),
+        ("ctrl+s", "submit_task", "Submit"),
+    ]
+
+    MAX_PROMPT_LENGTH = 100_000  # ~100 KB guard
 
     def compose(self) -> ComposeResult:
         with Container(id="new-task-box"):
             yield Static("[#b8bb26]>[/] [b]new task[/b]", id="new-task-title")
-            yield Input(placeholder="what should ocha do?", id="new-task-input")
+            yield TextArea(id="new-task-input")
             yield Static(
-                "[#504945]enter[/] [#928374]submit[/]  "
+                "[#504945]ctrl+s[/] [#928374]submit[/]  "
                 "[#504945]esc[/] [#928374]cancel[/]",
                 id="new-task-hint",
             )
 
     def on_mount(self) -> None:
-        self.query_one(Input).focus()
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        self._submit(event.value)
+        self.query_one(TextArea).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "submit-task":
-            self._submit(self.query_one(Input).value)
+            self._submit(self.query_one(TextArea).text)
             return
         self.dismiss(None)
 
     def action_cancel(self) -> None:
         self.dismiss(None)
 
+    def action_submit_task(self) -> None:
+        self._submit(self.query_one(TextArea).text)
+
     def _submit(self, value: str) -> None:
         task = value.strip()
         if not task:
             self.notify("Task prompt cannot be empty.", severity="warning")
+            return
+        if len(task) > self.MAX_PROMPT_LENGTH:
+            self.notify(
+                f"Prompt too long ({len(task):,} chars). Maximum is {self.MAX_PROMPT_LENGTH:,}.",
+                severity="warning",
+            )
             return
         self.dismiss(task)
 
@@ -272,6 +296,7 @@ class OchaApp(App[None]):
     def __init__(self) -> None:
         super().__init__()
         self.state: AppState = sample_state()
+        self._tick_fingerprint: tuple = ()
 
     def compose(self) -> ComposeResult:
         yield MainLayout()
@@ -288,7 +313,20 @@ class OchaApp(App[None]):
         if not self.state.tasks:
             return
         if any(t.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED) for t in self.state.tasks):
-            self.refresh_from_state()
+            # Build a lightweight fingerprint to skip refresh when nothing changed
+            selected = self.state.selected_task
+            if selected is not None:
+                fp = (
+                    selected.task_id,
+                    selected.status.value,
+                    self.state.output_mode,
+                    sum(len(w.workflow_log) + len(w.raw_log) for w in selected.workers),
+                )
+            else:
+                fp = ()
+            if fp != self._tick_fingerprint:
+                self._tick_fingerprint = fp
+                self.refresh_from_state()
 
     def _ensure_ocha_branch(self) -> None:
         """Create and checkout the agent branch if it doesn't already exist."""
@@ -396,6 +434,8 @@ class OchaApp(App[None]):
         self._sync_selection_from_sidebar(event.list_view)
 
     def action_new_task(self) -> None:
+        if any(isinstance(s, NewTaskOverlay) for s in self.screen_stack):
+            return  # prevent double-open
         self.push_screen(NewTaskOverlay(), self._launch_task_from_prompt)
 
     def action_clear_finished(self) -> None:

@@ -1,114 +1,183 @@
-# T-001 Execution Brief — Ship prompt based task creation
+# T-001 Execution Brief — Ship Prompt-Based Task Creation
 
-**Coordinator:** S-001-01  
-**Branch:** agent  
+**Coordinator:** S-001-01
+**Branch:** agent
 **Date:** 2026-03-19
 
 ---
 
 ## Goal (refined)
 
-The operator task "Ship prompt based task creation" means: ensure the full
-prompt-driven task creation pipeline works end-to-end — from the TUI modal
-where the user types a task, through the orchestrator that builds role-scoped
-Junie launch specs, to the actual headless Junie process spawning and pipeline
-advancement.
+Ship prompt-based task creation as a complete, usable feature. The TUI
+pipeline is already wired end-to-end (`NewTaskOverlay` → `launch_task()` →
+`_spawn_junie_workers` → pipeline advancement with upstream handoff →
+post-pipeline git flow). However, task creation is **only reachable through
+the TUI** — there is no CLI command that creates *and executes* a task from a
+prompt. The `ocha launch` subcommand prints specs but does not run them.
 
-As of this review the core flow **already exists and is wired**:
+To ship this feature, two gaps must be closed:
 
-1. `n` key → `NewTaskOverlay` modal (single-line `Input` widget)
-2. User submits text → `_launch_task_from_prompt` callback
-3. `launch_task()` in `app/orchestrator.py` builds four `JunieLaunchSpec` objects
-   (coordinator → lead → builder → reviewer), each with a composed prompt
-4. `_spawn_junie_workers` starts the first worker; `_advance_pipeline` chains
-   the rest sequentially
-5. `ocha launch "<task>"` CLI sub-command previews specs without the TUI
+1. **Add `ocha run "<prompt>"`** — a non-interactive CLI subcommand that
+   creates an `OchaTask`, persists the prompt, spawns the Junie headless
+   pipeline sequentially (coordinator → lead → builder → reviewer), streams
+   output to stdout, and exits with a meaningful return code. This makes
+   prompt-based task creation usable from scripts, CI, and ocha's own
+   headless sessions.
 
-### What remains to ship
+2. **Wire real git worktrees** — `_run_junie_for_worker` currently passes
+   `Path.cwd()` as `--project` to Junie instead of the per-role worktree
+   path already computed in the launch spec. Workers edit the main checkout
+   directly, defeating the isolation model.
 
-| Gap | Priority | Notes |
-|-----|----------|-------|
-| The `Input` widget is single-line; multi-line task prompts need `TextArea` or `Ctrl+Enter` handling | High | README keybindings mention `Enter` = newline, `Ctrl+S` = submit — that UX isn't implemented yet |
-| No persistence of task state across restarts (`AppState` is in-memory only) | Medium | `.ocha/status.json` exists but isn't loaded on startup |
-| Worktree creation is specified in specs but never actually `git worktree add`-ed before spawn | Medium | `_run_junie_for_worker` uses `Path.cwd()` instead of `spec.worktree_path` |
-| Post-pipeline git flow creates `ocha/<task-id>` branches instead of using the shared `agent` branch model | Medium | Contradicts the design doc; should rebase onto `agent` |
-| No input validation or character limit on the task prompt | Low | Edge case: empty after strip is handled; very long prompts are not |
+---
+
+## Current state — what already works
+
+| Layer | Status | Location |
+|---|---|---|
+| `NewTaskOverlay` modal | ✅ Multi-line `TextArea`, `Ctrl+S` submit, `Esc` cancel, double-open guard | `app/app.py:191-237` |
+| Input validation | ✅ Blank rejection, 100 KB length guard | `app/app.py:226-237` |
+| `launch_task()` | ✅ Builds 4 role-backed `WorkerSession` objects, first RUNNING | `app/orchestrator.py:192-241` |
+| `persist_task_prompt()` | ✅ Writes prompt to `.ocha/tasks/T-NNN/prompt.md` | `app/orchestrator.py:179-189` |
+| `build_role_prompt()` | ✅ Injects role markdown + runtime context + operator task; supports `upstream_output` | `app/orchestrator.py:80-133` |
+| Role definitions | ✅ Four `.md` files with input/output contracts | `app/roles/{coordinator,lead,builder,reviewer}.md` |
+| `_spawn_junie_workers` / `_advance_pipeline` | ✅ Spawns `junie` CLI, streams output, advances pipeline with upstream handoff | `app/app.py:495-636` |
+| `_post_pipeline_git_flow` | ✅ Commits on `agent`, rebases, pushes, opens PR via `gh` | `app/app.py:661-742` |
+| `ocha launch <task>` CLI | ✅ Dry-run preview of role launches | `app/cli.py:97-103` |
+| Tests — orchestrator | ✅ Role loading, launch specs, prompts, persistence, upstream handoff, role contracts | `tests/test_orchestrator.py` |
 
 ---
 
 ## Relevant files
 
-### Must-read for every downstream agent
-
-| File | Why |
-|------|-----|
-| `app/orchestrator.py` | Builds role prompts and launch specs; central to task creation |
-| `app/app.py` | `NewTaskOverlay`, `_launch_task_from_prompt`, `_spawn_junie_workers`, `_advance_pipeline` |
-| `app/state.py` | `AppState`, `OchaTask`, `WorkerSession` data model |
-| `app/roles/*.md` | Role prompt templates injected into each Junie session |
-
-### Secondary context
-
-| File | Why |
-|------|-----|
-| `app/cli.py` | `ocha launch` sub-command — alternative entry point |
-| `app/widgets.py` | TUI widget definitions used by the main layout |
-| `README.md` | Design intent, keybindings, orchestration pipeline docs |
-| `tests/test_orchestrator.py` | Existing orchestrator tests to maintain/extend |
-| `tests/test_app.py` | Existing app-level tests |
+| File | Role | Action |
+|---|---|---|
+| `app/orchestrator.py` | Builder | **Edit** — add `run_task_pipeline()` function |
+| `app/cli.py` | Builder | **Edit** — add `run` subcommand |
+| `app/app.py` | Builder | **Edit** — wire worktree create/remove around Junie spawn and kill |
+| `app/state.py` | Read-only | `OchaTask`, `WorkerSession` — no changes needed |
+| `app/roles/*.md` | Read-only | Role prompts — no changes needed |
+| `app/widgets.py` | Read-only | TUI widgets — no changes needed |
+| `tests/test_cli.py` | Builder | **Edit** — add `run` subcommand parser tests |
+| `tests/test_orchestrator.py` | Builder | **Edit** — add `run_task_pipeline` tests |
+| `tests/test_app.py` | Builder | **Edit** — add worktree lifecycle tests |
+| `docs/` | Coordinator | **Edit** — this brief |
 
 ---
 
-## Safe partitioning for parallel worktrees
+## Recommended changes
 
-All agents share the `agent` branch. To avoid conflicts, respect these boundaries:
+### Phase 1 — Extract headless pipeline runner (`app/orchestrator.py`)
 
-| Role | Owned directory | Scope |
-|------|----------------|-------|
-| **Coordinator** | `docs/` | This brief; context gathering only |
-| **Lead** | `planning/` | Break the "what remains" table into builder sub-tasks |
-| **Builder** | `app/` | Implement code changes (modal upgrade, worktree creation, state persistence, branch model fix) |
-| **Reviewer** | `app/` | Post-builder review; read-only except for test additions in `tests/` |
+1. **Add `run_task_pipeline(user_task, *, project_path, on_event=None) -> OchaTask`**
+   — a function (sync or async) that:
+   - Calls `launch_task()` to create the task + workers.
+   - Iterates workers in pipeline order (coordinator → lead → builder → reviewer).
+   - For each worker: spawns `junie` via `subprocess.run`, captures
+     stdout/stderr into `worker.raw_log` / `worker.workflow_log`, marks
+     status `COMPLETED` or `FAILED`, and passes upstream summary to the next
+     worker via `build_role_prompt(..., upstream_output=...)`.
+   - Calls the optional `on_event` callback per log line for streaming output.
+   - Returns the fully-populated `OchaTask`.
 
-The builder should avoid editing `docs/` or `planning/`. The reviewer should
-avoid editing `app/` source — only `tests/` if new coverage is needed.
+2. **Keep `launch_task` and `build_launch_specs` unchanged** — they are pure
+   data builders and are correct as-is.
+
+3. **Preserve `persist_task_prompt`** call so the `.ocha/tasks/<id>/prompt.md`
+   audit trail continues to work.
+
+### Phase 2 — Wire CLI subcommand (`app/cli.py`)
+
+4. **Add `run` subcommand** to `build_parser()`:
+   ```python
+   run = subparsers.add_parser("run", help="Create and execute a task from a prompt")
+   run.add_argument("task", help="Operator prompt describing the task")
+   run.add_argument("--project", default=".", help="Project path")
+   ```
+
+5. **Implement `command == "run"` handler** in `main()`:
+   - Call `run_task_pipeline(args.task, project_path=...)`.
+   - Stream `on_event` lines to stdout.
+   - Exit 0 if all workers completed, 1 if any failed.
+
+### Phase 3 — Wire real git worktrees (`app/app.py`)
+
+6. **Before spawning** in `_run_junie_for_worker`: run
+   `git worktree add <worker.worktree_path> agent`.
+
+7. **Junie project arg**: pass `worker.worktree_path` (not `cwd()`) as
+   `--project` to the Junie CLI.
+
+8. **On kill** in `_handle_kill`: run
+   `git worktree remove --force <worktree_path>`.
+
+9. **Post-pipeline cleanup**: remove all worktrees for the completed task
+   in `_post_pipeline_git_flow` or a new `_cleanup_worktrees` method.
+
+10. **Error handling**: if `git worktree add` fails, attempt remove + retry
+    or mark worker as FAILED with a clear log message.
+
+### Phase 4 — Tests (`tests/`)
+
+11. **`tests/test_cli.py`** — add parser test for `run` subcommand args.
+
+12. **`tests/test_orchestrator.py`** — add tests for `run_task_pipeline`:
+    - Mock `subprocess.run` to avoid calling `junie`.
+    - Assert workers advance in order.
+    - Assert upstream summary is injected into downstream prompts.
+    - Assert final `OchaTask.status` reflects success/failure.
+
+13. **`tests/test_app.py`** — add worktree lifecycle tests:
+    - Verify Junie command uses `worktree_path` not `cwd()`.
+    - Verify worktree cleanup on kill.
 
 ---
 
-## Recommended sub-task breakdown (for the lead)
+## Safe partitioning
 
-1. **Upgrade NewTaskOverlay to multi-line input**
-   - Replace `Input` with `TextArea` (Textual ships one)
-   - Wire `Ctrl+S` to submit and `Esc` to cancel (match README spec)
-   - Keep `Enter` as newline inside the text area
-   - Files: `app/app.py` (overlay class + CSS)
+| Role | Owned directory | Key files to touch |
+|---|---|---|
+| **Coordinator** | `docs/` | This brief (done) |
+| **Lead** | `planning/` | Task plan derived from this brief |
+| **Builder** | `app/`, `tests/` | `orchestrator.py` (pipeline runner), `cli.py` (run subcommand), `app.py` (worktree lifecycle), tests |
+| **Reviewer** | `app/` (read-only) | Review builder changes, run full test suite |
 
-2. **Wire real git worktree lifecycle**
-   - Before spawning a worker, run `git worktree add <worktree_path> agent`
-   - Pass `worktree_path` (not `cwd()`) as the `--project` arg to Junie
-   - On cleanup/kill, run `git worktree remove`
-   - Files: `app/app.py` (`_spawn_junie_workers`, `_handle_kill`)
-
-3. **Fix post-pipeline branch model**
-   - Remove the `ocha/<task-id>` branch creation in `_post_pipeline_git_flow`
-   - Instead: stage + commit on `agent`, rebase, push `agent`
-   - Files: `app/app.py` (`_post_pipeline_git_flow`)
-
-4. **Load/save task state to `.ocha/status.json`**
-   - On launch and state change, write `AppState` to disk
-   - On startup (`on_mount`), reload persisted state
-   - Files: `app/state.py` (serialization), `app/app.py` (load/save hooks)
-
-5. **Tests**
-   - Extend `tests/test_orchestrator.py` for multi-line prompts, edge cases
-   - Add integration-level test for worktree lifecycle (mock subprocess)
-   - Files: `tests/`
+The builder should not edit `docs/`. The reviewer should not rewrite `app/`
+source — only verify and flag issues.
 
 ---
 
-## Execution rules reminder
+## Branch rule
 
-- Stay on the `agent` branch — no branch-per-agent.
-- Each agent works in its own worktree under `.worktrees/`.
-- Prefer changes inside the assigned owned directory.
-- Summarize results so the TUI can surface a short workflow event.
+All workers stay on the shared `agent` branch. No branch-per-agent.
+Worktree isolation (`{project}/.worktrees/t-001-{role}`) provides the safety
+boundary.
+
+---
+
+## Suggested execution order
+
+1. **Coordinator** (this session) — produce this brief ✓
+2. **Lead** — confirm gaps and break into builder sub-tasks
+3. **Builder** — implement Phase 1-4 above
+4. **Reviewer** — verify builder output, run `pytest`, confirm both CLI and TUI flows
+
+---
+
+## Success criteria
+
+- `ocha run "some task"` creates and executes a full pipeline from the CLI.
+- Workers are spawned in real git worktrees, not `cwd()`.
+- Worktrees are cleaned up on kill and after pipeline completion.
+- Pressing `n` in the TUI still works end-to-end (no regression).
+- All existing tests pass; new tests cover `run` subcommand and worktree lifecycle.
+- `ocha launch "some task"` still works for dry-run preview.
+
+---
+
+## Coordinator summary (for TUI event)
+
+> Execution brief written. Two gaps to ship prompt-based task creation:
+> (1) add `ocha run` CLI subcommand with headless pipeline runner extracted
+> from TUI logic, (2) wire real git worktree lifecycle around Junie spawn.
+> Builder touches `app/orchestrator.py`, `app/cli.py`, `app/app.py`, and tests.
