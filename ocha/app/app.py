@@ -14,8 +14,8 @@ from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
 CSS = """
 Screen {
     layout: vertical;
-    background: #11131a;
-    color: #e6e8ef;
+    background: #1a1b26;
+    color: #a9b1d6;
 }
 
 #main-row {
@@ -23,39 +23,71 @@ Screen {
 }
 
 #agents-pane {
-    width: 34;
+    width: 36;
     border: solid #3d4456;
     padding: 0 1;
+    background: #1a1b26;
 }
 
 #detail-pane {
     width: 1fr;
 }
 
-#task-header, #output-pane, #help-bar, #status-bar {
+#task-header {
+    height: 9;
     border: solid #3d4456;
     padding: 0 1;
-}
-
-#task-header {
-    height: 8;
+    background: #1a1b26;
 }
 
 #output-pane {
     height: 1fr;
+    border: solid #3d4456;
+    padding: 0 1;
+    background: #1a1b26;
 }
 
-#help-bar, #status-bar {
-    height: 3;
+#help-bar {
+    height: 1;
+    background: #24283b;
+    color: #a9b1d6;
+    padding: 0 1;
+    border: none;
+}
+
+#status-bar {
+    height: 1;
+    background: #1a1b26;
+    color: #a9b1d6;
+    padding: 0 1;
+    border-top: solid #3d4456;
 }
 
 .pane-title {
     text-style: bold;
-    padding-top: 1;
+    color: #7aa2f7;
+    padding: 0 0 1 0;
 }
 
 .worker-row {
     padding: 0 0 1 0;
+}
+
+ListView {
+    background: #1a1b26;
+}
+
+ListView > ListItem {
+    background: #1a1b26;
+    color: #a9b1d6;
+}
+
+ListView > ListItem.--highlight {
+    background: #24283b;
+}
+
+ListView:focus > ListItem.--highlight {
+    background: #292e42;
 }
 
 NewTaskModal {
@@ -65,9 +97,35 @@ NewTaskModal {
 NewTaskModal > Container {
     width: 70;
     height: auto;
-    border: solid #6b7280;
-    background: #1a1d27;
+    border: solid #3d4456;
+    background: #1a1b26;
     padding: 1 2;
+}
+
+NewTaskModal Static {
+    color: #a9b1d6;
+}
+
+NewTaskModal Input {
+    background: #24283b;
+    color: #c0caf5;
+    border: solid #3d4456;
+}
+
+NewTaskModal Input:focus {
+    border: solid #7aa2f7;
+}
+
+NewTaskModal Button {
+    background: #24283b;
+    color: #a9b1d6;
+    border: solid #3d4456;
+}
+
+NewTaskModal #submit-task {
+    background: #7aa2f7;
+    color: #1a1b26;
+    border: solid #7aa2f7;
 }
 
 #new-task-actions {

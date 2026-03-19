@@ -9,35 +9,50 @@ from .state import AppState, OchaTask, OutputMode, WorkerStatus
 
 
 STATUS_ICON = {
-    WorkerStatus.RUNNING: "●",
-    WorkerStatus.COMPLETED: "✓",
-    WorkerStatus.FAILED: "✕",
-    WorkerStatus.STOPPED: "■",
-    WorkerStatus.QUEUED: "…",
+    WorkerStatus.RUNNING: "[#41d995]●[/]",
+    WorkerStatus.COMPLETED: "[#7aa2f7]✓[/]",
+    WorkerStatus.FAILED: "[#f7768e]✕[/]",
+    WorkerStatus.STOPPED: "[#787c99]■[/]",
+    WorkerStatus.QUEUED: "[#e0af68]…[/]",
+}
+
+STATUS_LABEL_COLOR = {
+    WorkerStatus.RUNNING: "#41d995",
+    WorkerStatus.COMPLETED: "#7aa2f7",
+    WorkerStatus.FAILED: "#f7768e",
+    WorkerStatus.STOPPED: "#787c99",
+    WorkerStatus.QUEUED: "#e0af68",
 }
 
 
 class WorkerListItem(ListItem):
-    def __init__(self, task: OchaTask) -> None:
+    def __init__(self, task: OchaTask, selected: bool = False) -> None:
         self.ocha_task = task
-        label = Static(self.render_label(), classes=f"worker-row status-{task.status}")
+        label = Static(self._render(task), classes="worker-row")
         super().__init__(label)
 
-    def render_label(self) -> str:
-        icon = STATUS_ICON[self.ocha_task.status]
-        return f"{icon} {self.ocha_task.task_id:<6} {self.ocha_task.title}\\n  {self.ocha_task.branch} • {self.ocha_task.pipeline_summary}"
+    @staticmethod
+    def _render(task: OchaTask) -> str:
+        icon = STATUS_ICON[task.status]
+        color = STATUS_LABEL_COLOR[task.status]
+        elapsed = task.elapsed
+        title = task.title if len(task.title) <= 40 else task.title[:37] + "..."
+        return (
+            f"{icon} [{color}]{task.task_id}[/]  {title}\n"
+            f"  [#565f89]{task.branch}[/] · [{color}]{task.status.value}[/] · [#565f89]{elapsed}[/]"
+        )
 
 
 class AgentsPane(Widget):
     def compose(self):
-        yield Static("Tasks", classes="pane-title")
+        yield Static("[b][#7aa2f7]Tasks[/][/b]", classes="pane-title")
         yield ListView(id="workers-list")
 
     def load(self, state: AppState) -> None:
         list_view = self.query_one(ListView)
         list_view.clear()
-        for task in state.tasks:
-            list_view.append(WorkerListItem(task))
+        for i, task in enumerate(state.tasks):
+            list_view.append(WorkerListItem(task, selected=(i == state.selected_index)))
         list_view.index = state.selected_index if state.tasks else None
 
 
@@ -45,32 +60,31 @@ class TaskHeader(Static):
     def update_task(self, task: OchaTask | None) -> None:
         if task is None:
             self.update(
-                "\n".join(
-                    [
-                        "[b]No active tasks[/b]",
-                        "task=n/a   state=n/a   branch=n/a",
-                        "pipeline=n/a",
-                        "worktree=n/a",
-                        "active_role=n/a   owner=n/a   retries=0   elapsed=0s",
-                        "prompt=n/a   event=n/a",
-                        "summary=Press n to create a new task prompt.",
-                    ]
-                )
+                "[b][#7aa2f7]Task Detail[/][/b]\n\n"
+                "[#565f89]No active tasks. Press [/][#e0af68]n[/][#565f89] to create a new task.[/]"
             )
             return
         worker = task.primary_worker
+        color = STATUS_LABEL_COLOR[task.status]
+        icon = STATUS_ICON[task.status]
+        pipeline_parts = []
+        for w in sorted(task.workers, key=lambda w: w.role.value):
+            wc = STATUS_LABEL_COLOR[w.status]
+            pipeline_parts.append(f"[{wc}]{w.role}[/] [{wc}]{w.status.value}[/]")
+        pipeline = "  [#3d4456]│[/]  ".join(pipeline_parts)
+
         self.update(
-            "\n".join(
-                [
-                    f"[b]{task.title}[/b]",
-                    f"task={task.task_id}   state={task.status}   branch={task.branch}",
-                    f"pipeline={task.pipeline_summary}",
-                    f"worktree={worker.worktree_path}",
-                    f"active_role={worker.role}   owner={worker.owned_directory}   retries={worker.retry_count}   elapsed={task.elapsed}",
-                    f"prompt={worker.role_prompt_path}   event={worker.latest_event or 'n/a'}",
-                    f"summary={task.summary}",
-                ]
-            )
+            f"[b][#7aa2f7]Task Detail[/][/b]\n\n"
+            f"  {icon} [b]{task.title}[/b]\n"
+            f"  [#565f89]id[/] [#c0caf5]{task.task_id}[/]  "
+            f"[#565f89]state[/] [{color}]{task.status.value}[/]  "
+            f"[#565f89]branch[/] [#bb9af7]{task.branch}[/]  "
+            f"[#565f89]elapsed[/] [#c0caf5]{task.elapsed}[/]\n"
+            f"  [#565f89]role[/] [#c0caf5]{worker.role}[/]  "
+            f"[#565f89]worktree[/] [#565f89]{worker.worktree_path}[/]  "
+            f"[#565f89]retries[/] [#c0caf5]{worker.retry_count}[/]\n"
+            f"  [#565f89]pipeline[/]  {pipeline}\n"
+            f"  [#565f89]summary[/]  [#c0caf5]{task.summary}[/]"
         )
 
 
@@ -79,14 +93,28 @@ class OutputPane(Static):
 
     def update_task(self, task: OchaTask | None, mode: OutputMode) -> None:
         self.mode = mode
+        title_label = "Workflow" if mode == OutputMode.WORKFLOW else "Raw Logs"
         if task is None:
-            title = "Workflow view" if mode == OutputMode.WORKFLOW else "Raw logs"
-            self.update(f"[b]{title}[/b]\n\n• No task selected.")
+            self.update(
+                f"[b][#7aa2f7]{title_label}[/][/b]\n\n"
+                f"[#565f89]No task selected.[/]"
+            )
             return
         lines = task.output_lines(mode)
-        title = "Workflow view" if mode == OutputMode.WORKFLOW else "Raw logs"
-        body = "\n".join(f"• {line}" for line in lines)
-        self.update(f"[b]{title}[/b]\n\n{body}")
+        body_parts = []
+        for line in lines:
+            if line.startswith("[coordinator]"):
+                body_parts.append(f"  [#bb9af7]{line}[/]")
+            elif line.startswith("[lead]"):
+                body_parts.append(f"  [#7aa2f7]{line}[/]")
+            elif line.startswith("[builder]"):
+                body_parts.append(f"  [#41d995]{line}[/]")
+            elif line.startswith("[reviewer]"):
+                body_parts.append(f"  [#e0af68]{line}[/]")
+            else:
+                body_parts.append(f"  [#a9b1d6]{line}[/]")
+        body = "\n".join(body_parts)
+        self.update(f"[b][#7aa2f7]{title_label}[/][/b]\n\n{body}")
 
 
 class HelpBar(Static):
@@ -97,19 +125,17 @@ class StatusBar(Static):
     def update_state(self, state: AppState) -> None:
         counts = state.status_counts
         selected = state.selected_task
-        selected_task_id = selected.task_id if selected else "n/a"
-        selected_branch = selected.branch if selected else "n/a"
+        sel_id = selected.task_id if selected else "n/a"
+        sel_branch = selected.branch if selected else "n/a"
         self.update(
-            "   ".join(
-                [
-                    f"running {counts[WorkerStatus.RUNNING]}",
-                    f"queued {counts[WorkerStatus.QUEUED]}",
-                    f"done {counts[WorkerStatus.COMPLETED]}",
-                    f"selected {selected_task_id}",
-                    f"branch {selected_branch}",
-                    f"mode {state.output_mode}",
-                ]
-            )
+            f"[#41d995]● {counts[WorkerStatus.RUNNING]} running[/]  "
+            f"[#e0af68]… {counts[WorkerStatus.QUEUED]} queued[/]  "
+            f"[#7aa2f7]✓ {counts[WorkerStatus.COMPLETED]} done[/]  "
+            f"[#f7768e]✕ {counts[WorkerStatus.FAILED]} failed[/]  "
+            f"[#3d4456]│[/]  "
+            f"[#c0caf5]{sel_id}[/] [#565f89]on[/] [#bb9af7]{sel_branch}[/]  "
+            f"[#3d4456]│[/]  "
+            f"[#565f89]view:[/] [#c0caf5]{state.output_mode}[/]"
         )
 
 
@@ -120,5 +146,15 @@ class MainLayout(Widget):
             with Vertical(id="detail-pane"):
                 yield TaskHeader(id="task-header")
                 yield OutputPane(id="output-pane")
-        yield HelpBar("n new task   ↑/↓ move   v toggle view   h/l focus   c clear done   k kill   q quit", id="help-bar")
+        yield HelpBar(
+            "[#3d4456]│[/] [#e0af68]n[/] [#a9b1d6]new[/] "
+            "[#3d4456]│[/] [#e0af68]↑↓[/] [#a9b1d6]move[/] "
+            "[#3d4456]│[/] [#e0af68]v[/] [#a9b1d6]view[/] "
+            "[#3d4456]│[/] [#e0af68]h/l[/] [#a9b1d6]focus[/] "
+            "[#3d4456]│[/] [#e0af68]c[/] [#a9b1d6]clear[/] "
+            "[#3d4456]│[/] [#e0af68]k[/] [#a9b1d6]kill[/] "
+            "[#3d4456]│[/] [#e0af68]q[/] [#a9b1d6]quit[/] "
+            "[#3d4456]│[/]",
+            id="help-bar",
+        )
         yield StatusBar(id="status-bar")
