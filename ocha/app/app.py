@@ -282,23 +282,63 @@ class OchaApp(App[None]):
     def _ensure_ocha_branch(self) -> None:
         """Create and checkout the ocha branch if it doesn't already exist."""
         try:
+            # Check if we're in a git repo
+            top = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if top.returncode != 0:
+                self.notify("[#fb4934]Not a git repo — skipping branch setup[/]", severity="warning")
+                return
+
             current = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 capture_output=True, text=True, timeout=5,
             )
             if current.returncode == 0 and current.stdout.strip() == OCHA_BRANCH:
+                self.notify(f"[#b8bb26]● On branch [b]{OCHA_BRANCH}[/b][/]", severity="information")
                 return
+
             # Check if branch exists
             check = subprocess.run(
                 ["git", "rev-parse", "--verify", OCHA_BRANCH],
                 capture_output=True, text=True, timeout=5,
             )
             if check.returncode == 0:
-                subprocess.run(["git", "checkout", OCHA_BRANCH], capture_output=True, timeout=5)
+                result = subprocess.run(
+                    ["git", "checkout", OCHA_BRANCH],
+                    capture_output=True, text=True, timeout=10,
+                )
             else:
-                subprocess.run(["git", "checkout", "-b", OCHA_BRANCH], capture_output=True, timeout=5)
-        except Exception:
-            pass  # non-fatal — works fine without git
+                result = subprocess.run(
+                    ["git", "checkout", "-b", OCHA_BRANCH],
+                    capture_output=True, text=True, timeout=10,
+                )
+
+            if result.returncode != 0:
+                self.notify(
+                    f"[#fb4934]Failed to switch to {OCHA_BRANCH}: {result.stderr.strip()}[/]",
+                    severity="error",
+                )
+                return
+
+            # Verify the branch is actually checked out
+            verify = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if verify.returncode == 0 and verify.stdout.strip() == OCHA_BRANCH:
+                self.notify(
+                    f"[#b8bb26]● Created and switched to branch [b]{OCHA_BRANCH}[/b][/]",
+                    severity="information",
+                )
+            else:
+                self.notify(
+                    f"[#fb4934]Branch switch failed — on {verify.stdout.strip()}[/]",
+                    severity="error",
+                )
+        except Exception as exc:
+            self.notify(f"[#fb4934]Branch setup error: {exc}[/]", severity="error")
 
     def refresh_from_state(self) -> None:
         try:
@@ -375,6 +415,7 @@ class OchaApp(App[None]):
         task = self.state.selected_task
         if task is None:
             return
+        killed_count = 0
         for worker in task.workers:
             if worker.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED):
                 worker.status = WorkerStatus.STOPPED
@@ -387,8 +428,15 @@ class OchaApp(App[None]):
                         pass
                 from datetime import datetime
                 worker.finished_at = datetime.now()
+                worker.workflow_log.append(f"Killed by operator at {worker.finished_at:%H:%M:%S}.")
+                worker.summary = "Killed by operator."
+                killed_count += 1
         self.refresh_from_state()
-        self.notify(f"Killed task {task.task_id}.")
+        self.notify(
+            f"[#fb4934]✕[/] Killed task [b]{task.task_id}[/b] — "
+            f"{killed_count} worker{'s' if killed_count != 1 else ''} stopped.",
+            severity="warning",
+        )
 
     def _launch_task_from_prompt(self, task: str | None) -> None:
         if task is None:
