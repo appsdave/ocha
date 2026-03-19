@@ -28,11 +28,11 @@ STATUS_LABEL_COLOR = {
 class WorkerListItem(ListItem):
     def __init__(self, task: OchaTask, selected: bool = False) -> None:
         self.ocha_task = task
-        label = Static(self._render(task), classes="worker-row")
+        label = Static(self._format_task(task), classes="worker-row")
         super().__init__(label)
 
     @staticmethod
-    def _render(task: OchaTask) -> str:
+    def _format_task(task: OchaTask) -> str:
         icon = STATUS_ICON[task.status]
         color = STATUS_LABEL_COLOR[task.status]
         elapsed = task.elapsed
