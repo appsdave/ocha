@@ -38,6 +38,8 @@ The current Python/Textual rebuild now ships a small command surface behind `och
 - `ocha` — launch the Textual dashboard
 - `ocha download [target]` — clone the canonical repo into `~/.ocha` and install its runtime dependencies
 - `ocha update [target]` — fast-forward an existing `~/.ocha` install from `origin/main` and refresh dependencies
+- `ocha task <prompt>` — create a new task from a prompt (also accepts stdin)
+- `ocha launch <task>` — preview generated role-based headless Junie launches without opening the TUI
 
 If no target is provided for `download` or `update`, `ocha` uses `~/.ocha`.
 
@@ -242,3 +244,30 @@ ocha launch "finish building the app with role markdown prompts"
 ```
 
 That prints the coordinator/lead/builder/reviewer worktree targets plus the headless `junie` command shape `ocha` will use for each session.
+
+### Prompt-based task creation
+
+The `ocha task` command is the primary CLI entry-point for creating tasks from a prompt:
+
+```bash
+ocha task "Ship prompt based task creation"
+```
+
+You can also pipe a prompt via stdin:
+
+```bash
+echo "Fix the login bug" | ocha task
+```
+
+This will:
+
+1. Persist the prompt to `.ocha/tasks/T-NNN/prompt.md`
+2. Write a `status.json` marker (initially `pending`)
+3. Build launch specs for all four roles (coordinator, lead, builder, reviewer)
+4. Print a summary with the task ID, title, and worker session targets
+
+The `--project` flag sets the project root (defaults to `.`):
+
+```bash
+ocha task "Add dark mode" --project ~/src/myapp
+```

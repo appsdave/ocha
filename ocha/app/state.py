@@ -25,6 +25,13 @@ class OutputMode(StrEnum):
     RAW = "raw"
 
 
+class TaskStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 STATUS_PRIORITY = {
     WorkerStatus.RUNNING: 0,
     WorkerStatus.FAILED: 1,

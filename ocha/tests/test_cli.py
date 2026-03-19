@@ -9,6 +9,7 @@ from unittest.mock import patch
 from app.cli import build_parser, main, resolve_target
 from app.install import InstallResult
 from app.install import DEFAULT_REPO_URL, default_install_dir
+from app.state import TaskStatus
 
 
 class CliTests(unittest.TestCase):
@@ -65,6 +66,65 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(output.getvalue().strip(), "Already up to date")
+
+    def test_task_parser_accepts_prompt_argument(self) -> None:
+        args = build_parser().parse_args(["task", "Build the login page"])
+        self.assertEqual(args.command, "task")
+        self.assertEqual(args.prompt, "Build the login page")
+        self.assertEqual(args.project, ".")
+
+    def test_task_parser_accepts_project_flag(self) -> None:
+        args = build_parser().parse_args(["task", "Fix bug", "--project", "~/src/ocha"])
+        self.assertEqual(args.prompt, "Fix bug")
+        self.assertEqual(args.project, "~/src/ocha")
+
+    def test_task_command_creates_task_and_prints_summary(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(["task", "Ship prompt based task creation", "--project", tmpdir])
+            self.assertEqual(exit_code, 0)
+            rendered = output.getvalue()
+            self.assertIn("T-001", rendered)
+            self.assertIn("Ship prompt based task creation", rendered)
+            self.assertIn("coordinator", rendered)
+            # Verify prompt was persisted
+            prompt_file = Path(tmpdir) / ".ocha" / "tasks" / "T-001" / "prompt.md"
+            self.assertTrue(prompt_file.exists())
+            self.assertEqual(prompt_file.read_text(encoding="utf-8"), "Ship prompt based task creation")
+            # Verify status marker was written
+            import json
+            status_file = Path(tmpdir) / ".ocha" / "tasks" / "T-001" / "status.json"
+            self.assertTrue(status_file.exists())
+            status = json.loads(status_file.read_text(encoding="utf-8"))
+            self.assertEqual(status["task_id"], "T-001")
+            self.assertEqual(status["status"], TaskStatus.PENDING)
+
+    def test_task_command_json_flag_outputs_json(self) -> None:
+        import json as json_mod
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(["task", "JSON output test", "--project", tmpdir, "--json"])
+            self.assertEqual(exit_code, 0)
+            data = json_mod.loads(output.getvalue())
+            self.assertEqual(data["task_id"], "T-001")
+            self.assertEqual(data["status"], "pending")
+            self.assertEqual(len(data["workers"]), 4)
+
+    def test_task_command_reads_stdin_when_no_argument(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = io.StringIO()
+            with patch("sys.stdin", io.StringIO("Piped task prompt\n")):
+                with redirect_stdout(output):
+                    exit_code = main(["task", "--project", tmpdir])
+            self.assertEqual(exit_code, 0)
+            rendered = output.getvalue()
+            self.assertIn("T-001", rendered)
+            self.assertIn("Piped task prompt", rendered)
 
     def test_update_main_prints_change_summary(self) -> None:
         output = io.StringIO()

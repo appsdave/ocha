@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .orchestrator import build_launch_specs
+from .orchestrator import build_launch_specs, create_task_from_prompt
 from .install import (
     DEFAULT_BRANCH,
     DEFAULT_REPO_URL,
@@ -39,6 +39,11 @@ def build_parser() -> argparse.ArgumentParser:
     launch = subparsers.add_parser("launch", help="Prepare role-based headless Junie launches for a new ocha task")
     launch.add_argument("task", help="Top-level task to hand to the ocha orchestrator")
     launch.add_argument("--project", default=".", help="Project path passed to Junie headless sessions")
+
+    task = subparsers.add_parser("task", help="Create a new task from a prompt (accepts argument or stdin)")
+    task.add_argument("prompt", nargs="?", default=None, help="Task prompt text (reads stdin if omitted)")
+    task.add_argument("--project", default=".", help="Project path for the task")
+    task.add_argument("--json", action="store_true", dest="json_output", help="Output task details as JSON")
     return parser
 
 
@@ -100,6 +105,25 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"[{spec.role}] {spec.session_id} -> {spec.worktree_path}")
                 print(f"  prompt: {spec.prompt_path}")
                 print(f"  command: {' '.join(spec.command[:-1])} <prompt>")
+            return 0
+        if command == "task":
+            prompt = args.prompt
+            if prompt is None:
+                if sys.stdin.isatty():
+                    parser.error("No prompt provided. Pass a prompt argument or pipe text via stdin.")
+                prompt = sys.stdin.read()
+            prompt = prompt.strip()
+            if not prompt:
+                parser.error("Task prompt cannot be empty.")
+            project = Path(args.project).expanduser().resolve()
+            result = create_task_from_prompt(prompt, project_path=project)
+            if getattr(args, "json_output", False):
+                print(result.to_json(indent=2))
+            else:
+                print(f"{result.task_id}: {result.title}")
+                print(f"  prompt: {result.prompt_path}")
+                for spec in result.specs:
+                    print(f"  [{spec.role}] {spec.session_id} -> {spec.worktree_path}")
             return 0
         if command is None:
             return launch_tui()

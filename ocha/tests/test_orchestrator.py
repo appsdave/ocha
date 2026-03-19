@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.orchestrator import build_launch_specs, build_role_prompt, launch_task, load_role_definitions, persist_task_prompt, summarize_task
-from app.state import WorkerRole, sample_state
+from app.orchestrator import build_launch_specs, build_role_prompt, create_task_from_prompt, launch_task, load_role_definitions, persist_task_prompt, summarize_task, _next_task_number
+from app.state import TaskStatus, WorkerRole, sample_state
 
 
 class OrchestratorTests(unittest.TestCase):
@@ -138,6 +138,63 @@ class PersistTaskPromptTests(unittest.TestCase):
             prompt_file = Path(tmpdir) / ".ocha" / "tasks" / "T-001" / "prompt.md"
             self.assertTrue(prompt_file.exists())
             self.assertEqual(prompt_file.read_text(encoding="utf-8"), "Persist me")
+
+
+class CreateTaskFromPromptTests(unittest.TestCase):
+    def test_creates_prompt_file_and_status_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = create_task_from_prompt("Build the login page", project_path=Path(tmpdir))
+            self.assertEqual(result.task_id, "T-001")
+            self.assertEqual(result.title, "Build the login page")
+            self.assertEqual(result.status, TaskStatus.PENDING)
+            self.assertTrue(result.prompt_path.exists())
+            self.assertEqual(result.prompt_path.read_text(encoding="utf-8"), "Build the login page")
+            # status.json written
+            import json
+            status_file = Path(tmpdir) / ".ocha" / "tasks" / "T-001" / "status.json"
+            self.assertTrue(status_file.exists())
+            status = json.loads(status_file.read_text(encoding="utf-8"))
+            self.assertEqual(status["status"], "pending")
+
+    def test_returns_specs_for_all_roles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = create_task_from_prompt("Fix a bug", project_path=Path(tmpdir))
+            self.assertEqual(len(result.specs), 4)
+            roles = [s.role.value for s in result.specs]
+            self.assertEqual(roles, ["coordinator", "lead", "builder", "reviewer"])
+
+    def test_respects_custom_task_number(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = create_task_from_prompt("Custom number", project_path=Path(tmpdir), task_number=42)
+            self.assertEqual(result.task_id, "T-042")
+
+    def test_auto_increments_task_number(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            r1 = create_task_from_prompt("First task", project_path=Path(tmpdir))
+            r2 = create_task_from_prompt("Second task", project_path=Path(tmpdir))
+            self.assertEqual(r1.task_id, "T-001")
+            self.assertEqual(r2.task_id, "T-002")
+
+    def test_persists_per_worker_session_prompts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = create_task_from_prompt("Session prompt test", project_path=Path(tmpdir))
+            task_dir = Path(tmpdir) / ".ocha" / "tasks" / result.task_id
+            for spec in result.specs:
+                session_file = task_dir / f"{spec.session_id}-prompt.md"
+                self.assertTrue(session_file.exists(), f"Missing {session_file}")
+                content = session_file.read_text(encoding="utf-8")
+                self.assertIn("## Runtime context", content)
+                self.assertIn("Session prompt test", content)
+
+    def test_to_json_round_trips(self) -> None:
+        import json
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = create_task_from_prompt("JSON test", project_path=Path(tmpdir))
+            data = json.loads(result.to_json())
+            self.assertEqual(data["task_id"], "T-001")
+            self.assertEqual(data["status"], "pending")
+            self.assertEqual(len(data["workers"]), 4)
+            self.assertIn("prompt_path", data)
 
 
 class RolePromptContractTests(unittest.TestCase):

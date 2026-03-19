@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 from textwrap import dedent
+from typing import Any
 
-from .state import AppState, OchaTask, WorkerRole, WorkerSession, WorkerStatus
+from .state import AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession, WorkerStatus
 
 
 SHARED_BRANCH = "agent"
@@ -246,3 +248,114 @@ def summarize_task(user_task: str) -> str:
     if not normalized:
         return "Untitled task"
     return normalized[:72] + ("…" if len(normalized) > 72 else "")
+
+
+@dataclass(slots=True, frozen=True)
+class TaskCreationResult:
+    """Returned by :func:`create_task_from_prompt` to summarize what was created."""
+
+    task_id: str
+    title: str
+    prompt_path: Path
+    specs: list[JunieLaunchSpec]
+    status: TaskStatus
+
+    @property
+    def workers(self) -> list[dict[str, str]]:
+        return [
+            {
+                "role": spec.role.value,
+                "session_id": spec.session_id,
+                "worktree_path": str(spec.worktree_path),
+                "owned_directory": spec.owned_directory,
+            }
+            for spec in self.specs
+        ]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "title": self.title,
+            "prompt_path": str(self.prompt_path),
+            "status": self.status.value,
+            "workers": self.workers,
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        return json.dumps(self.to_dict(), **kwargs)
+
+
+def _next_task_number(repo_root: Path) -> int:
+    """Determine the next task number from existing ``.ocha/tasks`` dirs."""
+    tasks_root = repo_root / ".ocha" / "tasks"
+    existing: list[int] = []
+    if tasks_root.exists():
+        for child in tasks_root.iterdir():
+            if child.is_dir() and child.name.startswith("T-"):
+                try:
+                    existing.append(int(child.name.split("-", 1)[1]))
+                except (ValueError, IndexError):
+                    pass
+    return (max(existing) + 1) if existing else 1
+
+
+def create_task_from_prompt(
+    prompt: str,
+    *,
+    project_path: Path | None = None,
+    task_number: int | None = None,
+) -> TaskCreationResult:
+    """Create a persisted task from a user prompt.
+
+    This is the primary entry-point for prompt-based task creation from the
+    CLI.  It persists the prompt to disk, builds launch specs for every
+    worker role, writes per-session prompt files, and writes a status marker
+    so the TUI (or a later ``launch_task`` call) can pick the task up.
+
+    When *task_number* is ``None`` the next available number is determined
+    automatically from existing ``.ocha/tasks/`` directories.
+
+    Returns a :class:`TaskCreationResult` with everything a caller needs to
+    display confirmation or continue orchestration.
+    """
+    repo_root = (project_path or Path.cwd()).resolve()
+
+    if task_number is None:
+        task_number = _next_task_number(repo_root)
+
+    title = summarize_task(prompt)
+    task_id = f"T-{task_number:03d}"
+    prompt_path = persist_task_prompt(task_id, prompt, repo_root)
+    specs = build_launch_specs(prompt, title=title, project_path=repo_root, task_number=task_number)
+
+    # Persist per-worker session prompts so each Junie invocation has its file
+    task_dir = repo_root / ".ocha" / "tasks" / task_id
+    for spec in specs:
+        session_file = task_dir / f"{spec.session_id}-prompt.md"
+        session_file.write_text(spec.prompt, encoding="utf-8")
+
+    status_path = task_dir / "status.json"
+    _write_task_status(status_path, task_id, title, TaskStatus.PENDING)
+    return TaskCreationResult(
+        task_id=task_id,
+        title=title,
+        prompt_path=prompt_path,
+        specs=specs,
+        status=TaskStatus.PENDING,
+    )
+
+
+def _write_task_status(path: Path, task_id: str, title: str, status: TaskStatus) -> None:
+    """Write a minimal JSON status marker for a task."""
+    from datetime import datetime, timezone
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "task_id": task_id,
+        "title": title,
+        "status": status.value,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+

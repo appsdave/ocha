@@ -105,33 +105,28 @@ Screen {
 
 ListView {
     background: #282828;
-}
-
-ListView > ListItem {
-    background: #282828;
-    color: #ebdbb2;
-}
-
-ListView > ListItem.-highlight {
-    background: #282828;
-    color: #ebdbb2;
-    text-style: none;
-    background-tint: transparent;
-}
-
-ListView:focus > ListItem.-highlight {
-    background: #282828;
-    color: #ebdbb2;
-    text-style: none;
-    background-tint: transparent;
-}
-
-ListView:focus {
-    background-tint: transparent;
-}
-
-ListView > ListItem:hover {
-    background: #282828;
+    & > ListItem {
+        background: #282828;
+        color: #ebdbb2;
+        &.-highlight {
+            background: transparent;
+            color: #ebdbb2;
+            text-style: none;
+            background-tint: transparent;
+        }
+        &:hover {
+            background: #282828;
+        }
+    }
+    &:focus {
+        background-tint: transparent;
+        & > ListItem.-highlight {
+            background: transparent;
+            color: #ebdbb2;
+            text-style: none;
+            background-tint: transparent;
+        }
+    }
 }
 
 /* ── Floating new-task overlay ── */
