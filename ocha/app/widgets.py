@@ -45,12 +45,25 @@ class WorkerListItem(ListItem):
 
 
 class AgentsPane(Widget):
+    _last_snapshot: list[tuple[str, str, str]] = []
+
     def compose(self):
         yield Static("[b][#b8bb26]Tasks[/][/b]", classes="pane-title")
         yield ListView(id="workers-list")
 
+    def _snapshot(self, state: AppState) -> list[tuple[str, str, str]]:
+        """Return a lightweight fingerprint of the task list for change detection."""
+        return [
+            (t.task_id, t.status.value, t.elapsed)
+            for t in state.tasks
+        ]
+
     def load(self, state: AppState) -> None:
+        snap = self._snapshot(state)
         list_view = self.query_one(ListView)
+        if snap == self._last_snapshot and list_view.index == state.selected_index:
+            return  # nothing changed — skip rebuild to avoid flicker
+        self._last_snapshot = snap
         list_view.clear()
         for i, task in enumerate(state.tasks):
             list_view.append(WorkerListItem(task, selected=(i == state.selected_index)))

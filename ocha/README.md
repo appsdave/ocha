@@ -179,8 +179,8 @@ Internally, each task moves through a fixed mental model:
 
 5. **Sync / push**
    - each task still works from its own isolated worktree
-   - all worktrees are intended to share the same branch line rather than splitting into branch-per-agent workflows
-   - agents should fetch/rebase against the latest shared branch state before pushing
+   - all worktrees share the single `agent` branch rather than splitting into branch-per-agent workflows
+   - agents should fetch/rebase against the latest `agent` branch state before pushing
    - conflict avoidance should come primarily from worktree isolation plus task/directory separation
 
 6. **Cleanup**

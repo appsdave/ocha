@@ -50,7 +50,8 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(app.state.tasks, [])
             self.assertIsNone(app.state.selected_task)
-            self.assertIn("No active tasks", str(app.query_one("#task-header").renderable))
+            header_text = str(app.query_one("#task-header", TaskHeader).render())
+            self.assertIn("No active tasks", header_text)
 
     async def test_sidebar_selection_event_updates_selected_task_details(self) -> None:
         app = OchaApp()
@@ -62,12 +63,12 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
             list_view = app.query_one(ListView)
             second_item = list(list_view.query("ListItem").results())[1]
             list_view.index = 1
-            list_view.post_message(ListView.Selected(list_view, second_item))
+            list_view.post_message(ListView.Selected(list_view, second_item, index=1))
             await pilot.pause()
 
             header = app.query_one(TaskHeader)
             self.assertEqual(app.state.selected_task.task_id, "T-002")
-            self.assertIn("T-002", str(header.renderable))
+            self.assertIn("T-002", str(header.render()))
 
     def _completed_task(self, task_id: str) -> OchaTask:
         return OchaTask(
