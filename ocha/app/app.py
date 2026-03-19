@@ -12,8 +12,8 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, ListView, Static
 
-from .orchestrator import launch_task
-from .state import AppState, OutputMode, WorkerStatus, clear_finished_tasks, sample_state
+from .orchestrator import build_role_prompt, launch_task, load_role_definitions
+from .state import AppState, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
 
 OCHA_BRANCH = "agent"
@@ -561,11 +561,28 @@ class OchaApp(App[None]):
             self._advance_pipeline(task_obj)
 
     def _advance_pipeline(self, task_obj) -> None:
-        """Start the next queued worker in the pipeline after one finishes."""
+        """Start the next queued worker in the pipeline after one finishes.
+
+        Captures the most recently completed worker's summary and injects it
+        as ``upstream_output`` into the next worker's prompt so each phase
+        receives the prior phase's artifact.
+        """
         # Check if any worker is still running
         still_running = any(w.status == WorkerStatus.RUNNING for w in task_obj.workers)
         if still_running:
             return
+
+        # Collect the last completed worker's output for handoff
+        upstream = ""
+        for w in reversed(task_obj.workers):
+            if w.status == WorkerStatus.COMPLETED:
+                # Prefer the last 40 workflow_log lines as richer context
+                if w.workflow_log:
+                    upstream = "\n".join(w.workflow_log[-40:])
+                elif w.summary:
+                    upstream = w.summary
+                break
+
         # Find next queued worker
         next_worker = None
         for w in task_obj.workers:
@@ -582,6 +599,17 @@ class OchaApp(App[None]):
             # Run the branch/push/PR process
             self.run_worker(self._post_pipeline_git_flow(task_obj))
             return
+
+        # Inject upstream output into the next worker's prompt
+        if upstream:
+            next_worker.upstream_summary = upstream
+            next_worker.task_prompt = self._rebuild_prompt_with_upstream(
+                next_worker, task_obj, upstream,
+            )
+            next_worker.workflow_log.append(
+                f"Received upstream output from prior phase ({len(upstream)} chars)."
+            )
+
         # Advance this worker to running and spawn junie
         next_worker.status = WorkerStatus.RUNNING
         next_worker.workflow_log.append(f"Pipeline advanced — starting {next_worker.role}.")
@@ -593,23 +621,45 @@ class OchaApp(App[None]):
             return
         self.run_worker(self._run_junie_for_worker(next_worker, task_obj, self._load_junie_api_key()))
 
+    def _rebuild_prompt_with_upstream(
+        self, worker, task_obj, upstream_output: str,
+    ) -> str:
+        """Rebuild a worker's task prompt to include upstream phase output."""
+        try:
+            role_defs = load_role_definitions()
+            definition = role_defs[WorkerRole(worker.role)]
+            project_path = Path.cwd().resolve()
+            return build_role_prompt(
+                definition,
+                task_id=worker.task_id,
+                session_id=worker.session_id,
+                title=task_obj.title,
+                user_task=task_obj.user_task,
+                project_path=project_path,
+                worktree_path=Path(worker.worktree_path),
+                owned_directory=worker.owned_directory,
+                upstream_output=upstream_output,
+            )
+        except Exception:
+            # Fallback: append upstream to existing prompt
+            return worker.task_prompt + f"\n\n## Prior phase output\n\n{upstream_output}"
+
     async def _post_pipeline_git_flow(self, task_obj) -> None:
-        """After all workers finish, commit changes, push branch, and open a PR."""
+        """After all workers finish, commit on ``agent``, rebase, and push."""
         log = task_obj.workers[-1].workflow_log
         branch_name = OCHA_BRANCH
         try:
-            # Create a task-specific branch from current HEAD
-            result = subprocess.run(
-                ["git", "checkout", "-b", branch_name],
-                capture_output=True, text=True, timeout=10,
+            # Ensure we are on the shared agent branch
+            current = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, timeout=5,
             )
-            if result.returncode != 0:
-                # Branch may already exist, try checkout
+            if current.returncode == 0 and current.stdout.strip() != branch_name:
                 subprocess.run(
                     ["git", "checkout", branch_name],
                     capture_output=True, text=True, timeout=10,
                 )
-            log.append(f"Checked out branch {branch_name}.")
+            log.append(f"On branch {branch_name}.")
 
             # Stage all changes
             subprocess.run(["git", "add", "-A"], capture_output=True, text=True, timeout=10)
@@ -626,6 +676,20 @@ class OchaApp(App[None]):
             else:
                 log.append(f"Commit note: {commit_result.stdout.strip() or commit_result.stderr.strip()}")
 
+            # Fetch and rebase before pushing to reduce conflicts
+            subprocess.run(
+                ["git", "fetch", "origin", branch_name],
+                capture_output=True, text=True, timeout=30,
+            )
+            rebase_result = subprocess.run(
+                ["git", "rebase", f"origin/{branch_name}"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if rebase_result.returncode == 0:
+                log.append(f"Rebased on origin/{branch_name}.")
+            else:
+                log.append(f"Rebase skipped: {rebase_result.stderr.strip()}")
+
             # Push branch
             push_result = subprocess.run(
                 ["git", "push", "-u", "origin", branch_name],
@@ -636,7 +700,7 @@ class OchaApp(App[None]):
             else:
                 log.append(f"Push failed: {push_result.stderr.strip()}")
 
-            # Try to create a PR via gh CLI
+            # Try to create a PR via gh CLI (agent → main)
             gh_bin = shutil.which("gh")
             if gh_bin:
                 pr_result = subprocess.run(
@@ -657,7 +721,6 @@ class OchaApp(App[None]):
             else:
                 log.append("gh CLI not found — push completed, create PR manually.")
 
-            # Stay on shared branch — no switch back to main
             log.append(f"Staying on shared branch {branch_name}.")
 
         except Exception as exc:
