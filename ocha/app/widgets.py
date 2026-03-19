@@ -5,7 +5,7 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import ListItem, ListView, Static
 
-from .state import AppState, OutputMode, WorkerSession, WorkerStatus
+from .state import AppState, OchaTask, OutputMode, WorkerSession, WorkerStatus
 
 
 STATUS_ICON = {
@@ -18,39 +18,42 @@ STATUS_ICON = {
 
 
 class WorkerListItem(ListItem):
-    def __init__(self, worker: WorkerSession) -> None:
-        self.worker = worker
-        label = Static(self.render_label(), classes=f"worker-row status-{worker.status}")
+    def __init__(self, task: OchaTask) -> None:
+        self.task = task
+        label = Static(self.render_label(), classes=f"worker-row status-{task.status}")
         super().__init__(label)
 
     def render_label(self) -> str:
-        icon = STATUS_ICON[self.worker.status]
-        return f"{icon} {self.worker.role:<11} {self.worker.title}\\n  {self.worker.branch} • {self.worker.owned_directory}"
+        icon = STATUS_ICON[self.task.status]
+        return f"{icon} {self.task.task_id:<6} {self.task.title}\\n  {self.task.branch} • {self.task.pipeline_summary}"
 
 
 class AgentsPane(Widget):
     def compose(self):
-        yield Static("Workers", classes="pane-title")
+        yield Static("Tasks", classes="pane-title")
         yield ListView(id="workers-list")
 
     def load(self, state: AppState) -> None:
         list_view = self.query_one(ListView)
         list_view.clear()
-        for worker in state.workers:
-            list_view.append(WorkerListItem(worker))
+        for task in state.tasks:
+            list_view.append(WorkerListItem(task))
         list_view.index = state.selected_index
 
 
 class TaskHeader(Static):
-    def update_worker(self, worker: WorkerSession) -> None:
+    def update_task(self, task: OchaTask) -> None:
+        worker = task.primary_worker
         self.update(
             "\n".join(
                 [
-                    f"[b]{worker.title}[/b]",
-                    f"role={worker.role}   state={worker.status}   branch={worker.branch}",
+                    f"[b]{task.title}[/b]",
+                    f"task={task.task_id}   state={task.status}   branch={task.branch}",
+                    f"pipeline={task.pipeline_summary}",
                     f"worktree={worker.worktree_path}",
-                    f"owner={worker.owned_directory}   retries={worker.retry_count}   elapsed={worker.elapsed}",
-                    f"summary={worker.summary}",
+                    f"active_role={worker.role}   owner={worker.owned_directory}   retries={worker.retry_count}   elapsed={task.elapsed}",
+                    f"prompt={worker.role_prompt_path}   event={worker.latest_event or 'n/a'}",
+                    f"summary={task.summary}",
                 ]
             )
         )
@@ -59,9 +62,9 @@ class TaskHeader(Static):
 class OutputPane(Static):
     mode: reactive[OutputMode] = reactive(OutputMode.WORKFLOW)
 
-    def update_worker(self, worker: WorkerSession, mode: OutputMode) -> None:
+    def update_task(self, task: OchaTask, mode: OutputMode) -> None:
         self.mode = mode
-        lines = worker.workflow_log if mode == OutputMode.WORKFLOW else worker.raw_log
+        lines = task.output_lines(mode)
         title = "Workflow view" if mode == OutputMode.WORKFLOW else "Raw logs"
         body = "\n".join(f"• {line}" for line in lines)
         self.update(f"[b]{title}[/b]\n\n{body}")
@@ -74,14 +77,14 @@ class HelpBar(Static):
 class StatusBar(Static):
     def update_state(self, state: AppState) -> None:
         counts = state.status_counts
-        selected = state.selected_worker
+        selected = state.selected_task
         self.update(
             "   ".join(
                 [
                     f"running {counts[WorkerStatus.RUNNING]}",
                     f"queued {counts[WorkerStatus.QUEUED]}",
                     f"done {counts[WorkerStatus.COMPLETED]}",
-                    f"selected {selected.session_id}",
+                    f"selected {selected.task_id}",
                     f"branch {selected.branch}",
                     f"mode {state.output_mode}",
                 ]

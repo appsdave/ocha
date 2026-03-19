@@ -26,6 +26,9 @@ class InstallResult:
     repo_url: str
     branch: str
     revision: str
+    previous_revision: str | None = None
+    changed: bool = True
+    change_summary: list[str] = None
 
 
 @dataclass(slots=True)
@@ -91,6 +94,16 @@ def resolve_revision(target: Path) -> str:
     return run_git(["rev-parse", "HEAD"], cwd=target).stdout.strip()
 
 
+def summarize_revision_range(target: Path, previous_revision: str, revision: str, *, limit: int = 8) -> list[str]:
+    if previous_revision == revision:
+        return []
+    result = run_git(
+        ["log", "--format=%h %s", f"{previous_revision}..{revision}", f"-n{limit}"],
+        cwd=target,
+    )
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
 def ensure_bootstrap(target: Path) -> BootstrapResult:
     target = target.expanduser().resolve()
     project_dir = resolve_project_dir(target)
@@ -141,6 +154,7 @@ def clone_repo(
         repo_url=repo_url,
         branch=branch,
         revision=resolve_revision(target),
+        change_summary=[],
     )
 
 
@@ -149,16 +163,22 @@ def update_repo(target: Path, branch: str = DEFAULT_BRANCH, *, bootstrap: bool =
     if not (target / ".git").exists():
         raise InstallError(f"Target is not a git checkout: {target}")
 
+    previous_revision = resolve_revision(target)
     run_git(["fetch", "origin", branch], cwd=target)
     run_git(["checkout", branch], cwd=target)
     run_git(["pull", "--ff-only", "origin", branch], cwd=target)
     if bootstrap:
         ensure_bootstrap(target)
     remote_url = run_git(["remote", "get-url", "origin"], cwd=target).stdout.strip()
+    revision = resolve_revision(target)
+    change_summary = summarize_revision_range(target, previous_revision, revision)
     return InstallResult(
-        action="updated",
+        action="updated" if revision != previous_revision else "already-latest",
         target=target,
         repo_url=remote_url,
         branch=branch,
-        revision=resolve_revision(target),
+        revision=revision,
+        previous_revision=previous_revision,
+        changed=revision != previous_revision,
+        change_summary=change_summary,
     )

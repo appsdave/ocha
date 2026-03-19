@@ -55,6 +55,52 @@ class InstallTests(unittest.TestCase):
             with self.assertRaises(InstallError):
                 update_repo(target)
 
+    def test_update_repo_marks_already_latest_when_revision_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "checkout"
+            (target / ".git").mkdir(parents=True)
+
+            with patch("app.install.run_git") as run_git:
+                run_git.side_effect = [
+                    type("Result", (), {"stdout": "abc123\n"})(),
+                    None,
+                    None,
+                    None,
+                    type("Result", (), {"stdout": "git@github.com:appsdave/ocha.git\n"})(),
+                    type("Result", (), {"stdout": "abc123\n"})(),
+                ]
+
+                result = update_repo(target, bootstrap=False)
+
+        self.assertEqual(result.action, "already-latest")
+        self.assertFalse(result.changed)
+        self.assertEqual(result.revision, "abc123")
+        self.assertEqual(result.change_summary, [])
+
+    def test_update_repo_marks_updated_when_revision_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "checkout"
+            (target / ".git").mkdir(parents=True)
+
+            with patch("app.install.run_git") as run_git:
+                run_git.side_effect = [
+                    type("Result", (), {"stdout": "abc123\n"})(),
+                    None,
+                    None,
+                    None,
+                    type("Result", (), {"stdout": "git@github.com:appsdave/ocha.git\n"})(),
+                    type("Result", (), {"stdout": "def456\n"})(),
+                    type("Result", (), {"stdout": "def456 Add task model\n987abc Show update summary\n"})(),
+                ]
+
+                result = update_repo(target, bootstrap=False)
+
+        self.assertEqual(result.action, "updated")
+        self.assertTrue(result.changed)
+        self.assertEqual(result.revision, "def456")
+        self.assertEqual(result.previous_revision, "abc123")
+        self.assertEqual(result.change_summary, ["def456 Add task model", "987abc Show update summary"])
+
     def test_clone_repo_uses_force_to_replace_existing_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "checkout"

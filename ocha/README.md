@@ -140,6 +140,8 @@ Inside the task prompt:
 
 If you later rebuild this in Python/Textual, you could keep the same bindings and optionally add a `Shift+C` alias for clearing completed items, but the current shipped implementation uses lowercase `c`.
 
+Right now the Python rebuild uses `n` to prepare a new headless-task pipeline with the packaged coordinator, lead, builder, and reviewer role prompts. The next orchestration step is to replace the hard-coded task text with a modal/editor, but the role-backed launch flow is now wired into the app state.
+
 ### Why the interface feels structured
 
 The TUI works because it deliberately separates three ideas:
@@ -216,3 +218,28 @@ That is the main concept: **one operator console for many isolated agent worktre
 
 - `ocha/python-textual-rebuild.md` — concept for rebuilding the same experience in Python with Textual
 - `ocha/junie-headless-sessions.md` — concept for how `ocha` launches and manages headless Junie worker sessions
+
+## Headless Junie role prompts
+
+The Python rebuild now ships markdown role files in `app/roles/`:
+
+- `coordinator.md`
+- `lead.md`
+- `builder.md`
+- `reviewer.md`
+
+When a new task is launched, `ocha` loads the matching markdown file for each role, appends runtime context like `task_id`, `session_id`, `project_path`, `worktree_path`, `owned_directory`, and the shared branch `agent`, then builds the headless Junie invocation.
+
+The current command shape is:
+
+```bash
+junie --project /path/to/project --session-id S-001-01 --output-format text --task "<role markdown + runtime context + operator task>"
+```
+
+You can preview the generated role-based launches without opening the TUI:
+
+```bash
+ocha launch "finish building the app with role markdown prompts"
+```
+
+That prints the coordinator/lead/builder/reviewer worktree targets plus the headless `junie` command shape `ocha` will use for each session.

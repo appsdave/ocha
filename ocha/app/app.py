@@ -3,6 +3,7 @@ from __future__ import annotations
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 
+from .orchestrator import launch_task
 from .state import AppState, OutputMode, sample_state
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
 
@@ -85,9 +86,9 @@ class OchaApp(App[None]):
 
     def refresh_from_state(self) -> None:
         self.query_one(AgentsPane).load(self.state)
-        selected = self.state.selected_worker
-        self.query_one(TaskHeader).update_worker(selected)
-        self.query_one(OutputPane).update_worker(selected, self.state.output_mode)
+        selected = self.state.selected_task
+        self.query_one(TaskHeader).update_task(selected)
+        self.query_one(OutputPane).update_task(selected, self.state.output_mode)
         self.query_one(StatusBar).update_state(self.state)
 
     def action_move_up(self) -> None:
@@ -96,7 +97,7 @@ class OchaApp(App[None]):
             self.refresh_from_state()
 
     def action_move_down(self) -> None:
-        if self.state.selected_index < len(self.state.workers) - 1:
+        if self.state.selected_index < len(self.state.tasks) - 1:
             self.state.selected_index += 1
             self.refresh_from_state()
 
@@ -113,7 +114,10 @@ class OchaApp(App[None]):
         self.query_one(OutputPane).focus()
 
     def action_new_task(self) -> None:
-        self.notify("New task modal is not wired yet in the scaffold.")
+        task = "Launch a new ocha task through Junie headless mode using the packaged role markdown prompts."
+        self.state = launch_task(self.state, task)
+        self.refresh_from_state()
+        self.notify("Prepared coordinator, lead, builder, and reviewer Junie sessions for the new task.")
 
     def action_clear_finished(self) -> None:
         self.notify("Clear finished is a placeholder in the scaffold.")

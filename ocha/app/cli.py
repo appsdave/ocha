@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .orchestrator import build_launch_specs
 from .install import (
     DEFAULT_BRANCH,
     DEFAULT_REPO_URL,
@@ -34,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
     update = subparsers.add_parser("update", help="Update an existing ~/.ocha install from origin and refresh its runtime")
     update.add_argument("target", nargs="?", default=None, help="Managed ocha install directory to update")
     update.add_argument("--branch", default=DEFAULT_BRANCH, help="Branch to update")
+
+    launch = subparsers.add_parser("launch", help="Prepare role-based headless Junie launches for a new ocha task")
+    launch.add_argument("task", help="Top-level task to hand to the ocha orchestrator")
+    launch.add_argument("--project", default=".", help="Project path passed to Junie headless sessions")
     return parser
 
 
@@ -78,7 +83,23 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if command == "update":
             result = update_repo(resolve_target(args.target), branch=args.branch)
-            print(f"Updated {result.target} from {result.repo_url} on {result.branch} @ {result.revision}")
+            if result.changed:
+                print(f"Updated {result.target} from {result.repo_url} on {result.branch} @ {result.revision}")
+                if result.previous_revision:
+                    print(f"Previous revision: {result.previous_revision}")
+                if result.change_summary:
+                    print("Changes:")
+                    for line in result.change_summary:
+                        print(f"- {line}")
+            else:
+                print("Already up to date")
+            return 0
+        if command == "launch":
+            specs = build_launch_specs(args.task, project_path=Path(args.project).expanduser())
+            for spec in specs:
+                print(f"[{spec.role}] {spec.session_id} -> {spec.worktree_path}")
+                print(f"  prompt: {spec.prompt_path}")
+                print(f"  command: {' '.join(spec.command[:-1])} <prompt>")
             return 0
         if command is None:
             return launch_tui()
