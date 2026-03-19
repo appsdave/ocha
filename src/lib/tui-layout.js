@@ -83,7 +83,7 @@ export function buildLayout() {
     border: { type: 'line' },
     style: { bg: 'black', fg: 'white', border: { fg: 'blue' } },
     label: ' Output ',
-    tags: false,
+    tags: true,
     scrollable: true,
     alwaysScroll: true,
     scrollbar: { ch: '│', style: { fg: 'grey' } },
@@ -100,7 +100,7 @@ export function buildLayout() {
     height: 1,
     style: { fg: 'white', bg: 'black' },
     tags: true,
-    content: '{grey-fg}  {bold}n{/bold} new   {bold}↑↓{/bold} navigate   {bold}k{/bold} kill   {bold}c{/bold} clear done   {bold}←→{/bold} switch pane   {bold}q{/bold} quit{/grey-fg}',
+    content: '{grey-fg}  {bold}n{/bold} new   {bold}↑↓{/bold} navigate   {bold}k{/bold} kill   {bold}c{/bold} clear done   {bold}v{/bold} toggle view   {bold}←→{/bold} switch pane   {bold}q{/bold} quit{/grey-fg}',
   });
 
   // ── Status bar ────────────────────────────────────────────────────────────

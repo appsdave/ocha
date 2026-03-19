@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { sortAgentsForDisplay, strikethrough, slugify, elapsed, badgeText, badgeColor, truncateTask } from './tui-utils.js';
+import { sortAgentsForDisplay, strikethrough, slugify, elapsed, badgeText, badgeColor, truncateTask, parseWorkflowEvents, renderWorkflowOutput } from './tui-utils.js';
 
 describe('sortAgentsForDisplay', () => {
   it('returns empty array for empty input', () => {
@@ -104,5 +104,138 @@ describe('strikethrough', () => {
   it('handles text with only blessed escape sequences', () => {
     const result = strikethrough('\\{\\}');
     assert.equal(result, '\\{\\}');
+  });
+});
+
+describe('parseWorkflowEvents', () => {
+  it('returns empty array for empty logs', () => {
+    assert.deepEqual(parseWorkflowEvents([]), []);
+  });
+
+  it('returns empty array for logs with no matching patterns', () => {
+    const logs = ['some random output', 'another line', ''];
+    assert.deepEqual(parseWorkflowEvents(logs), []);
+  });
+
+  it('extracts coordinator phase event', () => {
+    const logs = ['\u2714 \ud83e\udde0 Prompt enhanced with project context'];
+    const events = parseWorkflowEvents(logs);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].phase, 'coordinator');
+    assert.ok(events[0].message.includes('Prompt enhanced with project context'));
+  });
+
+  it('extracts lead phase event with task count', () => {
+    const logs = ['\u2714 \ud83d\udc54 Lead planned 3 task(s) (12s)'];
+    const events = parseWorkflowEvents(logs);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].phase, 'lead');
+    assert.ok(events[0].message.includes('Lead planned'));
+  });
+
+  it('extracts builder done event', () => {
+    const logs = ['  \u2713 Builder done: update readme'];
+    const events = parseWorkflowEvents(logs);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].phase, 'builder');
+    assert.ok(events[0].message.includes('Builder done'));
+  });
+
+  it('extracts reviewer event', () => {
+    const logs = ['  \u2713 Review passed: update readme'];
+    const events = parseWorkflowEvents(logs);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].phase, 'reviewer');
+  });
+
+  it('extracts PR created event', () => {
+    const logs = ['  \ud83d\udd17 PR created: https://github.com/org/repo/pull/42'];
+    const events = parseWorkflowEvents(logs);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].phase, 'PR');
+    assert.ok(events[0].message.includes('https://github.com'));
+  });
+
+  it('extracts multiple events in order', () => {
+    const logs = [
+      '\u2714 \ud83e\udde0 Prompt enhanced with project context',
+      'random noise line',
+      '\u2714 \ud83d\udc54 Lead planned 2 task(s) (5s)',
+      '  \u2713 Builder done: fix tests',
+      '  \u2713 Review passed: fix tests',
+      '  \ud83d\udd17 PR created: https://github.com/org/repo/pull/1',
+    ];
+    const events = parseWorkflowEvents(logs);
+    assert.equal(events.length, 5);
+    assert.equal(events[0].phase, 'coordinator');
+    assert.equal(events[1].phase, 'lead');
+    assert.equal(events[2].phase, 'builder');
+    assert.equal(events[3].phase, 'reviewer');
+    assert.equal(events[4].phase, 'PR');
+  });
+
+  it('strips ANSI escape codes before matching', () => {
+    const logs = ['\x1B[32m\u2714 \ud83e\udde0 Prompt enhanced with project context\x1B[0m'];
+    const events = parseWorkflowEvents(logs);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].phase, 'coordinator');
+  });
+});
+
+describe('renderWorkflowOutput', () => {
+  it('returns phase bar even with no events', () => {
+    const lines = renderWorkflowOutput([], { state: 'running', logs: [] });
+    assert.ok(lines.length >= 1);
+    assert.ok(lines[0].includes('coordinator'));
+    assert.ok(lines[0].includes('PR'));
+  });
+
+  it('includes workflow events as timeline entries', () => {
+    const logs = [
+      '\u2714 \ud83e\udde0 Prompt enhanced with project context',
+      '\u2714 \ud83d\udc54 Lead planned 2 task(s) (5s)',
+    ];
+    const lines = renderWorkflowOutput(logs, { state: 'running' });
+    const joined = lines.join('\n');
+    assert.ok(joined.includes('Prompt enhanced'));
+    assert.ok(joined.includes('Lead planned'));
+  });
+
+  it('shows spinner for running agents with events', () => {
+    const logs = ['\u2714 \ud83e\udde0 Prompt enhanced with project context'];
+    const lines = renderWorkflowOutput(logs, { state: 'running' });
+    const joined = lines.join('\n');
+    assert.ok(joined.includes('in progress'));
+  });
+
+  it('shows completion summary for completed agents', () => {
+    const logs = ['\u2714 \ud83e\udde0 Prompt enhanced with project context'];
+    const agent = {
+      state: 'completed',
+      startedAt: '2026-01-01T00:00:00Z',
+      completedAt: '2026-01-01T00:05:30Z',
+      prUrl: 'https://github.com/org/repo/pull/42',
+    };
+    const lines = renderWorkflowOutput(logs, agent);
+    const joined = lines.join('\n');
+    assert.ok(joined.includes('completed successfully'));
+    assert.ok(joined.includes('pull/42'));
+    assert.ok(joined.includes('5m 30s'));
+  });
+
+  it('shows failure summary for failed agents', () => {
+    const logs = ['  \u2717 Builder failed after 3 attempts: fix bug'];
+    const agent = { state: 'failed' };
+    const lines = renderWorkflowOutput(logs, agent);
+    const joined = lines.join('\n');
+    assert.ok(joined.includes('Agent failed'));
+  });
+
+  it('does not show spinner for completed agents', () => {
+    const logs = ['\u2714 \ud83e\udde0 Prompt enhanced with project context'];
+    const agent = { state: 'completed' };
+    const lines = renderWorkflowOutput(logs, agent);
+    const joined = lines.join('\n');
+    assert.ok(!joined.includes('in progress'));
   });
 });

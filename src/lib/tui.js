@@ -14,6 +14,7 @@
  *   ↑ / ↓   — navigate agent list
  *   k        — kill selected agent
  *   c        — clear completed/failed agents
+ *   v        — toggle workflow / raw log view
  *   l / →   — focus log pane
  *   h / ←   — focus agent list
  *   q / C-c — quit (confirms if agents running)
@@ -22,7 +23,7 @@ import { basename } from 'path';
 import blessed from 'blessed';
 import { buildLayout, openPromptDialog } from './tui-layout.js';
 import { loadPersistedAgents, persistAgents, spawnAgent, killAgent } from './tui-agents.js';
-import { elapsed, badgeText, badgeColor, truncateTask, sortAgentsForDisplay, strikethrough } from './tui-utils.js';
+import { elapsed, badgeText, badgeColor, truncateTask, sortAgentsForDisplay, strikethrough, renderWorkflowOutput } from './tui-utils.js';
 
 /**
  * Escape blessed tag characters in user-supplied text so `{` and `}` are
@@ -112,6 +113,7 @@ export class OchaTUI {
     this.statusBar = null;
     this.inputMode = false;
     this.tickInterval = null;
+    this.rawLogView = false;
   }
 
   // ── Public entry point ────────────────────────────────────────────────────
@@ -220,6 +222,13 @@ export class OchaTUI {
     screen.key(['h', 'left'], () => {
       if (this.inputMode) return;
       this.agentList.focus();
+    });
+
+    screen.key(['v'], () => {
+      if (this.inputMode) return;
+      this.rawLogView = !this.rawLogView;
+      this._clearAndRenderLog();
+      this.screen.render();
     });
   }
 
@@ -339,8 +348,15 @@ export class OchaTUI {
       (branchDisplay ? `  {grey-fg}⎇ ${branchDisplay}{/grey-fg}` : '')
     );
 
-    // ── Log pane: raw output ─────────────────────────────────────────────
-    this.logBox.setContent(agent.logs.join('\n'));
+    // ── Log pane: structured workflow output or raw log ────────────────
+    if (this.rawLogView) {
+      this.logBox.setLabel(' Output (raw) — press v for workflow view ');
+      this.logBox.setContent(agent.logs.join('\n'));
+    } else {
+      this.logBox.setLabel(' Output — press v for raw log ');
+      const workflowLines = renderWorkflowOutput(agent.logs, agent);
+      this.logBox.setContent(workflowLines.join('\n'));
+    }
     this.logBox.setScrollPerc(100);
   }
 
