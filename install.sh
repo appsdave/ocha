@@ -31,7 +31,7 @@ if [ -d "$INSTALL_DIR/.git" ]; then
   echo "Updating existing ocha install in $INSTALL_DIR"
   git -C "$INSTALL_DIR" fetch origin "$BRANCH"
   git -C "$INSTALL_DIR" checkout "$BRANCH"
-  git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH"
+  git -C "$INSTALL_DIR" reset --hard FETCH_HEAD
 else
   if [ -e "$INSTALL_DIR" ] && [ -n "$(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 2>/dev/null)" ]; then
     echo "Install directory already exists and is not empty: $INSTALL_DIR" >&2

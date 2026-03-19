@@ -76,6 +76,15 @@ class InstallTests(unittest.TestCase):
         self.assertFalse(result.changed)
         self.assertEqual(result.revision, "abc123")
         self.assertEqual(result.change_summary, [])
+        self.assertEqual(
+            [call.args[0] for call in run_git.call_args_list[:4]],
+            [
+                ["rev-parse", "HEAD"],
+                ["fetch", "origin", "main"],
+                ["checkout", "main"],
+                ["reset", "--hard", "FETCH_HEAD"],
+            ],
+        )
 
     def test_update_repo_marks_updated_when_revision_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -100,6 +109,15 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(result.revision, "def456")
         self.assertEqual(result.previous_revision, "abc123")
         self.assertEqual(result.change_summary, ["def456 Add task model", "987abc Show update summary"])
+        self.assertEqual(
+            [call.args[0] for call in run_git.call_args_list[:4]],
+            [
+                ["rev-parse", "HEAD"],
+                ["fetch", "origin", "main"],
+                ["checkout", "main"],
+                ["reset", "--hard", "FETCH_HEAD"],
+            ],
+        )
 
     def test_clone_repo_uses_force_to_replace_existing_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

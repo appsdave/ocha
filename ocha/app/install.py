@@ -166,7 +166,7 @@ def update_repo(target: Path, branch: str = DEFAULT_BRANCH, *, bootstrap: bool =
     previous_revision = resolve_revision(target)
     run_git(["fetch", "origin", branch], cwd=target)
     run_git(["checkout", branch], cwd=target)
-    run_git(["pull", "--ff-only", "origin", branch], cwd=target)
+    run_git(["reset", "--hard", "FETCH_HEAD"], cwd=target)
     if bootstrap:
         ensure_bootstrap(target)
     remote_url = run_git(["remote", "get-url", "origin"], cwd=target).stdout.strip()
