@@ -146,26 +146,30 @@ class RolePromptContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.definitions = load_role_definitions()
 
-    def test_coordinator_has_execution_brief_contract(self) -> None:
+    def test_coordinator_has_summary_contract(self) -> None:
         md = self.definitions[WorkerRole.COORDINATOR].prompt_markdown
         self.assertIn("## What you receive", md)
         self.assertIn("## What you must produce", md)
-        self.assertIn("Execution Brief", md)
+        self.assertIn("## Summary", md)
+        self.assertIn("Do NOT produce", md)
 
-    def test_lead_has_task_plan_contract(self) -> None:
+    def test_lead_has_summary_contract(self) -> None:
         md = self.definitions[WorkerRole.LEAD].prompt_markdown
         self.assertIn("## What you receive", md)
         self.assertIn("## What you must produce", md)
-        self.assertIn("Task Plan", md)
+        self.assertIn("## Summary", md)
+        self.assertIn("Do NOT produce", md)
 
-    def test_builder_has_change_summary_contract(self) -> None:
+    def test_builder_has_summary_contract(self) -> None:
         md = self.definitions[WorkerRole.BUILDER].prompt_markdown
         self.assertIn("## What you receive", md)
         self.assertIn("## What you must produce", md)
-        self.assertIn("Change Summary", md)
+        self.assertIn("## Summary", md)
+        self.assertIn("Do NOT produce", md)
 
-    def test_reviewer_has_review_verdict_contract(self) -> None:
+    def test_reviewer_has_review_summary_contract(self) -> None:
         md = self.definitions[WorkerRole.REVIEWER].prompt_markdown
         self.assertIn("## What you receive", md)
         self.assertIn("## What you must produce", md)
-        self.assertIn("Review Verdict", md)
+        self.assertIn("## Review Summary", md)
+        self.assertIn("Do NOT produce", md)
