@@ -19,13 +19,13 @@ STATUS_ICON = {
 
 class WorkerListItem(ListItem):
     def __init__(self, task: OchaTask) -> None:
-        self.task = task
+        self.ocha_task = task
         label = Static(self.render_label(), classes=f"worker-row status-{task.status}")
         super().__init__(label)
 
     def render_label(self) -> str:
-        icon = STATUS_ICON[self.task.status]
-        return f"{icon} {self.task.task_id:<6} {self.task.title}\\n  {self.task.branch} • {self.task.pipeline_summary}"
+        icon = STATUS_ICON[self.ocha_task.status]
+        return f"{icon} {self.ocha_task.task_id:<6} {self.ocha_task.title}\\n  {self.ocha_task.branch} • {self.ocha_task.pipeline_summary}"
 
 
 class AgentsPane(Widget):
