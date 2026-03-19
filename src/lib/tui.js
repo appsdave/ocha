@@ -28,7 +28,7 @@ import { basename } from 'path';
 import blessed from 'blessed';
 import { buildLayout, openPromptDialog } from './tui-layout.js';
 import { loadPersistedAgents, persistAgents, spawnAgent, killAgent } from './tui-agents.js';
-import { elapsed, badgeText, badgeColor, truncateTask, sortAgentsForDisplay, strikethrough, renderWorkflowOutput, wrapText } from './tui-utils.js';
+import { elapsed, formatDuration, badgeText, badgeColor, truncateTask, sortAgentsForDisplay, strikethrough, renderWorkflowOutput, wrapText } from './tui-utils.js';
 
 /**
  * Escape blessed tag characters in user-supplied text so `{` and `}` are
@@ -342,12 +342,15 @@ export class OchaTUI {
     const header = `{bold}{blue-fg}ocha/{/blue-fg}{white-fg}${repoName}{/white-fg}{/bold} {grey-fg}(${total}){/grey-fg}`;
 
     const sorted = sortAgentsForDisplay(this.agents);
+    const runningEntries = sorted.filter(e => e.agent.state === 'running');
+    const doneEntries = sorted.filter(e => e.agent.state !== 'running');
 
-    const lines = sorted.map((entry, displayIdx) => {
+    const lines = [];
+
+    const renderEntry = (entry, isLast) => {
       const a = entry.agent;
       const i = entry.originalIndex;
       const selected  = i === this.selectedIdx;
-      const isLast    = displayIdx === sorted.length - 1;
       const connector = isLast ? '└─' : '├─';
       const indent    = isLast ? '  ' : '│ ';
       const isDone    = a.state !== 'running';
@@ -359,9 +362,9 @@ export class OchaTUI {
       const num       = `{grey-fg}#${String(i + 1).padStart(2, '0')}{/grey-fg}`;
       const time      = a.state === 'running'
         ? `{yellow-fg}${elapsed(a.startedAt)}{/yellow-fg}`
-        : a.state === 'completed' ? '{green-fg}✔ done{/green-fg}'
-        : a.state === 'failed'    ? '{red-fg}✗ fail{/red-fg}'
-        : '{grey-fg}■ stop{/grey-fg}';
+        : a.state === 'completed' ? `{green-fg}✔ ${formatDuration(a.startedAt, a.completedAt)}{/green-fg}`
+        : a.state === 'failed'    ? `{red-fg}✗ ${formatDuration(a.startedAt, a.completedAt)}{/red-fg}`
+        : `{grey-fg}■ ${formatDuration(a.startedAt, a.completedAt)}{/grey-fg}`;
       const selOpen   = selected ? '{cyan-fg}{bold}' : '';
       const selClose  = selected ? '{/bold}{/cyan-fg}' : '';
       const rowStyle  = selected ? '{cyan-fg}' : isDone ? '{grey-fg}' : '{grey-fg}';
@@ -375,7 +378,53 @@ export class OchaTUI {
         ? `\n${rowStyle}${indent}{/}  {cyan-fg}↗ ${a.prUrl}{/cyan-fg}`
         : '';
       return `${rowStyle}${connector}{/}${badge} ${num} ${selOpen}${name}${selClose}  ${time}${branchLine}${prLine}`;
+    };
+
+    // Render running agents
+    runningEntries.forEach((entry, idx) => {
+      const isLastRunning = idx === runningEntries.length - 1 && doneEntries.length === 0;
+      lines.push(renderEntry(entry, isLastRunning));
     });
+
+    // Render done section with header
+    if (doneEntries.length > 0) {
+      if (runningEntries.length > 0) {
+        lines.push(`│`);
+      }
+      const doneCount = doneEntries.length;
+      const doneLabel = runningEntries.length > 0
+        ? `├─ {grey-fg}{bold}Done{/bold} (${doneCount}){/grey-fg}`
+        : `{grey-fg}{bold}Done{/bold} (${doneCount}){/grey-fg}`;
+      lines.push(doneLabel);
+      doneEntries.forEach((entry, idx) => {
+        const isLast = idx === doneEntries.length - 1;
+        const prefix = runningEntries.length > 0 ? '│ ' : '';
+        const connector = isLast ? '└─' : '├─';
+        const indent    = isLast ? '  ' : '│ ';
+        const a = entry.agent;
+        const i = entry.originalIndex;
+        const selected = i === this.selectedIdx;
+        const badge = `${badgeColor(a.state)}${badgeText(a.state)}{/}`;
+        const maxName = 24;
+        const name = strikethrough(escapeTags(truncateTask(a.task, maxName)));
+        const num = `{grey-fg}#${String(i + 1).padStart(2, '0')}{/grey-fg}`;
+        const time = a.state === 'completed' ? `{green-fg}✔ ${formatDuration(a.startedAt, a.completedAt)}{/green-fg}`
+          : a.state === 'failed' ? `{red-fg}✗ ${formatDuration(a.startedAt, a.completedAt)}{/red-fg}`
+          : `{grey-fg}■ ${formatDuration(a.startedAt, a.completedAt)}{/grey-fg}`;
+        const selOpen = selected ? '{cyan-fg}{bold}' : '';
+        const selClose = selected ? '{/bold}{/cyan-fg}' : '';
+        const branchDisplay = a.branch
+          ? escapeTags((a.repo ? `${a.repo}/${a.branch}` : a.branch).slice(-34))
+          : null;
+        const branchLine = branchDisplay
+          ? `\n${prefix}${isLast ? '  ' : '│ '}  {grey-fg}⎇ ${branchDisplay}{/grey-fg}`
+          : '';
+        const prLine = a.prUrl
+          ? `\n${prefix}${isLast ? '  ' : '│ '}  {cyan-fg}↗ ${a.prUrl}{/cyan-fg}`
+          : '';
+        lines.push(`${prefix}{grey-fg}${connector}{/grey-fg}${badge} ${num} ${selOpen}${name}${selClose}  ${time}${branchLine}${prLine}`);
+      });
+    }
 
     this.agentList.setContent([header, ...lines].join('\n'));
     this._updateStatusBar();
@@ -444,7 +493,8 @@ export class OchaTUI {
 
   _updateStatusBar() {
     const running = this.agents.filter(a => a.state === 'running').length;
-    const done    = this.agents.filter(a => a.state === 'completed').length;
+    const done    = this.agents.filter(a => a.state !== 'running').length;
+    const failed  = this.agents.filter(a => a.state === 'failed').length;
     const total   = this.agents.length;
     const agent   = this.agents[this.selectedIdx];
     let right = '';
@@ -454,8 +504,9 @@ export class OchaTUI {
         ? ` | PR: ${escapeTags(agent.prUrl)}`
         : agent.branch ? ` | ${escapeTags(repoPrefix + agent.branch)}` : '';
     }
+    const failPart = failed > 0 ? `  ${failed} failed` : '';
     this.statusBar.setContent(
-      ` ocha  |  ${total} task(s)  ${running} running  ${done} done${right} `
+      ` ocha  |  ${total} task(s)  ${running} running  ${done} done${failPart}${right} `
     );
   }
 
