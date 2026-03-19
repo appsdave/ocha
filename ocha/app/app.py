@@ -512,12 +512,54 @@ class OchaApp(App[None]):
                 worker.status = WorkerStatus.FAILED
                 worker.summary = f"Junie exited with code {rc}."
                 worker.workflow_log.append(f"Session failed (exit code {rc}).")
+
+            # Advance pipeline: start next queued worker in this task
+            self._advance_pipeline(task_obj)
+
         except Exception as exc:
             from datetime import datetime
             worker.finished_at = datetime.now()
             worker.status = WorkerStatus.FAILED
             worker.summary = f"Error: {exc}"
             worker.workflow_log.append(f"Error launching junie: {exc}")
+            self._advance_pipeline(task_obj)
+
+    def _advance_pipeline(self, task_obj) -> None:
+        """Start the next queued worker in the pipeline after one finishes."""
+        # Check if any worker is still running
+        still_running = any(w.status == WorkerStatus.RUNNING for w in task_obj.workers)
+        if still_running:
+            return
+        # Find next queued worker
+        next_worker = None
+        for w in task_obj.workers:
+            if w.status == WorkerStatus.QUEUED:
+                next_worker = w
+                break
+        if next_worker is None:
+            # All done — summarize
+            completed = sum(1 for w in task_obj.workers if w.status == WorkerStatus.COMPLETED)
+            failed = sum(1 for w in task_obj.workers if w.status == WorkerStatus.FAILED)
+            self.notify(
+                f"[#b8bb26]Task {task_obj.task_id} pipeline finished[/] — "
+                f"{completed} completed, {failed} failed",
+                severity="information",
+            )
+            return
+        # Advance this worker to running and spawn junie
+        next_worker.status = WorkerStatus.RUNNING
+        next_worker.workflow_log.append(f"Pipeline advanced — starting {next_worker.role}.")
+        self.notify(
+            f"[#b8bb26]●[/] Pipeline advancing: {next_worker.role} now running for {task_obj.task_id}",
+            severity="information",
+        )
+        junie_bin = shutil.which("junie")
+        if not junie_bin:
+            next_worker.status = WorkerStatus.FAILED
+            next_worker.summary = "junie CLI not found"
+            next_worker.workflow_log.append("junie CLI not found on PATH.")
+            return
+        self.run_worker(self._run_junie_for_worker(next_worker, task_obj))
 
     def _sync_selection_from_sidebar(self, list_view: ListView) -> None:
         if list_view.index is None or list_view.index == self.state.selected_index:
