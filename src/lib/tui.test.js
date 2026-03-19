@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clearCompletedAgents, escapeTags } from './tui.js';
+import { clearCompletedAgents, escapeTags, formatOutputLines } from './tui.js';
 
 function agent(id, task, state = 'running') {
   return {
@@ -126,5 +126,113 @@ describe('clearCompletedAgents', () => {
 
     assert.deepEqual(result.agents.map(a => a.id), ['agent-2']);
     assert.equal(result.selectedIdx, 0);
+  });
+});
+
+describe('formatOutputLines', () => {
+  it('extracts [ocha] milestone lines from logs', () => {
+    const a = {
+      logs: [
+        '[ocha] Repo   : myrepo',
+        '[ocha] Branch : (model will assign)',
+        '[ocha] Started: 3/19/2026, 12:00:00 AM',
+        '',
+        'some random noise line',
+        'another random line',
+      ],
+      state: 'running',
+      logFile: null,
+    };
+
+    const lines = formatOutputLines(a);
+    assert.ok(lines.some(l => l.includes('[ocha] Repo')), 'should include [ocha] Repo line');
+    assert.ok(lines.some(l => l.includes('[ocha] Branch')), 'should include [ocha] Branch line');
+    assert.ok(!lines.some(l => l.includes('random noise')), 'should not include non-milestone lines');
+  });
+
+  it('uses fixed label for prompt enhanced pattern', () => {
+    const a = {
+      logs: ['Prompt enhanced with extra details and project context gathered'],
+      state: 'running',
+      logFile: null,
+    };
+
+    const lines = formatOutputLines(a);
+    assert.ok(lines.includes('✔ Prompt enhanced with project context'));
+  });
+
+  it('deduplicates identical milestone lines', () => {
+    const a = {
+      logs: [
+        '[ocha] Repo   : myrepo',
+        '[ocha] Repo   : myrepo',
+      ],
+      state: 'completed',
+      logFile: null,
+    };
+
+    const lines = formatOutputLines(a);
+    const repoLines = lines.filter(l => l.includes('[ocha] Repo'));
+    assert.equal(repoLines.length, 1, 'should not duplicate identical lines');
+  });
+
+  it('shows log file path when logFile is set', () => {
+    const a = {
+      logs: ['[ocha] Repo   : myrepo'],
+      state: 'completed',
+      logFile: '/path/to/logs/agent-123.log',
+    };
+
+    const lines = formatOutputLines(a);
+    assert.ok(lines.some(l => l.includes('📄 Full log: /path/to/logs/agent-123.log')));
+  });
+
+  it('shows pending message for running agents without log file', () => {
+    const a = {
+      logs: ['[ocha] Repo   : myrepo'],
+      state: 'running',
+      logFile: null,
+    };
+
+    const lines = formatOutputLines(a);
+    assert.ok(lines.some(l => l.includes('Log file will be written when agent completes')));
+  });
+
+  it('returns empty array for agent with no matching logs and no logFile', () => {
+    const a = {
+      logs: ['totally unrelated line', 'another unrelated line'],
+      state: 'completed',
+      logFile: null,
+    };
+
+    const lines = formatOutputLines(a);
+    assert.deepEqual(lines, []);
+  });
+
+  it('handles empty logs array', () => {
+    const a = { logs: [], state: 'completed', logFile: null };
+    const lines = formatOutputLines(a);
+    assert.deepEqual(lines, []);
+  });
+
+  it('extracts completion summary lines', () => {
+    const a = {
+      logs: [
+        '[ocha] Repo   : myrepo',
+        '────────────────────────────────────────────────────',
+        '  ✅  Agent completed successfully',
+        '  Branch   : ocha/fix-123',
+        '  Duration : 2m 30s',
+        '────────────────────────────────────────────────────',
+      ],
+      state: 'completed',
+      logFile: '/tmp/test.log',
+    };
+
+    const lines = formatOutputLines(a);
+    assert.ok(lines.some(l => l.includes('Agent completed successfully')));
+    assert.ok(lines.some(l => l.includes('Branch')));
+    assert.ok(lines.some(l => l.includes('Duration')));
+    assert.ok(lines.some(l => l.includes('📄 Full log:')));
   });
 });
