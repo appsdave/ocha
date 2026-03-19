@@ -4,7 +4,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Static
+from textual.widgets import Button, Input, ListView, Static
 
 from .orchestrator import launch_task
 from .state import AppState, OutputMode, clear_finished_tasks, sample_state
@@ -172,6 +172,16 @@ class OchaApp(App[None]):
     def action_focus_output(self) -> None:
         self.query_one(OutputPane).focus()
 
+    def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        if event.list_view.id != "workers-list" or event.item is None:
+            return
+        self._sync_selection_from_sidebar(event.list_view)
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        if event.list_view.id != "workers-list":
+            return
+        self._sync_selection_from_sidebar(event.list_view)
+
     def action_new_task(self) -> None:
         self.push_screen(NewTaskModal(), self._launch_task_from_prompt)
 
@@ -195,3 +205,9 @@ class OchaApp(App[None]):
         self.state = launch_task(self.state, task)
         self.refresh_from_state()
         self.notify("Prepared coordinator, lead, builder, and reviewer Junie sessions for the new task.")
+
+    def _sync_selection_from_sidebar(self, list_view: ListView) -> None:
+        if list_view.index is None or list_view.index == self.state.selected_index:
+            return
+        self.state.selected_index = list_view.index
+        self.refresh_from_state()
