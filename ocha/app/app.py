@@ -57,7 +57,12 @@ Screen {
     border: solid #504945;
     padding: 0 1;
     background: #282828;
-    overflow-y: auto;
+}
+
+#output-content {
+    width: 1fr;
+    height: auto;
+    background: #282828;
 }
 
 #help-bar {

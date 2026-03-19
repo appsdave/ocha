@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import ListItem, ListView, Static
@@ -89,14 +89,18 @@ class TaskHeader(Static):
         )
 
 
-class OutputPane(Static):
+class OutputPane(VerticalScroll):
     mode: reactive[OutputMode] = reactive(OutputMode.WORKFLOW)
+
+    def compose(self):
+        yield Static(id="output-content")
 
     def update_task(self, task: OchaTask | None, mode: OutputMode) -> None:
         self.mode = mode
         title_label = "Workflow" if mode == OutputMode.WORKFLOW else "Raw Logs"
+        content = self.query_one("#output-content", Static)
         if task is None:
-            self.update(
+            content.update(
                 f"[b][#b8bb26]{title_label}[/][/b]\n\n"
                 f"[#928374]No task selected.[/]"
             )
@@ -115,7 +119,9 @@ class OutputPane(Static):
             else:
                 body_parts.append(f"  [#ebdbb2]{line}[/]")
         body = "\n".join(body_parts)
-        self.update(f"[b][#b8bb26]{title_label}[/][/b]\n\n{body}")
+        content.update(f"[b][#b8bb26]{title_label}[/][/b]\n\n{body}")
+        # Auto-scroll to bottom so latest output is visible
+        self.scroll_end(animate=False)
 
 
 class HelpBar(Static):

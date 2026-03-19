@@ -158,15 +158,32 @@ def clone_repo(
     )
 
 
+# Files that should survive a git reset --hard (user secrets, local config)
+_PRESERVED_FILES = [".env"]
+
+
 def update_repo(target: Path, branch: str = DEFAULT_BRANCH, *, bootstrap: bool = True) -> InstallResult:
     target = target.expanduser().resolve()
     if not (target / ".git").exists():
         raise InstallError(f"Target is not a git checkout: {target}")
 
+    # Back up user files that must survive the hard reset
+    saved: dict[str, bytes] = {}
+    for name in _PRESERVED_FILES:
+        p = target / name
+        if p.is_file():
+            saved[name] = p.read_bytes()
+
     previous_revision = resolve_revision(target)
     run_git(["fetch", "origin", branch], cwd=target)
     run_git(["checkout", branch], cwd=target)
     run_git(["reset", "--hard", "FETCH_HEAD"], cwd=target)
+
+    # Restore preserved files
+    for name, data in saved.items():
+        p = target / name
+        p.write_bytes(data)
+        p.chmod(0o600)
     if bootstrap:
         ensure_bootstrap(target)
     remote_url = run_git(["remote", "get-url", "origin"], cwd=target).stdout.strip()
