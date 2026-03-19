@@ -1,6 +1,0 @@
-node_modules/
-.ocha/
-.ocha-dev/
-.ocha-worktrees/
-.dolt/
-package-lock.json
