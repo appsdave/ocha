@@ -1,5 +1,7 @@
 .beads/
 .junie/
 .ocha/
+.worktrees/
 _remote_inspect/
 .venv/
+.env
