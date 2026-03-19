@@ -23,6 +23,35 @@ describe('stripAnsi', () => {
     assert.equal(stripAnsi('\x1B[2Jhello\x1B[H'), 'hello');
   });
 
+  it('removes OSC hyperlink sequences terminated by BEL', () => {
+    assert.equal(
+      stripAnsi('\x1B]8;;https://example.com\x07Click\x1B]8;;\x07'),
+      'Click',
+    );
+  });
+
+  it('removes OSC hyperlink sequences terminated by ST', () => {
+    assert.equal(
+      stripAnsi('\x1B]8;;https://example.com\x1B\\Click\x1B]8;;\x1B\\'),
+      'Click',
+    );
+  });
+
+  it('removes OSC title-set sequences', () => {
+    assert.equal(stripAnsi('\x1B]0;My Title\x07'), '');
+  });
+
+  it('removes stray BEL characters', () => {
+    assert.equal(stripAnsi('hello\x07world'), 'helloworld');
+  });
+
+  it('strips mixed CSI, OSC, and plain text correctly', () => {
+    assert.equal(
+      stripAnsi('Hello \x1B[31mworld\x1B[0m \x1B]8;;url\x07link\x1B]8;;\x07 end'),
+      'Hello world link end',
+    );
+  });
+
 });
 
 describe('wrapText', () => {

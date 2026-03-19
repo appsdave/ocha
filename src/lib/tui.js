@@ -141,10 +141,13 @@ export class OchaTUI {
     this._clearAndRenderLog();
     this._startTick();
 
-    // Re-render all panes on terminal resize to prevent text bleaching/overlap
+    // Re-render all panes on terminal resize to prevent text bleaching/overlap.
+    // screen.alloc() reallocates the internal line buffer for the new
+    // dimensions, ensuring no stale pixels survive the resize.
     screen.on('resize', () => {
       this._renderAgentList();
       this._clearAndRenderLog();
+      screen.alloc();
       screen.render();
     });
 
