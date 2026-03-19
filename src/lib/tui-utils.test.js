@@ -95,4 +95,14 @@ describe('strikethrough', () => {
     const result = strikethrough('hi there');
     assert.equal(result, 'h\u0336i\u0336 \u0336t\u0336h\u0336e\u0336r\u0336e\u0336');
   });
+
+  it('preserves blessed escape sequences without strikethrough', () => {
+    const result = strikethrough('a\\{b\\}c');
+    assert.equal(result, 'a\u0336\\{b\u0336\\}c\u0336');
+  });
+
+  it('handles text with only blessed escape sequences', () => {
+    const result = strikethrough('\\{\\}');
+    assert.equal(result, '\\{\\}');
+  });
 });

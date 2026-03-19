@@ -65,4 +65,46 @@ describe('clearCompletedAgents', () => {
     assert.deepEqual(result.agents, []);
     assert.equal(result.selectedIdx, 0);
   });
+
+  it('skips failed agents when searching forward for next selection', () => {
+    const agents = [
+      agent('agent-1', 'selected failed', 'failed'),
+      agent('agent-2', 'also failed', 'failed'),
+      agent('agent-3', 'keep me'),
+    ];
+
+    const result = clearCompletedAgents(agents, 0);
+
+    assert.deepEqual(result.agents.map(a => a.id), ['agent-3']);
+    assert.equal(result.selectedIdx, 0);
+    assert.equal(result.agents[result.selectedIdx].id, 'agent-3');
+  });
+
+  it('skips stopped agents when searching backward for next selection', () => {
+    const agents = [
+      agent('agent-1', 'keep me'),
+      agent('agent-2', 'also stopped', 'stopped'),
+      agent('agent-3', 'selected stopped', 'stopped'),
+    ];
+
+    const result = clearCompletedAgents(agents, 2);
+
+    assert.deepEqual(result.agents.map(a => a.id), ['agent-1']);
+    assert.equal(result.selectedIdx, 0);
+    assert.equal(result.agents[result.selectedIdx].id, 'agent-1');
+  });
+
+  it('clears all done states (completed, failed, stopped) together', () => {
+    const agents = [
+      agent('agent-1', 'completed one', 'completed'),
+      agent('agent-2', 'keep running'),
+      agent('agent-3', 'failed one', 'failed'),
+      agent('agent-4', 'stopped one', 'stopped'),
+    ];
+
+    const result = clearCompletedAgents(agents, 0);
+
+    assert.deepEqual(result.agents.map(a => a.id), ['agent-2']);
+    assert.equal(result.selectedIdx, 0);
+  });
 });

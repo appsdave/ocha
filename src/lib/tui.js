@@ -86,13 +86,13 @@ export function clearCompletedAgents(agents, selectedIdx) {
   }
 
   for (let idx = clampedIdx + 1; idx < agents.length; idx++) {
-    if (agents[idx].state === 'completed') continue;
+    if (doneStates.has(agents[idx].state)) continue;
     const nextIdx = remainingAgents.findIndex(agent => agent.id === agents[idx].id);
     if (nextIdx >= 0) return { agents: remainingAgents, selectedIdx: nextIdx };
   }
 
   for (let idx = clampedIdx - 1; idx >= 0; idx--) {
-    if (agents[idx].state === 'completed') continue;
+    if (doneStates.has(agents[idx].state)) continue;
     const nextIdx = remainingAgents.findIndex(agent => agent.id === agents[idx].id);
     if (nextIdx >= 0) return { agents: remainingAgents, selectedIdx: nextIdx };
   }
