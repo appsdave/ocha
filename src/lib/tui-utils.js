@@ -84,6 +84,61 @@ export function truncateTask(text, max) {
 }
 
 /**
+ * Word-wrap text to fit within a given width, breaking at word boundaries.
+ * Returns an array of lines. Long words that exceed the width are broken
+ * mid-word so nothing overflows.
+ * @param {string} text
+ * @param {number} width - maximum characters per line
+ * @param {number} [maxLines=0] - if >0, limit output to this many lines (last line gets ellipsis)
+ * @returns {string[]}
+ */
+export function wrapText(text, width, maxLines = 0) {
+  if (!text) return [''];
+  if (width <= 0) return [text];
+
+  const words = text.split(/\s+/);
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    if (!word) continue;
+
+    // Word fits on the current line
+    if (current.length === 0) {
+      current = word;
+    } else if (current.length + 1 + word.length <= width) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+
+    // Break long words that exceed the width
+    while (current.length > width) {
+      lines.push(current.slice(0, width));
+      current = current.slice(width);
+    }
+  }
+
+  if (current.length > 0) {
+    lines.push(current);
+  }
+
+  if (lines.length === 0) return [''];
+
+  if (maxLines > 0 && lines.length > maxLines) {
+    const truncated = lines.slice(0, maxLines);
+    const last = truncated[maxLines - 1];
+    truncated[maxLines - 1] = last.length >= width - 1
+      ? last.slice(0, width - 1) + '…'
+      : last + '…';
+    return truncated;
+  }
+
+  return lines;
+}
+
+/**
  * Sort agents for display: running/active agents first, then
  * completed/failed/stopped agents at the bottom.
  * Returns a new array of { agent, originalIndex } objects.

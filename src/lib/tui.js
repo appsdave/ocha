@@ -28,7 +28,7 @@ import { basename } from 'path';
 import blessed from 'blessed';
 import { buildLayout, openPromptDialog } from './tui-layout.js';
 import { loadPersistedAgents, persistAgents, spawnAgent, killAgent } from './tui-agents.js';
-import { elapsed, badgeText, badgeColor, truncateTask, sortAgentsForDisplay, strikethrough, renderWorkflowOutput } from './tui-utils.js';
+import { elapsed, badgeText, badgeColor, truncateTask, sortAgentsForDisplay, strikethrough, renderWorkflowOutput, wrapText } from './tui-utils.js';
 
 /**
  * Escape blessed tag characters in user-supplied text so `{` and `}` are
@@ -401,8 +401,11 @@ export class OchaTUI {
       : agent.state === 'failed'    ? '✗ failed'
       : agent.state === 'stopped'   ? '■ stopped' : agent.state;
 
-    const rawTask = agent.task.length > 70 ? agent.task.slice(0, 69) + '…' : agent.task;
-    const taskLine = escapeTags(rawTask);
+    // Word-wrap the task text to fit the available header width.
+    // taskHeader is 70% of screen width minus 2 for border and 2 for indent.
+    const headerInnerWidth = Math.max(20, Math.floor((this.screen.width || 80) * 0.7) - 4);
+    const wrappedLines = wrapText(agent.task, headerInnerWidth, 3);
+    const taskLine = wrappedLines.map(l => escapeTags(l)).join('\n  ');
     const phases = _detectPhases(agent.logs);
     const phaseBar = phases.map(p =>
       p.active   ? `{cyan-fg}{bold}[${p.name}]{/bold}{/cyan-fg}`
