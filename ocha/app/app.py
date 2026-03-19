@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import shutil
 import subprocess
+from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -269,6 +272,12 @@ class OchaApp(App[None]):
         self._ensure_ocha_branch()
         self.refresh_from_state()
         self.action_focus_agents()
+        self.set_interval(1.0, self._tick)
+        self._running_procs: dict[str, asyncio.subprocess.Process] = {}
+
+    def _tick(self) -> None:
+        """Periodic refresh so elapsed timers and status updates appear."""
+        self.refresh_from_state()
 
     def _ensure_ocha_branch(self) -> None:
         """Create and checkout the ocha branch if it doesn't already exist."""
@@ -366,6 +375,15 @@ class OchaApp(App[None]):
         for worker in task.workers:
             if worker.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED):
                 worker.status = WorkerStatus.STOPPED
+                # Kill the actual junie process if running
+                proc = self._running_procs.pop(worker.session_id, None)
+                if proc and proc.returncode is None:
+                    try:
+                        proc.terminate()
+                    except ProcessLookupError:
+                        pass
+                from datetime import datetime
+                worker.finished_at = datetime.now()
         self.refresh_from_state()
         self.notify(f"Killed task {task.task_id}.")
 
@@ -384,8 +402,71 @@ class OchaApp(App[None]):
                 f"{running} running, {queued} queued",
                 severity="information",
             )
+            # Actually spawn Junie headless for the running worker
+            self._spawn_junie_workers(task_obj)
         else:
             self.notify("Task launched.")
+
+    def _spawn_junie_workers(self, task_obj) -> None:
+        """Spawn Junie CLI headless for each RUNNING worker in the task."""
+        junie_bin = shutil.which("junie")
+        if not junie_bin:
+            self.notify("[#fb4934]junie CLI not found on PATH[/]", severity="error")
+            return
+        for worker in task_obj.workers:
+            if worker.status == WorkerStatus.RUNNING:
+                self.run_worker(self._run_junie_for_worker(worker, task_obj))
+
+    async def _run_junie_for_worker(self, worker, task_obj) -> None:
+        """Run Junie headless CLI for a single worker and stream output."""
+        try:
+            worktree_path = Path(worker.worktree_path)
+            worktree_path.mkdir(parents=True, exist_ok=True)
+
+            cmd = [
+                "junie",
+                "--project", str(worktree_path),
+                "--session-id", worker.session_id,
+                "--output-format", "text",
+                "--task", worker.task_prompt,
+            ]
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            self._running_procs[worker.session_id] = proc
+
+            worker.workflow_log.append(f"Started junie process (PID {proc.pid}).")
+            worker.latest_event = "junie_started"
+
+            async for raw_line in proc.stdout:
+                line = raw_line.decode(errors="replace").rstrip()
+                worker.raw_log.append(line)
+                if line:
+                    worker.workflow_log.append(line)
+                    worker.latest_event = line[:80]
+
+            rc = await proc.wait()
+            self._running_procs.pop(worker.session_id, None)
+
+            from datetime import datetime
+            worker.finished_at = datetime.now()
+            if rc == 0:
+                worker.status = WorkerStatus.COMPLETED
+                worker.summary = "Junie session completed successfully."
+                worker.workflow_log.append("Session completed.")
+            else:
+                worker.status = WorkerStatus.FAILED
+                worker.summary = f"Junie exited with code {rc}."
+                worker.workflow_log.append(f"Session failed (exit code {rc}).")
+        except Exception as exc:
+            from datetime import datetime
+            worker.finished_at = datetime.now()
+            worker.status = WorkerStatus.FAILED
+            worker.summary = f"Error: {exc}"
+            worker.workflow_log.append(f"Error launching junie: {exc}")
 
     def _sync_selection_from_sidebar(self, list_view: ListView) -> None:
         if list_view.index is None or list_view.index == self.state.selected_index:
