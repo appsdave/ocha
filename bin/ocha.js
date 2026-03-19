@@ -18,7 +18,7 @@ program
   .option('-y, --yes', 'Reinitialize even if .ocha/ already exists')
   .action(ochaInit);
 
-const cord = program.command('cord').description('(deprecated) Use top-level commands instead: ocha start, ocha status, ocha stop, ocha resolve');
+const cord = program.command('cord').description('(deprecated) Use top-level commands instead: ocha status, ocha stop, ocha resolve');
 
 cord
   .command('start')
@@ -50,16 +50,6 @@ cord
   .action(cordResolve);
 
 // ── Top-level commands (preferred) ──────────────────────────────────────────
-
-program
-  .command('start')
-  .description('Decompose a task and run it across parallel agents')
-  .option('-t, --task <task>', 'High-level task description')
-  .option('-b, --base-branch <branch>', 'Base git branch for worktrees', 'main')
-  .option('-n, --max-agents <n>', 'Maximum parallel agents', '3')
-  .option('-r, --repo <path...>', 'Repo path(s) to operate on (defaults to cwd)')
-  .option('--no-merge', 'Skip auto-merge after completion')
-  .action(cordStart);
 
 program
   .command('status')
