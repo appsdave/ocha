@@ -274,19 +274,9 @@ async function runBuilderWithReview(task, status, baseBranch) {
     }
 
     // Always push branch and open a PR — never auto-merge
-    try {
-      git(['push', '-u', 'origin', task.branch, '--force-with-lease'], { cwd: worktreePath });
-      logWithSpinner(chalk.green(`  ✓ Pushed branch ${task.branch} to origin`));
-    } catch (pushErr) {
-      // Fall back to force push if force-with-lease fails (first push)
-      try {
-        git(['push', '-u', 'origin', task.branch, '--force'], { cwd: worktreePath });
-        logWithSpinner(chalk.green(`  ✓ Pushed branch ${task.branch} to origin`));
-      } catch (pushErr2) {
-        logWithSpinner(chalk.yellow(`  ⚠ Could not push ${task.branch}: ${pushErr2.message}`));
-      }
-    }
+    pushBranch(task.branch, worktreePath);
 
+    let prUrl = null;
     try {
       const prTitle = `ocha: ${shortDesc(cleanDesc)}`;
 
@@ -312,7 +302,7 @@ async function runBuilderWithReview(task, status, baseBranch) {
         '--body', prBody,
       ], { cwd: taskRepoDir });
       // gh pr create prints the URL as the last line
-      const prUrl = prOutput.trim().split('\n').filter(l => l.startsWith('http')).pop()
+      prUrl = prOutput.trim().split('\n').filter(l => l.startsWith('http')).pop()
         || prOutput.trim().split('\n').pop();
       task.prUrl = prUrl;
       writeStatus(status);
@@ -320,7 +310,7 @@ async function runBuilderWithReview(task, status, baseBranch) {
     } catch (prErr) {
       // PR may already exist — try to get the URL
       try {
-        const prUrl = exec('gh', ['pr', 'view', task.branch, '--json', 'url', '-q', '.url'], { cwd: taskRepoDir }).trim();
+        prUrl = exec('gh', ['pr', 'view', task.branch, '--json', 'url', '-q', '.url'], { cwd: taskRepoDir }).trim();
         task.prUrl = prUrl;
         writeStatus(status);
         console.log(chalk.cyan(`  🔗 PR already exists: ${prUrl}`));
@@ -328,12 +318,160 @@ async function runBuilderWithReview(task, status, baseBranch) {
         console.log(chalk.yellow(`  ⚠ Could not create PR for ${task.branch}: ${prErr.message.split('\n')[0]}`));
       }
     }
+
+    // ── Post-PR: check mergeability and auto-resolve conflicts ────────────
+    if (task.prUrl) {
+      await ensurePRMergeable(task, baseBranch, worktreePath, taskRepoDir, cleanDesc);
+    }
   } catch (reviewErr) {
     setReviewerNode(task.id, 'failed');
     logWithSpinner(chalk.yellow(`  ⚠ Reviewer failed to run: ${reviewErr.message}`));
   }
 
   writeStatus(status);
+}
+
+// ─── Push & Merge-conflict resolution ────────────────────────────────────────
+
+function pushBranch(branch, worktreePath) {
+  try {
+    git(['push', '-u', 'origin', branch, '--force-with-lease'], { cwd: worktreePath });
+    logWithSpinner(chalk.green(`  ✓ Pushed branch ${branch} to origin`));
+  } catch {
+    try {
+      git(['push', '-u', 'origin', branch, '--force'], { cwd: worktreePath });
+      logWithSpinner(chalk.green(`  ✓ Pushed branch ${branch} to origin`));
+    } catch (err) {
+      logWithSpinner(chalk.yellow(`  ⚠ Could not push ${branch}: ${err.message}`));
+    }
+  }
+}
+
+/** Wait ms milliseconds. */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Poll GitHub for PR mergeability status.
+ * GitHub computes mergeability asynchronously, so we poll up to `maxAttempts` times.
+ * Returns 'MERGEABLE', 'CONFLICTING', or 'UNKNOWN'.
+ */
+function checkPRMergeability(branch, repoDir, maxAttempts = 5) {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const json = exec('gh', [
+        'pr', 'view', branch,
+        '--json', 'mergeable',
+        '-q', '.mergeable',
+      ], { cwd: repoDir }).trim();
+      if (json === 'MERGEABLE' || json === 'CONFLICTING') return json;
+      // UNKNOWN — GitHub is still computing, wait and retry
+    } catch { /* gh failed — skip */ }
+    if (i < maxAttempts - 1) {
+      // Synchronous sleep via Atomics (avoids needing async in a sync helper)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
+    }
+  }
+  return 'UNKNOWN';
+}
+
+/**
+ * After a PR is created, check if it's mergeable. If conflicting, rebase onto
+ * the base branch, spawn a Junie agent to resolve conflicts if needed, and
+ * force-push the result. Retries up to MAX_CONFLICT_RETRIES times.
+ */
+const MAX_CONFLICT_RETRIES = 2;
+
+async function ensurePRMergeable(task, baseBranch, worktreePath, repoDir, cleanDesc) {
+  for (let attempt = 1; attempt <= MAX_CONFLICT_RETRIES; attempt++) {
+    // Give GitHub a moment to compute mergeability
+    await sleep(5000);
+
+    const mergeable = checkPRMergeability(task.branch, repoDir);
+    if (mergeable === 'MERGEABLE') {
+      logWithSpinner(chalk.green(`  ✓ PR is mergeable`));
+      return;
+    }
+    if (mergeable === 'UNKNOWN') {
+      logWithSpinner(chalk.dim(`  ℹ PR mergeability unknown — skipping auto-resolve`));
+      return;
+    }
+
+    // CONFLICTING — attempt to fix
+    logWithSpinner(chalk.yellow(`  ⚠ PR has merge conflicts — auto-resolving (attempt ${attempt}/${MAX_CONFLICT_RETRIES})`));
+
+    // Fetch latest base and try rebase
+    try {
+      git(['fetch', 'origin', baseBranch], { cwd: worktreePath });
+    } catch {}
+
+    let rebaseClean = false;
+    try {
+      git(['rebase', `origin/${baseBranch}`], { cwd: worktreePath });
+      rebaseClean = true;
+      logWithSpinner(chalk.green(`  ✓ Rebase succeeded — no conflicts`));
+    } catch {
+      logWithSpinner(chalk.yellow(`  ⚠ Rebase has conflicts — spawning agent to resolve`));
+    }
+
+    // If rebase had conflicts, spawn a Junie agent to fix them
+    if (!rebaseClean) {
+      let conflictFiles = '';
+      try {
+        conflictFiles = git(['diff', '--name-only', '--diff-filter=U'], { cwd: worktreePath }).trim();
+      } catch {
+        try {
+          conflictFiles = exec('grep', ['-rl', '<<<<<<<', '.'], { cwd: worktreePath }).trim();
+        } catch {}
+      }
+
+      const resolveTask = {
+        id: `${task.id}-resolve-${attempt}`,
+        description: [
+          `Resolve the git merge conflicts in this worktree.`,
+          ``,
+          `The branch \`${task.branch}\` is being rebased onto \`origin/${baseBranch}\`.`,
+          `Git has paused the rebase because of conflicts.`,
+          ``,
+          `Conflicted files:`,
+          conflictFiles || '(run `git diff --name-only --diff-filter=U` to find them)',
+          ``,
+          `Original task: ${cleanDesc}`,
+          ``,
+          `Instructions:`,
+          `1. Open each conflicted file and resolve the <<<<<<< / ======= / >>>>>>> markers`,
+          `2. Keep the intent of BOTH sides — the base branch changes AND the PR branch changes`,
+          `3. Run \`git add <file>\` for each resolved file`,
+          `4. Run \`GIT_EDITOR=true git rebase --continue\` to finish the rebase`,
+          `5. If the rebase has more conflicts, repeat steps 1-4`,
+          `6. Do NOT run git push — that will be handled automatically`,
+        ].join('\n'),
+        branch: task.branch,
+        role: 'builder',
+      };
+
+      try {
+        const { code } = await spawnAgent(resolveTask, worktreePath, 'builder');
+        if (code === 0) {
+          rebaseClean = true;
+          logWithSpinner(chalk.green(`  ✓ Agent resolved merge conflicts`));
+        } else {
+          logWithSpinner(chalk.red(`  ✗ Agent could not resolve conflicts`));
+        }
+      } catch (err) {
+        logWithSpinner(chalk.red(`  ✗ Conflict resolver error: ${err.message}`));
+      }
+    }
+
+    if (!rebaseClean) {
+      // Abort the failed rebase so the worktree is clean
+      try { git(['rebase', '--abort'], { cwd: worktreePath }); } catch {}
+      logWithSpinner(chalk.yellow(`  ⚠ Could not auto-resolve conflicts — PR will need manual resolution`));
+      return;
+    }
+
+    // Force-push the resolved branch
+    pushBranch(task.branch, worktreePath);
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
