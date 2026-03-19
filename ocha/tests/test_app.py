@@ -4,7 +4,7 @@ import unittest
 
 from app.app import OchaApp
 from app.state import AppState, OchaTask, WorkerRole, WorkerSession, WorkerStatus
-from textual.widgets import ListView
+from textual.widgets import ListView, TextArea
 
 from app.widgets import TaskHeader
 
@@ -17,14 +17,55 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
             original_count = len(app.state.tasks)
 
             await pilot.press("n")
-            await pilot.click("#new-task-input")
-            await pilot.press(*"Ship prompt based task creation")
-            await pilot.press("enter")
+            await pilot.pause()
+            text_area = app.screen.query_one("#new-task-input", TextArea)
+            text_area.load_text("Ship prompt based task creation")
+            await pilot.press("ctrl+s")
 
             self.assertEqual(len(app.state.tasks), original_count + 1)
             self.assertEqual(app.state.selected_task.user_task, "Ship prompt based task creation")
             self.assertEqual(app.state.selected_task.title, "Ship prompt based task creation")
             self.assertEqual(app.state.selected_task.task_id, "T-001")
+
+    async def test_new_task_cancel_does_not_create_task(self) -> None:
+        app = OchaApp()
+
+        async with app.run_test() as pilot:
+            original_count = len(app.state.tasks)
+
+            await pilot.press("n")
+            await pilot.pause()
+            text_area = app.screen.query_one("#new-task-input", TextArea)
+            text_area.load_text("Should be cancelled")
+            await pilot.press("escape")
+
+            self.assertEqual(len(app.state.tasks), original_count)
+
+    async def test_new_task_rejects_blank_input(self) -> None:
+        app = OchaApp()
+
+        async with app.run_test() as pilot:
+            original_count = len(app.state.tasks)
+
+            await pilot.press("n")
+            # Leave TextArea empty, press submit
+            await pilot.press("ctrl+s")
+
+            # Task should not be created
+            self.assertEqual(len(app.state.tasks), original_count)
+
+    async def test_new_task_multiline_prompt(self) -> None:
+        app = OchaApp()
+
+        async with app.run_test() as pilot:
+            await pilot.press("n")
+            await pilot.pause()
+            text_area = app.screen.query_one("#new-task-input", TextArea)
+            text_area.load_text("Line one\nLine two\nLine three")
+            await pilot.press("ctrl+s")
+
+            self.assertEqual(len(app.state.tasks), 1)
+            self.assertEqual(app.state.selected_task.user_task, "Line one\nLine two\nLine three")
 
     async def test_clear_finished_removes_terminal_tasks_and_keeps_running_selection(self) -> None:
         app = OchaApp()

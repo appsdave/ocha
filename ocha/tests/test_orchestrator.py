@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.orchestrator import build_launch_specs, build_role_prompt, launch_task, load_role_definitions
+from app.orchestrator import build_launch_specs, build_role_prompt, launch_task, load_role_definitions, persist_task_prompt, summarize_task
 from app.state import WorkerRole, sample_state
 
 
@@ -86,6 +86,58 @@ class OrchestratorTests(unittest.TestCase):
         upstream_pos = prompt.index("## Prior phase output")
         rules_pos = prompt.index("## Execution rules")
         self.assertLess(upstream_pos, rules_pos)
+
+
+class MultilinePromptTests(unittest.TestCase):
+    def test_multiline_prompt_preserved_in_launch_specs(self) -> None:
+        multiline = "Line one\nLine two\nLine three"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            specs = build_launch_specs(multiline, project_path=Path(tmpdir))
+
+        for spec in specs:
+            self.assertIn("Line one", spec.prompt)
+            self.assertIn("Line two", spec.prompt)
+            self.assertIn("Line three", spec.prompt)
+
+    def test_summarize_task_multiline(self) -> None:
+        result = summarize_task("First line\nSecond line\nThird line")
+        self.assertNotIn("\n", result)
+        self.assertIn("First line", result)
+        self.assertIn("Second line", result)
+
+    def test_summarize_task_empty(self) -> None:
+        self.assertEqual(summarize_task(""), "Untitled task")
+
+    def test_summarize_task_whitespace_only(self) -> None:
+        self.assertEqual(summarize_task("   \n  \n  "), "Untitled task")
+
+    def test_summarize_task_truncates_long_input(self) -> None:
+        long_input = "a" * 100
+        result = summarize_task(long_input)
+        self.assertTrue(len(result) <= 73)  # 72 + ellipsis
+        self.assertTrue(result.endswith("…"))
+
+
+class PersistTaskPromptTests(unittest.TestCase):
+    def test_persist_task_prompt_creates_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = persist_task_prompt("T-001", "Do something", Path(tmpdir))
+            self.assertTrue(path.exists())
+            self.assertEqual(path.read_text(encoding="utf-8"), "Do something")
+            self.assertEqual(path.parent.name, "T-001")
+
+    def test_persist_task_prompt_multiline(self) -> None:
+        multiline = "Line one\nLine two\nLine three"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = persist_task_prompt("T-002", multiline, Path(tmpdir))
+            self.assertEqual(path.read_text(encoding="utf-8"), multiline)
+
+    def test_launch_task_persists_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            launch_task(sample_state(), "Persist me", project_path=Path(tmpdir))
+            prompt_file = Path(tmpdir) / ".ocha" / "tasks" / "T-001" / "prompt.md"
+            self.assertTrue(prompt_file.exists())
+            self.assertEqual(prompt_file.read_text(encoding="utf-8"), "Persist me")
 
 
 class RolePromptContractTests(unittest.TestCase):

@@ -1,124 +1,162 @@
-# T-002 Execution Brief
+# T-002 Execution Brief — Workflow-area scrollbar glitch
 
 > Coordinator output for task T-002.  
-> Generated: 2026-03-19 21:34  
+> Updated: 2026-03-19 22:10  
 > Branch: `agent`
 
 ## Operator request (paraphrased)
 
-Fix UI glitching in the TUI, ensure the `agent` branch exists and is used for all work, and update markdown documentation to reflect the branch change.
+The scrollbar inside the workflow area (OutputPane) is glitchy and causes
+everything that opens there to glitch. Fix the scrollbar instability.
 
 ---
 
-## 1 — UI glitching: root causes identified
+## Status of prior brief items
 
-### 1a. Full list-view rebuild every 2 seconds (primary glitch)
+Several issues from the original T-002 brief have **already been fixed** in the
+current codebase:
 
-**File:** `ocha/app/widgets.py` → `AgentsPane.load()` (line 52-57)  
-**File:** `ocha/app/app.py` → `_tick()` (line 287-289) and `refresh_from_state()` (line 348-356)
+- ✅ `OCHA_BRANCH` is now `"agent"` (app.py line 19) — branch mismatch resolved.
+- ✅ `_post_pipeline_git_flow` now stays on the shared `agent` branch — no per-task branches.
+- ✅ `AgentsPane.load` now uses in-place label updates instead of full DOM rebuild (widgets.py lines 65-93).
 
-Every 2-second tick calls `refresh_from_state()`, which calls `AgentsPane.load()`. That method does:
-
-```python
-list_view.clear()          # destroys all ListItems
-for i, task in enumerate(state.tasks):
-    list_view.append(...)  # rebuilds from scratch
-list_view.index = ...      # resets highlight
-```
-
-This causes visible flicker because Textual tears down and rebuilds the entire DOM subtree of the sidebar on every tick. It also resets scroll position and can cause the highlight bar to jump.
-
-**Fix approach:** Only rebuild when the task list actually changes (compare task IDs + statuses). For elapsed-timer updates, update the existing `Static` widget text in place rather than destroying/recreating `ListItem` nodes. Alternatively, skip the sidebar rebuild entirely when only the timer text changed — timers are cosmetic.
-
-### 1b. TaskHeader and OutputPane rebuilt on every tick too
-
-`refresh_from_state()` also calls `TaskHeader.update_task()` and `OutputPane.update_task()` unconditionally. The `OutputPane.update_task()` calls `self.scroll_end(animate=False)` every time, which forces the output pane to jump to the bottom even if the user scrolled up to read earlier output.
-
-**Fix approach:** Only call `scroll_end` when new lines have actually been appended. Track `len(lines)` or a generation counter and skip the scroll when content hasn't changed.
-
-### 1c. Minor: highlight CSS uses background same as default
-
-In `app.py` CSS (lines 98-111), both `ListView > ListItem` and `ListView > ListItem.--highlight` share `background: #282828`. The only visual difference is a left border change. This makes the highlight almost invisible when the list rebuilds and the border briefly disappears.
-
-**Fix approach (optional):** Use a slightly different background for `--highlight`, e.g. `#3c3836`, to make selection more visible during redraws.
+The **remaining issue** is the OutputPane scrollbar glitch described below.
 
 ---
 
-## 2 — Branch model: `ocha` vs `agent` mismatch
+## 1 — OutputPane scrollbar glitch: root causes
 
-### 2a. app.py uses wrong branch name
+### 1a. `_tick` triggers `refresh_from_state()` every 2s even when nothing changed
 
-**File:** `ocha/app/app.py`, line 19  
-```python
-OCHA_BRANCH = "ocha"
-```
+**File:** `ocha/app/app.py` lines 296-303
 
-But `ocha/app/orchestrator.py`, line 11 says:
-```python
-SHARED_BRANCH = "agent"
-```
+The `_tick` method fires every 2 seconds. If *any* task is RUNNING or QUEUED, it
+calls `refresh_from_state()` which rebuilds all three panels (AgentsPane,
+TaskHeader, OutputPane). For the OutputPane this means reconstructing the full
+Rich markup string and calling `Static.update()` — which triggers a Textual
+layout reflow inside the `VerticalScroll` container, resetting scroll extents
+and causing the scrollbar to jump.
 
-The TUI's `_ensure_ocha_branch()` creates/checks out a branch called `ocha`, while the orchestrator tells every worker they're on `agent`. These must agree.
+**Fix:** Cache a lightweight fingerprint of the selected task's output (e.g.
+`(task_id, mode, len(workflow_log), len(raw_log))` per worker) and skip
+`refresh_from_state()` entirely when unchanged.
 
-**Fix:** Change `OCHA_BRANCH` in `app.py` to `"agent"` (or import `SHARED_BRANCH` from orchestrator). Update `_ensure_ocha_branch()` references accordingly.
+### 1b. `OutputPane.update_task` rebuilds markup on every call
 
-### 2b. _post_pipeline_git_flow creates per-task branches
+**File:** `ocha/app/widgets.py` lines 141-179
 
-**File:** `ocha/app/app.py`, lines 594-663
+Even though there is a `_last_content` string comparison guard (line 170-171),
+the method still:
+1. Queries the DOM for `#output-content`
+2. Iterates all output lines and builds the full Rich markup string
+3. Only *then* compares against `_last_content`
 
-After all workers finish, `_post_pipeline_git_flow` creates a branch `ocha/<task-id>`, commits, pushes, attempts a PR against `main`, then checks out `main`. This violates the shared-branch model described in the docs and orchestrator.
+This is wasteful, and the string comparison itself is O(n) on potentially large
+log output. A cheaper fingerprint check should come first.
 
-**Fix:** The post-pipeline flow should:
-1. Stay on the `agent` branch (not create `ocha/<task-id>`)
-2. Stage and commit on `agent`
-3. Push `agent` to origin
-4. Not switch back to `main`
-5. PR creation can target `main` from `agent` if desired
+**Fix:** Store `(task_id, mode, total_line_count)` as a fast fingerprint.
+Early-return before building markup when the fingerprint matches.
 
-### 2c. Git branch creation
+### 1c. `scroll_end` fires before Textual commits new layout
 
-The `agent` branch does not currently exist (only `main` and `ocha` exist). The fix in 2a will cause `_ensure_ocha_branch()` to create it automatically on next app launch.
+**File:** `ocha/app/widgets.py` line 179
+
+After `content.update(new_text)`, the code calls `self.scroll_end(animate=False)`
+synchronously. But Textual hasn't yet committed the new content height from the
+updated Static widget — so `scroll_end` scrolls to the *old* `max_scroll_y`.
+On the next layout pass, content grows taller, leaving the viewport in an
+intermediate position. This is the most visible cause of the "everything
+glitches" behavior.
+
+**Fix:** Replace `self.scroll_end(animate=False)` with
+`self.call_after_refresh(self.scroll_end, animate=False)` so the scroll target
+uses the post-layout content height.
+
+### 1d. `_is_at_bottom` tolerance too tight
+
+**File:** `ocha/app/widgets.py` lines 135-139
+
+The heuristic uses `self.scroll_y >= self.max_scroll_y - 2`, but when content
+grows by 1-2 lines per update, partial-line rendering can put `scroll_y` just
+outside this window, causing auto-scroll to trigger (or not) unpredictably.
+
+**Fix:** Widen tolerance to `max(3, self.size.height // 4)`.
+
+### 1e. `TaskHeader.update_task` has no content-diff guard
+
+**File:** `ocha/app/widgets.py` lines 97-125
+
+Unlike OutputPane, TaskHeader calls `self.update()` on every tick with no
+caching. This causes unnecessary layout churn in the same frame.
+
+**Fix:** Add a `_last_content` cache identical to the OutputPane pattern.
 
 ---
 
-## 3 — Markdown documentation updates needed
+## 2 — Relevant files
 
-The following files reference the old branch name or contain stale information:
-
-| File | What to update |
-|------|---------------|
-| `ocha/README.md` | References to branch model — ensure `agent` is documented as the shared branch |
-| `ocha/python-textual-rebuild.md` | Check for any branch references |
-| `ocha/junie-headless-sessions.md` | Check for any branch references |
-| `ocha/app/roles/coordinator.md` | Already says `agent` — verify |
-| `ocha/app/roles/lead.md` | Already says `agent` — verify |
-| `ocha/app/roles/builder.md` | Already says `agent` — verify |
-| `ocha/app/roles/reviewer.md` | Already says `agent` — verify |
+| File | Role | Read / Edit |
+|------|------|-------------|
+| `ocha/app/widgets.py` | OutputPane, TaskHeader | **Edit** — primary fix target |
+| `ocha/app/app.py` | `_tick`, `refresh_from_state`, CSS | **Edit** — reduce tick churn |
+| `ocha/app/state.py` | `OchaTask.output_lines`, `AppState` | Read (reference) |
+| `ocha/tests/test_app.py` | Existing app tests | **Edit** — add scroll-stability test |
 
 ---
 
-## 4 — Recommended work partitioning
+## 3 — Recommended changes
 
-All work stays on the shared `agent` branch. Partition by directory to avoid conflicts:
+### Phase 1 — Fix the scrollbar glitch (builder · `ocha/app/`)
 
-| Role | Scope | Key files |
-|------|-------|-----------|
-| **Builder** | Fix UI glitching + branch constant | `ocha/app/app.py`, `ocha/app/widgets.py` |
-| **Builder** | (same session) Fix `_post_pipeline_git_flow` | `ocha/app/app.py` lines 594-663 |
-| **Reviewer** | Verify fixes, run tests | `ocha/tests/test_app.py`, `ocha/tests/test_orchestrator.py` |
-| **Lead** | Update markdown docs for branch rename | `ocha/README.md`, `ocha/python-textual-rebuild.md`, `ocha/junie-headless-sessions.md` |
+1. **`app.py` `_tick`**: Add a fingerprint cache; skip `refresh_from_state()`
+   when the selected task's output lengths and statuses haven't changed.
 
-No overlapping file edits between roles. Builder owns `app/`, Lead owns docs, Reviewer reads everything.
+2. **`widgets.py` `OutputPane.update_task`**: Add a fast `(task_id, mode,
+   line_count)` fingerprint check before building markup. Early-return when
+   unchanged.
+
+3. **`widgets.py` `OutputPane.update_task`**: Replace
+   `self.scroll_end(animate=False)` with
+   `self.call_after_refresh(self.scroll_end, animate=False)`.
+
+4. **`widgets.py` `OutputPane._is_at_bottom`**: Widen tolerance from `2` to
+   `max(3, self.size.height // 4)`.
+
+5. **`widgets.py` `TaskHeader.update_task`**: Add `_last_content` caching to
+   skip identical updates.
+
+### Phase 2 — Tests (builder or reviewer · `ocha/tests/`)
+
+6. Add a Textual `pilot` test that mounts `OchaApp` with a task producing
+   growing output and asserts:
+   - `OutputPane.scroll_y` stays stable when user has scrolled up.
+   - `OutputPane.scroll_y` follows bottom when user hasn't scrolled.
+
+7. Ensure all existing tests pass (`pytest ocha/tests/`).
+
+---
+
+## 4 — Safe partitioning
+
+| Owned directory | Role | Scope |
+|-----------------|------|-------|
+| `docs/` | coordinator | This brief; no code edits |
+| `ocha/app/` | builder | All widget and app-level fixes (Phase 1) |
+| `ocha/tests/` | builder / reviewer | Scroll-stability tests (Phase 2) |
+| `planning/` | lead | Task plan updates if needed |
+
+All work stays on the shared **`agent`** branch. Builder should make atomic
+commits per phase so the reviewer can inspect each change in isolation.
 
 ---
 
 ## 5 — Success criteria
 
-- [ ] TUI sidebar does not flicker on 2-second refresh when task list is unchanged
-- [ ] Output pane does not auto-scroll when no new content arrived
-- [ ] `OCHA_BRANCH` in app.py matches `SHARED_BRANCH` in orchestrator.py (both `"agent"`)
-- [ ] `_post_pipeline_git_flow` commits and pushes on `agent`, does not create per-task branches
-- [ ] All markdown files reference `agent` as the shared branch
+- [ ] OutputPane does not auto-scroll when no new content arrived
+- [ ] OutputPane scrollbar stays stable when user has scrolled up mid-log
+- [ ] `scroll_end` fires after layout commit (no intermediate scroll position)
+- [ ] TaskHeader skips update when content is identical
+- [ ] `_tick` skips full refresh when selected task output is unchanged
 - [ ] Existing tests pass (`pytest ocha/tests/`)
 
 ---
@@ -126,5 +164,5 @@ No overlapping file edits between roles. Builder owns `app/`, Lead owns docs, Re
 ## 6 — TUI event summary
 
 ```
-[coordinator] T-002 brief ready — 3 UI glitch causes identified, branch mismatch ocha→agent found, doc update scope mapped. Builder: app.py + widgets.py. Lead: markdown docs. Reviewer: test suite.
+[coordinator] T-002 brief updated — 5 scroll-glitch root causes in OutputPane identified (layout reflow on tick, premature scroll_end, tight _is_at_bottom tolerance, missing TaskHeader cache). Builder: widgets.py + app.py. Phase 1 = fix scroll, Phase 2 = add tests.
 ```

@@ -123,24 +123,23 @@ The TUI is keyboard-first.
 
 Current keybindings in the code:
 
-- `n` — open new task dialog
-- `↑` / `↓` — move through agents
-- `k` — kill selected agent
-- `c` — clear completed / failed / stopped agents
+- `n` — open new task prompt (multi-line editor)
+- `↑` / `↓` / `j` / `k` — move through tasks
+- `x` — kill selected task
+- `c` — clear completed / failed / stopped tasks
 - `v` — toggle workflow view vs raw log view
-- `h` / `←` — focus left pane
-- `l` / `→` — focus right pane
-- `q` / `Ctrl+C` — quit
+- `h` / `←` — focus left pane (agents)
+- `l` / `→` — focus right pane (output)
+- `Tab` — cycle focus between panes
+- `q` — quit
 
-Inside the task prompt:
+Inside the task prompt (multi-line `TextArea`):
 
 - `Enter` — insert newline
-- `Ctrl+S` — submit
-- `Esc` — cancel
+- `Ctrl+S` — submit task
+- `Esc` — cancel without creating a task
 
-If you later rebuild this in Python/Textual, you could keep the same bindings and optionally add a `Shift+C` alias for clearing completed items, but the current shipped implementation uses lowercase `c`.
-
-Right now the Python rebuild uses `n` to prepare a new headless-task pipeline with the packaged coordinator, lead, builder, and reviewer role prompts. The next orchestration step is to replace the hard-coded task text with a modal/editor, but the role-backed launch flow is now wired into the app state.
+Submitting a prompt creates a four-phase pipeline: coordinator → lead → builder → reviewer. Each phase runs as a headless Junie session with a role-specific markdown prompt. The operator prompt is persisted to `.ocha/tasks/T-NNN/prompt.md` for crash recovery and audit.
 
 ### Why the interface feels structured
 
