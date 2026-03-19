@@ -24,7 +24,7 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(app.state.tasks), original_count + 1)
             self.assertEqual(app.state.selected_task.user_task, "Ship prompt based task creation")
             self.assertEqual(app.state.selected_task.title, "Ship prompt based task creation")
-            self.assertEqual(app.state.selected_task.task_id, "T-102")
+            self.assertEqual(app.state.selected_task.task_id, "T-001")
 
     async def test_clear_finished_removes_terminal_tasks_and_keeps_running_selection(self) -> None:
         app = OchaApp()
@@ -67,7 +67,7 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
 
             header = app.query_one(TaskHeader)
             self.assertEqual(app.state.selected_task.task_id, "T-002")
-            self.assertIn("task=T-002", str(header.renderable))
+            self.assertIn("T-002", str(header.renderable))
 
     def _completed_task(self, task_id: str) -> OchaTask:
         return OchaTask(

@@ -53,15 +53,26 @@ ROLE_DIRECTORIES = {
 }
 
 
+def _strip_front_matter(text: str) -> str:
+    """Remove YAML front matter (``---`` delimited) from the top of *text*."""
+    if not text.startswith("---"):
+        return text
+    end = text.find("---", 3)
+    if end == -1:
+        return text
+    return text[end + 3:].strip()
+
+
 def load_role_definitions() -> dict[WorkerRole, RoleDefinition]:
     roles_package = resources.files("app.roles")
     definitions: dict[WorkerRole, RoleDefinition] = {}
     for role in WorkerRole:
         resource = roles_package / f"{role}.md"
+        raw = resource.read_text(encoding="utf-8").strip()
         definitions[role] = RoleDefinition(
             role=role,
             prompt_path=f"app/roles/{role}.md",
-            prompt_markdown=resource.read_text(encoding="utf-8").strip(),
+            prompt_markdown=_strip_front_matter(raw),
         )
     return definitions
 

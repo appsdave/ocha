@@ -101,11 +101,13 @@ ListView > ListItem {
 }
 
 ListView > ListItem.--highlight {
-    background: #3c3836;
+    background: #282828;
+    border-left: thick #928374;
 }
 
 ListView:focus > ListItem.--highlight {
-    background: #504945;
+    background: #282828;
+    border-left: thick #b8bb26;
 }
 
 /* ── Floating new-task overlay ── */

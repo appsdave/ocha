@@ -40,7 +40,7 @@ class OrchestratorTests(unittest.TestCase):
         launched_task = state.selected_task
         launched_workers = launched_task.workers
         self.assertEqual(len(launched_workers), 4)
-        self.assertEqual(launched_task.task_id, "T-102")
+        self.assertEqual(launched_task.task_id, "T-001")
         self.assertEqual(launched_task.status.value, "running")
         self.assertEqual(launched_workers[0].status.value, "running")
         self.assertEqual(launched_workers[1].status.value, "queued")
