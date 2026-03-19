@@ -16,7 +16,7 @@ from .orchestrator import launch_task
 from .state import AppState, OutputMode, WorkerStatus, clear_finished_tasks, sample_state
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
 
-OCHA_BRANCH = "ocha"
+OCHA_BRANCH = "agent"
 
 
 # ── Gruvbox Dark Green theme ──────────────────────────────────────────
@@ -285,11 +285,13 @@ class OchaApp(App[None]):
 
     def _tick(self) -> None:
         """Periodic UI refresh for elapsed timers and async state changes."""
+        if not self.state.tasks:
+            return
         if any(t.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED) for t in self.state.tasks):
             self.refresh_from_state()
 
     def _ensure_ocha_branch(self) -> None:
-        """Create and checkout the ocha branch if it doesn't already exist."""
+        """Create and checkout the agent branch if it doesn't already exist."""
         try:
             # Check if we're in a git repo
             top = subprocess.run(
@@ -594,7 +596,7 @@ class OchaApp(App[None]):
     async def _post_pipeline_git_flow(self, task_obj) -> None:
         """After all workers finish, commit changes, push branch, and open a PR."""
         log = task_obj.workers[-1].workflow_log
-        branch_name = f"ocha/{task_obj.task_id.lower()}"
+        branch_name = OCHA_BRANCH
         try:
             # Create a task-specific branch from current HEAD
             result = subprocess.run(
@@ -655,12 +657,8 @@ class OchaApp(App[None]):
             else:
                 log.append("gh CLI not found — push completed, create PR manually.")
 
-            # Switch back to main
-            subprocess.run(
-                ["git", "checkout", "main"],
-                capture_output=True, text=True, timeout=10,
-            )
-            log.append("Switched back to main.")
+            # Stay on shared branch — no switch back to main
+            log.append(f"Staying on shared branch {branch_name}.")
 
         except Exception as exc:
             log.append(f"Git flow error: {exc}")
