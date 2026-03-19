@@ -114,11 +114,22 @@ ListView > ListItem {
 
 ListView > ListItem.--highlight {
     background: #282828;
+    background-tint: transparent;
+}
+
+ListView > ListItem.-highlight {
+    background: #282828;
+    background-tint: transparent;
 }
 
 ListView:focus > ListItem.--highlight {
     background: #282828;
-    border-left: thick #b8bb26;
+    background-tint: transparent;
+}
+
+ListView:focus > ListItem.-highlight {
+    background: #282828;
+    background-tint: transparent;
 }
 
 /* ── Floating new-task overlay ── */
@@ -591,23 +602,38 @@ class OchaApp(App[None]):
 
             # Write prompt to file to avoid shell arg-length limits
             prompt_file = self._write_prompt_file(worker)
+
+            # Truncate upstream-heavy prompts to stay within Junie's
+            # internal issue parser limits (~32 KB safe ceiling).
+            MAX_TASK_BYTES = 32_000
             task_text = prompt_file.read_text(encoding="utf-8")
+            if len(task_text.encode("utf-8")) > MAX_TASK_BYTES:
+                task_text = task_text[:MAX_TASK_BYTES].rsplit("\n", 1)[0]
+                worker.workflow_log.append(
+                    f"Prompt truncated to ~{MAX_TASK_BYTES // 1000} KB to stay within Junie limits."
+                )
+                prompt_file.write_text(task_text, encoding="utf-8")
 
             cmd = [
                 "junie",
                 f"--auth={api_key}" if api_key else None,
                 "--project", str(project_path),
                 "--output-format", "text",
-                "--task", task_text,
             ]
             # Remove None entries
             cmd = [c for c in cmd if c is not None]
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
+
+            # Feed the task via stdin to avoid CLI arg-length and
+            # markdown-parsing issues inside Junie's issue builder.
+            proc.stdin.write(task_text.encode("utf-8"))
+            proc.stdin.write_eof()
             self._running_procs[worker.session_id] = proc
 
             worker.workflow_log.append(f"Started junie process (PID {proc.pid}).")
@@ -660,15 +686,20 @@ class OchaApp(App[None]):
         if still_running:
             return
 
-        # Collect the last completed worker's output for handoff
+        # Collect the last completed worker's output for handoff.
+        # Cap at 20 lines / 4 KB to keep downstream prompts within Junie's
+        # internal issue-parser limits and avoid 'Failed to build' errors.
+        MAX_UPSTREAM_LINES = 20
+        MAX_UPSTREAM_CHARS = 4_000
         upstream = ""
         for w in reversed(task_obj.workers):
             if w.status == WorkerStatus.COMPLETED:
-                # Prefer the last 40 workflow_log lines as richer context
                 if w.workflow_log:
-                    upstream = "\n".join(w.workflow_log[-40:])
+                    upstream = "\n".join(w.workflow_log[-MAX_UPSTREAM_LINES:])
                 elif w.summary:
                     upstream = w.summary
+                if len(upstream) > MAX_UPSTREAM_CHARS:
+                    upstream = upstream[:MAX_UPSTREAM_CHARS].rsplit("\n", 1)[0]
                 break
 
         # Find next queued worker
