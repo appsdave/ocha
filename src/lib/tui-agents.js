@@ -3,11 +3,11 @@
  * Agent lifecycle management for the TUI: spawn, kill, persist, reload.
  */
 import { spawn } from 'child_process';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { resolve, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { readStatus, writeStatus } from './status.js';
-import { OCHA_DIR, STATUS_FILE } from './paths.js';
+import { OCHA_DIR, STATUS_FILE, LOGS_DIR } from './paths.js';
 import { formatCompletionSummary } from './tui-utils.js';
 import { stripAnsi } from './ui.js';
 
@@ -34,6 +34,7 @@ export function loadPersistedAgents() {
             state: t.state === 'running' ? 'stopped' : t.state,
             startedAt: t.startedAt,
             completedAt: t.completedAt,
+            logFile: t.logFile || null,
             logs: t.logs || [],
             proc: null,
           });
@@ -63,6 +64,7 @@ export function persistAgents(agents) {
       state: a.state,
       startedAt: a.startedAt,
       completedAt: a.completedAt,
+      logFile: a.logFile || null,
       logs: a.logs.slice(-200),
     }));
     writeStatus(existing);
@@ -151,6 +153,8 @@ export function spawnAgent(task, agents, onUpdate) {
       const m = line.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
       if (m) { agent.prUrl = m[0]; break; }
     }
+    // Write raw logs to a file
+    agent.logFile = writeAgentLogFile(agent);
     // Append clean summary block
     for (const line of formatCompletionSummary(agent)) {
       agent.logs.push(line);
@@ -160,6 +164,25 @@ export function spawnAgent(task, agents, onUpdate) {
   });
 
   return agent;
+}
+
+/**
+ * Write agent logs to a file in .ocha/logs/.
+ * @param {object} agent
+ * @returns {string|null} The path to the log file, or null on failure.
+ */
+export function writeAgentLogFile(agent) {
+  try {
+    if (!existsSync(LOGS_DIR)) mkdirSync(LOGS_DIR, { recursive: true });
+    const timestamp = (agent.completedAt || new Date().toISOString()).replace(/[:.]/g, '-');
+    const filename = `${agent.id}-${timestamp}.log`;
+    const logPath = resolve(LOGS_DIR, filename);
+    const content = agent.logs.map(l => stripAnsi(l)).join('\n');
+    writeFileSync(logPath, content, 'utf8');
+    return logPath;
+  } catch {
+    return null;
+  }
 }
 
 /**

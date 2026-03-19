@@ -40,6 +40,63 @@ export function escapeTags(str) {
 }
 
 /**
+ * Milestone patterns used to extract key output lines from raw agent logs.
+ * Each entry has a regex `pattern` and an optional fixed `label`.
+ * When `label` is null the original log line is shown as-is.
+ */
+export const MILESTONE_PATTERNS = [
+  { pattern: /^\[ocha\]/, label: null },
+  { pattern: /Prompt enhanced|project context/, label: '✔ Prompt enhanced with project context' },
+  { pattern: /Planned\s+\d+|Planning tasks|Lead agent/, label: null },
+  { pattern: /Builder|builder|createWorktree|Dispatching/, label: null },
+  { pattern: /Reviewer|reviewer|Review/, label: null },
+  { pattern: /pull\/\d+/, label: null },
+  { pattern: /✅|❌|completed|failed|Agent completed|Agent failed/, label: null },
+  { pattern: /─{4,}/, label: null },
+  { pattern: /Branch\s*:/, label: null },
+  { pattern: /Duration\s*:/, label: null },
+  { pattern: /PR\s*:/, label: null },
+  { pattern: /Repo\s*:/, label: null },
+];
+
+/**
+ * Extract formatted output lines from agent logs.
+ * Shows key milestone events instead of raw log output.
+ * @param {object} agent
+ * @returns {string[]}
+ */
+export function formatOutputLines(agent) {
+  const lines = [];
+  const seen = new Set();
+
+  for (const log of agent.logs) {
+    const stripped = log.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '').trim();
+    if (!stripped) continue;
+
+    for (const mp of MILESTONE_PATTERNS) {
+      if (mp.pattern.test(stripped)) {
+        const display = mp.label || stripped;
+        if (!seen.has(display)) {
+          seen.add(display);
+          lines.push(display);
+        }
+        break;
+      }
+    }
+  }
+
+  if (agent.logFile) {
+    lines.push('');
+    lines.push(`📄 Full log: ${agent.logFile}`);
+  } else if (agent.state === 'running') {
+    lines.push('');
+    lines.push('{grey-fg}Log file will be written when agent completes.{/grey-fg}');
+  }
+
+  return lines;
+}
+
+/**
  * Detect which pipeline phases have started/completed from log lines.
  * Returns an array of { name, done, active } in pipeline order.
  * @param {string[]} logs
