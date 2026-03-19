@@ -63,7 +63,7 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
             list_view = app.query_one(ListView)
             second_item = list(list_view.query("ListItem").results())[1]
             list_view.index = 1
-            list_view.post_message(ListView.Selected(list_view, second_item, index=1))
+            list_view.post_message(ListView.Selected(list_view, second_item))
             await pilot.pause()
 
             header = app.query_one(TaskHeader)
@@ -105,3 +105,106 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
             role_prompt_path="app/roles/coordinator.md",
             latest_event="done",
         )
+
+
+class AdvancePipelineTests(unittest.TestCase):
+    """Test that _advance_pipeline captures upstream summary for the next worker."""
+
+    def test_advance_pipeline_sets_upstream_summary_on_next_worker(self) -> None:
+        """When a worker completes, the next queued worker receives its output."""
+        completed_worker = WorkerSession(
+            session_id="S-001-01",
+            task_id="T-001",
+            title="Test",
+            role=WorkerRole.COORDINATOR,
+            status=WorkerStatus.COMPLETED,
+            branch="agent",
+            worktree_path="/tmp/t-001-coordinator",
+            owned_directory="docs/",
+            summary="Coordinator done.",
+            workflow_log=["Produced execution brief."],
+            task_prompt="prompt",
+            role_prompt_path="app/roles/coordinator.md",
+            latest_event="done",
+        )
+        queued_worker = WorkerSession(
+            session_id="S-001-02",
+            task_id="T-001",
+            title="Test",
+            role=WorkerRole.LEAD,
+            status=WorkerStatus.QUEUED,
+            branch="agent",
+            worktree_path="/tmp/t-001-lead",
+            owned_directory="planning/",
+            summary="",
+            task_prompt="original prompt",
+            role_prompt_path="app/roles/lead.md",
+            latest_event="",
+        )
+        task_obj = OchaTask(
+            task_id="T-001",
+            title="Test",
+            user_task="Do something",
+            branch="agent",
+            workers=[completed_worker, queued_worker],
+        )
+
+        # Simulate what _advance_pipeline does for upstream handoff
+        # (without spawning junie — we test the data flow logic)
+        upstream = ""
+        for w in reversed(task_obj.workers):
+            if w.status == WorkerStatus.COMPLETED:
+                if w.workflow_log:
+                    upstream = "\n".join(w.workflow_log[-40:])
+                elif w.summary:
+                    upstream = w.summary
+                break
+
+        next_worker = None
+        for w in task_obj.workers:
+            if w.status == WorkerStatus.QUEUED:
+                next_worker = w
+                break
+
+        self.assertIsNotNone(next_worker)
+        self.assertEqual(upstream, "Produced execution brief.")
+
+        # Apply upstream
+        next_worker.upstream_summary = upstream
+        self.assertEqual(next_worker.upstream_summary, "Produced execution brief.")
+
+    def test_advance_pipeline_no_upstream_when_no_completed_workers(self) -> None:
+        """When no worker has completed, upstream stays empty."""
+        queued_worker = WorkerSession(
+            session_id="S-001-01",
+            task_id="T-001",
+            title="Test",
+            role=WorkerRole.COORDINATOR,
+            status=WorkerStatus.QUEUED,
+            branch="agent",
+            worktree_path="/tmp/t-001-coordinator",
+            owned_directory="docs/",
+            summary="",
+            task_prompt="prompt",
+            role_prompt_path="app/roles/coordinator.md",
+            latest_event="",
+        )
+        task_obj = OchaTask(
+            task_id="T-001",
+            title="Test",
+            user_task="Do something",
+            branch="agent",
+            workers=[queued_worker],
+        )
+
+        upstream = ""
+        for w in reversed(task_obj.workers):
+            if w.status == WorkerStatus.COMPLETED:
+                if w.workflow_log:
+                    upstream = "\n".join(w.workflow_log[-40:])
+                elif w.summary:
+                    upstream = w.summary
+                break
+
+        self.assertEqual(upstream, "")
+

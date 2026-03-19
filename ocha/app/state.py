@@ -49,6 +49,7 @@ class WorkerSession:
     raw_log: list[str] = field(default_factory=list)
     task_prompt: str = ""
     role_prompt_path: str = ""
+    upstream_summary: str = ""
     latest_event: str = ""
     retry_count: int = 0
     started_at: datetime = field(default_factory=datetime.now)

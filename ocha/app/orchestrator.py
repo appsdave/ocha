@@ -88,7 +88,18 @@ def build_role_prompt(
     worktree_path: Path,
     owned_directory: str,
     branch: str = SHARED_BRANCH,
+    upstream_output: str = "",
 ) -> str:
+    upstream_section = ""
+    if upstream_output:
+        upstream_section = dedent(
+            f"""
+            ## Prior phase output
+
+            {upstream_output}
+            """
+        ).strip()
+
     return dedent(
         f"""
         {definition.prompt_markdown}
@@ -108,6 +119,8 @@ def build_role_prompt(
         Title: {title}
 
         {user_task}
+
+        {upstream_section}
 
         ## Execution rules
 

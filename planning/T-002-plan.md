@@ -1,4 +1,4 @@
-# T-002 Execution Plan
+# T-002 Execution Plan — Fix scrollbar glitch on UI refresh
 
 > Lead: planning/T-002-plan.md
 > Date: 2026-03-19
@@ -7,90 +7,137 @@
 
 ---
 
+## Problem summary
+
+The TUI glitches on periodic refresh: the sidebar list flickers (full
+teardown/rebuild every 2 s), the output pane yanks scroll position to
+the bottom even when the user scrolled up to read history, and
+`refresh_from_state()` unconditionally rebuilds all widgets with no
+change detection.
+
+---
+
 ## Phase 0 — Branch bootstrap (coordinator)
 
 | # | Action | Owner | Details |
 |---|--------|-------|---------|
-| 0.1 | Create `agent` branch from current `main` HEAD | coordinator | `git branch agent main && git checkout agent` in the main repo. Verify with `git rev-parse --verify agent`. |
-| 0.2 | Verify worktrees can attach to `agent` | coordinator | Confirm `.worktrees/` entries are compatible. |
+| 0.1 | Verify `agent` branch is active | coordinator | `git rev-parse --abbrev-ref HEAD` must return `agent`. Already handled by `_ensure_ocha_branch()` and `OCHA_BRANCH = "agent"`. |
 
-**Gate:** `git rev-parse --verify agent` succeeds before any builder work starts.
+**Gate:** `agent` branch confirmed before builder work starts.
 
 ---
 
-## Phase 1 — Builder: UI glitch fixes + branch constant (parallel-safe)
+## Phase 1 — Builder: Fix UI refresh glitches (all edits in `ocha/app/`)
 
-All edits scoped to `ocha/app/`. No other role touches these files.
+No other role touches these files.
 
-| # | Action | File(s) | Details |
-|---|--------|---------|---------|
-| 1.1 | Fix sidebar flicker — diff-based rebuild | `ocha/app/widgets.py` | In `AgentsPane.load()`: instead of `clear()` + full rebuild every tick, compare current task IDs + statuses to previous state. Only update changed `ListItem` widgets in place. Add a `_prev_snapshot` attribute to track last-rendered state. |
-| 1.2 | Fix output pane auto-scroll | `ocha/app/widgets.py` or `ocha/app/app.py` | In `OutputPane.update_task()`: track last-seen line count. Only call `scroll_end()` when new lines were appended. |
-| 1.3 | Improve highlight visibility (optional) | `ocha/app/app.py` (CSS block) | Change `ListView > ListItem.--highlight` background from `#282828` to `#3c3836`. |
-| 1.4 | Fix branch constant mismatch | `ocha/app/app.py` line 19 | Change `OCHA_BRANCH = "ocha"` → `OCHA_BRANCH = "agent"`. |
-| 1.5 | Fix `_post_pipeline_git_flow` | `ocha/app/app.py` lines 594–663 | Stop creating `ocha/<task-id>` branches. Commit and push on `agent` directly. Remove checkout-back-to-main logic. Keep optional PR creation targeting `main` from `agent`. |
+### 1.1 — Stabilise AgentsPane list refresh (Fix A)
+
+**File:** `ocha/app/widgets.py` — `AgentsPane._snapshot()` and `AgentsPane.load()`
+
+- Remove the volatile `elapsed` field from `_snapshot()` so the list is
+  only rebuilt when task count, IDs, or statuses change.
+- After the early-return (snapshot match), do a **targeted in-place
+  update** of each item's label text to refresh elapsed strings without
+  calling `clear()` + full rebuild. This preserves scroll position and
+  selection highlight.
+
+### 1.2 — Diff-based OutputPane refresh (Fix B)
+
+**File:** `ocha/app/widgets.py` — `OutputPane`
+
+- Add a `_last_lines: list[str]` attribute to track previously rendered
+  output lines.
+- In `update_task()`, compare the new lines to `_last_lines`. If
+  identical, return early — do not replace `#output-content` text.
+- Only call `scroll_end()` when the user is already at the bottom
+  (check `self.scroll_offset.y >= self.max_scroll_y - 1` or equivalent).
+  This prevents yanking the user away from history they are reading.
+- When new lines *are* appended and the user *was* at the bottom,
+  auto-scroll as before.
+
+### 1.3 — Guard refresh_from_state with generation counter (Fix C)
+
+**File:** `ocha/app/app.py` — `OchaApp`
+
+- Add a `_state_generation: int` counter on `OchaApp.__init__`.
+- Increment it only when state actually mutates: task added
+  (`_launch_task_from_prompt`), task killed (`_handle_kill`), worker
+  status changed (`_advance_pipeline`), or new output streamed
+  (`_run_junie_for_worker`).
+- In `_tick()`, compare generations and skip `refresh_from_state()` if
+  unchanged. Always do a lightweight elapsed-time-only update for
+  cosmetic timers.
+
+### 1.4 — Event-driven refresh with slower poll fallback (Fix D)
+
+**File:** `ocha/app/app.py`
+
+- Define a custom Textual message `class StateChanged(Message)`.
+- Post `StateChanged` from `_launch_task_from_prompt`, `_handle_kill`,
+  `_advance_pipeline`, and the junie output streaming loop.
+- Handle `StateChanged` to trigger `refresh_from_state()`.
+- Change `set_interval` from 2 s to 5 s; the tick now only refreshes
+  elapsed-time display (the lightweight path from 1.3), not full state.
 
 **Gate:** `pytest ocha/tests/` passes with all Phase 1 changes applied.
 
 ---
 
-## Phase 2 — Lead: Markdown documentation updates (parallel-safe)
-
-All edits scoped to markdown files outside `ocha/app/`. No overlap with builder.
-
-| # | Action | File | Details |
-|---|--------|------|---------|
-| 2.1 | Update README branch references | `ocha/README.md` | Replace any `ocha` branch references with `agent`. Document `agent` as the shared working branch. |
-| 2.2 | Check python-textual-rebuild.md | `ocha/python-textual-rebuild.md` | Update any branch references from `ocha` → `agent`. |
-| 2.3 | Check junie-headless-sessions.md | `ocha/junie-headless-sessions.md` | Update any branch references from `ocha` → `agent`. |
-| 2.4 | Verify role docs already correct | `ocha/app/roles/*.md` | Confirm coordinator.md, lead.md, builder.md, reviewer.md already say `agent`. No edits expected. |
-
-**Gate:** No stale `ocha` branch references remain in any `.md` file (grep clean).
-
----
-
-## Phase 3 — Reviewer: Validation
+## Phase 2 — Reviewer: Validation & regression tests (edits in `ocha/tests/`)
 
 | # | Action | Owner | Details |
 |---|--------|-------|---------|
-| 3.1 | Run full test suite | reviewer | `pytest ocha/tests/ -v` — all tests must pass. |
-| 3.2 | Verify branch constant alignment | reviewer | `OCHA_BRANCH` in app.py == `SHARED_BRANCH` in orchestrator.py == `"agent"`. |
-| 3.3 | Verify no sidebar flicker | reviewer | Read `AgentsPane.load()` and confirm diff-based update logic is present. |
-| 3.4 | Verify scroll behavior | reviewer | Confirm `scroll_end()` is gated on new content. |
-| 3.5 | Grep for stale branch refs | reviewer | `grep -rn '"ocha"' ocha/app/` should return zero hits for branch-name strings. `grep -rn 'ocha/' ocha/app/app.py` should not find per-task branch creation. |
+| 2.1 | Run full test suite | reviewer | `pytest ocha/tests/ -v` — all existing tests must pass. |
+| 2.2 | Add AgentsPane stability test | reviewer | Verify `AgentsPane.load()` does NOT call `list_view.clear()` when only `elapsed` changes (snapshot stable). |
+| 2.3 | Add OutputPane scroll test | reviewer | Verify `OutputPane.update_task()` does NOT call `scroll_end()` when content is unchanged or user has scrolled up. |
+| 2.4 | Add generation-counter test | reviewer | Verify `_tick()` skips `refresh_from_state()` when `_state_generation` is unchanged. |
+| 2.5 | Verify no regressions | reviewer | Manual checklist: sidebar selection preserved across ticks, output pane shows new content, scroll bar stable. |
 
 ---
 
-## Phase 4 — Sync: Commit & push
+## Phase 3 — Sync: Commit & push
 
 | # | Action | Owner | Details |
 |---|--------|-------|---------|
-| 4.1 | Stage all changes | coordinator | `git add -A` on `agent` branch. |
-| 4.2 | Commit | coordinator | `git commit -m "T-002: fix UI glitching, align branch model to agent, update docs"` |
-| 4.3 | Push | coordinator | `git push -u origin agent` |
+| 3.1 | Stage all changes | coordinator | `git add -A` on `agent` branch. |
+| 3.2 | Commit | coordinator | `git commit -m "T-002: fix UI scroll/refresh glitch — diff-based updates + event-driven refresh"` |
+| 3.3 | Push | coordinator | `git push -u origin agent` |
 
 ---
 
 ## Parallelism map
 
 ```
-Phase 0  ──► Phase 1 (builder: ocha/app/)  ──►  Phase 3  ──►  Phase 4
-              Phase 2 (lead: markdown docs)  ──►
+Phase 0  ──► Phase 1 (builder: ocha/app/)  ──►  Phase 2  ──►  Phase 3
 ```
 
-Phases 1 and 2 run in parallel — zero file overlap.
-Phase 3 waits for both.
-Phase 4 is the final sync.
+Phase 1 is the only code-editing phase. Phase 2 waits for Phase 1.
+Phase 3 is the final sync.
+
+No parallel file overlap — builder owns `ocha/app/`, reviewer owns
+`ocha/tests/`, coordinator owns `docs/`, lead owns `planning/`.
+
+---
+
+## File ownership (conflict-free zones)
+
+| Role | Owned path | Files touched |
+|------|-----------|---------------|
+| Coordinator | `ocha/docs/` | Execution brief (already written) |
+| Lead | `planning/` | This plan |
+| Builder | `ocha/app/` | `widgets.py`, `app.py` |
+| Reviewer | `ocha/tests/` | `test_app.py` (add regression tests) |
 
 ---
 
 ## Success criteria
 
-- [ ] `agent` branch exists and is checked out
-- [ ] TUI sidebar does not flicker on 2-second refresh when task list is unchanged
-- [ ] Output pane does not auto-scroll when no new content arrived
-- [ ] `OCHA_BRANCH` == `SHARED_BRANCH` == `"agent"`
-- [ ] `_post_pipeline_git_flow` stays on `agent`, no per-task branches
-- [ ] All markdown files reference `agent` as the shared branch
-- [ ] `pytest ocha/tests/` passes
-- [ ] Changes pushed to `origin/agent`
+- [ ] Sidebar does not flicker/rebuild when only elapsed time changes
+- [ ] Output pane does not yank scroll position when content is unchanged
+- [ ] Output pane auto-scrolls only when user is already at bottom
+- [ ] `refresh_from_state()` short-circuits when nothing changed
+- [ ] Event-driven refresh fires on real state mutations
+- [ ] Slow poll (5 s) handles only cosmetic elapsed-time updates
+- [ ] `pytest ocha/tests/` passes (existing + new regression tests)
+- [ ] Changes committed and pushed on `agent` branch
