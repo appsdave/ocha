@@ -18,6 +18,11 @@
  *   l / →   — focus log pane
  *   h / ←   — focus agent list
  *   q / C-c — quit (confirms if agents running)
+ *
+ *  Inside the new-task prompt:
+ *   Enter    — newline (multi-line input)
+ *   Ctrl-S   — submit the task
+ *   Escape   — cancel
  */
 import { basename } from 'path';
 import blessed from 'blessed';

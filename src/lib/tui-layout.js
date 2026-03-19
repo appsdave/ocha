@@ -7,16 +7,22 @@ import blessed from 'blessed';
 
 /**
  * Compute the geometry for the new-task prompt dialog.
+ * Uses up to 60% of the terminal height so there is plenty of room
+ * for multi-line task descriptions while still leaving visible
+ * context behind the overlay.
+ *
  * @param {{ height?: number }} screen
  * @returns {{ overlayHeight: number, overlayTop: number, textareaTop: number, textareaHeight: number }}
  */
 export function getPromptDialogLayout(screen) {
   const screenHeight = Math.max(0, Math.floor(Number(screen?.height) || 0));
+  const idealHeight = screenHeight > 0 ? Math.round(screenHeight * 0.6) : 18;
   const overlayHeight = screenHeight > 0
-    ? Math.min(14, Math.max(7, screenHeight - 2), screenHeight)
-    : 14;
-  // hint row sits at top:0 (1 line), leave a gap row, textarea starts at 2 minimum
+    ? Math.min(22, Math.max(7, idealHeight), screenHeight)
+    : 18;
+  // Row 0: hint line — leave a gap row before the textarea.
   const textareaTop = Math.max(2, overlayHeight >= 10 ? 3 : 2);
+  // Reserve 1 row at the bottom of the overlay for the border.
   const textareaHeight = Math.max(3, overlayHeight - textareaTop - 1);
 
   return {
@@ -125,7 +131,8 @@ export function buildLayout() {
 
 /**
  * Open a styled multi-line prompt dialog for task input.
- * Supports Enter to submit, Escape to cancel.
+ * Enter inserts a newline so users can compose multi-line descriptions.
+ * Ctrl-S submits the task; Escape cancels.
  *
  * @param {object} screen - blessed screen instance
  * @param {Function} onSubmit - called with the trimmed task string (or null if cancelled)
@@ -159,7 +166,7 @@ export function openPromptDialog(screen, onSubmit) {
     height: 1,
     tags: true,
     style: { bg: 'black' },
-    content: '{grey-fg}Describe your task below. {bold}Enter{/bold} to submit · {bold}Esc{/bold} to cancel{/grey-fg}',
+    content: '{grey-fg}Describe your task below. {bold}Ctrl-S{/bold} to submit · {bold}Esc{/bold} to cancel{/grey-fg}',
   });
 
   const textarea = blessed.textarea({
@@ -177,7 +184,7 @@ export function openPromptDialog(screen, onSubmit) {
     border: { type: 'line' },
     // Explicit padding prevents the first line of text from being hidden
     // behind the top border when the screen uses autoPadding: false.
-    padding: { top: 0, right: 0, bottom: 0, left: 1 },
+    padding: { top: 0, right: 1, bottom: 0, left: 1 },
     inputOnFocus: true,
     keys: true,
     mouse: true,
@@ -197,8 +204,10 @@ export function openPromptDialog(screen, onSubmit) {
   screen.alloc();
   screen.render();
 
-  // Enter submits, Escape cancels
+  let closed = false;
   const close = (value) => {
+    if (closed) return;
+    closed = true;
     screen.remove(overlay);
     // Force full redraw to clear any remnants of the overlay that blessed's
     // smart-CSR optimisation would otherwise leave on screen ("bleaching").
@@ -207,8 +216,11 @@ export function openPromptDialog(screen, onSubmit) {
     onSubmit(value || null);
   };
 
-  textarea.key(['enter'], () => {
-    close(textarea.getValue().replace(/\r?\n/g, ' ').trim());
+  // Ctrl-S submits, Escape cancels.
+  // Enter is intentionally left unbound so the textarea keeps its default
+  // behaviour of inserting a newline, enabling multi-line task descriptions.
+  textarea.key(['C-s'], () => {
+    close(textarea.getValue().trim());
   });
 
   textarea.key(['escape'], () => {
