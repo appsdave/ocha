@@ -273,6 +273,12 @@ class OchaApp(App[None]):
         self.refresh_from_state()
         self.action_focus_agents()
         self._running_procs: dict[str, asyncio.subprocess.Process] = {}
+        self.set_interval(2.0, self._tick)
+
+    def _tick(self) -> None:
+        """Periodic UI refresh for elapsed timers and async state changes."""
+        if any(t.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED) for t in self.state.tasks):
+            self.refresh_from_state()
 
     def _ensure_ocha_branch(self) -> None:
         """Create and checkout the ocha branch if it doesn't already exist."""
@@ -480,6 +486,7 @@ class OchaApp(App[None]):
 
             worker.workflow_log.append(f"Started junie process (PID {proc.pid}).")
             worker.latest_event = "junie_started"
+            self.refresh_from_state()
 
             async for raw_line in proc.stdout:
                 line = raw_line.decode(errors="replace").rstrip()
@@ -487,6 +494,7 @@ class OchaApp(App[None]):
                 if line:
                     worker.workflow_log.append(line)
                     worker.latest_event = line[:80]
+                    self.refresh_from_state()
 
             rc = await proc.wait()
             self._running_procs.pop(worker.session_id, None)
@@ -502,6 +510,7 @@ class OchaApp(App[None]):
                 worker.summary = f"Junie exited with code {rc}."
                 worker.workflow_log.append(f"Session failed (exit code {rc}).")
 
+            self.refresh_from_state()
             # Advance pipeline: start next queued worker in this task
             self._advance_pipeline(task_obj)
 
