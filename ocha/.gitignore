@@ -6,3 +6,5 @@ __pycache__/
 .worktrees/
 .env
 *.egg-info/
+docs/T-*-*.md
+planning/
