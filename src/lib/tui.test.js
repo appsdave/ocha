@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { clearCompletedAgents, escapeTags, formatOutputLines } from './tui.js';
+import { sortAgentsForDisplay } from './tui-utils.js';
 
 function agent(id, task, state = 'running') {
   return {
@@ -234,5 +235,91 @@ describe('formatOutputLines', () => {
     assert.ok(lines.some(l => l.includes('Branch')));
     assert.ok(lines.some(l => l.includes('Duration')));
     assert.ok(lines.some(l => l.includes('📄 Full log:')));
+  });
+});
+
+describe('display-order navigation', () => {
+  /**
+   * Simulate pressing down/up by walking the sorted display list,
+   * exactly as the TUI _bindKeys handlers now do.
+   */
+  function navigateDown(agents, selectedIdx) {
+    const sorted = sortAgentsForDisplay(agents);
+    const displayIdx = sorted.findIndex(e => e.originalIndex === selectedIdx);
+    if (displayIdx < sorted.length - 1) {
+      return sorted[displayIdx + 1].originalIndex;
+    }
+    return selectedIdx;
+  }
+
+  function navigateUp(agents, selectedIdx) {
+    const sorted = sortAgentsForDisplay(agents);
+    const displayIdx = sorted.findIndex(e => e.originalIndex === selectedIdx);
+    if (displayIdx > 0) {
+      return sorted[displayIdx - 1].originalIndex;
+    }
+    return selectedIdx;
+  }
+
+  it('navigates down through display order: running agents first, then done', () => {
+    const agents = [
+      agent('a-done', 'completed task', 'completed'),
+      agent('a-run',  'running task'),
+      agent('a-fail', 'failed task', 'failed'),
+    ];
+    // display order: running(orig:1), completed(orig:0), failed(orig:2)
+    let idx = 1; // start at running agent (display position 0)
+    idx = navigateDown(agents, idx);
+    assert.equal(idx, 0, 'should move to completed agent (orig:0, display:1)');
+    idx = navigateDown(agents, idx);
+    assert.equal(idx, 2, 'should move to failed agent (orig:2, display:2)');
+  });
+
+  it('navigates up through display order consistently', () => {
+    const agents = [
+      agent('a-done', 'completed task', 'completed'),
+      agent('a-run',  'running task'),
+      agent('a-fail', 'failed task', 'failed'),
+    ];
+    // display order: running(orig:1), completed(orig:0), failed(orig:2)
+    let idx = 2; // start at failed agent (display position 2)
+    idx = navigateUp(agents, idx);
+    assert.equal(idx, 0, 'should move to completed agent (orig:0, display:1)');
+    idx = navigateUp(agents, idx);
+    assert.equal(idx, 1, 'should move to running agent (orig:1, display:0)');
+  });
+
+  it('down then up returns to the same agent', () => {
+    const agents = [
+      agent('a-done', 'completed task', 'completed'),
+      agent('a-run1', 'running task 1'),
+      agent('a-run2', 'running task 2'),
+    ];
+    // display order: run1(orig:1), run2(orig:2), done(orig:0)
+    let idx = 1; // running task 1 (display:0)
+    idx = navigateDown(agents, idx);
+    assert.equal(idx, 2, 'down moves to run2');
+    idx = navigateUp(agents, idx);
+    assert.equal(idx, 1, 'up returns to run1');
+  });
+
+  it('stays at top when pressing up at first display item', () => {
+    const agents = [
+      agent('a-done', 'completed task', 'completed'),
+      agent('a-run',  'running task'),
+    ];
+    // display order: running(orig:1), completed(orig:0)
+    const idx = navigateUp(agents, 1);
+    assert.equal(idx, 1, 'should stay at running agent (already at display top)');
+  });
+
+  it('stays at bottom when pressing down at last display item', () => {
+    const agents = [
+      agent('a-done', 'completed task', 'completed'),
+      agent('a-run',  'running task'),
+    ];
+    // display order: running(orig:1), completed(orig:0)
+    const idx = navigateDown(agents, 0);
+    assert.equal(idx, 0, 'should stay at completed agent (already at display bottom)');
   });
 });

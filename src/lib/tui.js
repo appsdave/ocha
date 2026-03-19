@@ -226,8 +226,10 @@ export class OchaTUI {
 
     screen.key(['up'], () => {
       if (this.inputMode) return;
-      if (this.selectedIdx > 0) {
-        this.selectedIdx--;
+      const sorted = sortAgentsForDisplay(this.agents);
+      const displayIdx = sorted.findIndex(e => e.originalIndex === this.selectedIdx);
+      if (displayIdx > 0) {
+        this.selectedIdx = sorted[displayIdx - 1].originalIndex;
         this._renderAgentList();
         this._clearAndRenderLog();
         this.screen.render();
@@ -236,8 +238,10 @@ export class OchaTUI {
 
     screen.key(['down'], () => {
       if (this.inputMode) return;
-      if (this.selectedIdx < this.agents.length - 1) {
-        this.selectedIdx++;
+      const sorted = sortAgentsForDisplay(this.agents);
+      const displayIdx = sorted.findIndex(e => e.originalIndex === this.selectedIdx);
+      if (displayIdx < sorted.length - 1) {
+        this.selectedIdx = sorted[displayIdx + 1].originalIndex;
         this._renderAgentList();
         this._clearAndRenderLog();
         this.screen.render();
