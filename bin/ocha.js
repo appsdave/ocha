@@ -18,7 +18,7 @@ program
   .option('-y, --yes', 'Reinitialize even if .ocha/ already exists')
   .action(ochaInit);
 
-const cord = program.command('cord').description('Manage a coordinated multi-agent session');
+const cord = program.command('cord').description('(deprecated) Use top-level commands instead: ocha start, ocha status, ocha stop, ocha resolve');
 
 cord
   .command('start')
@@ -42,6 +42,37 @@ cord
   .action(cordStop);
 
 cord
+  .command('resolve')
+  .description('Resolve merge conflicts on a PR branch (rebase + agent)')
+  .option('-p, --pr <number>', 'PR number to resolve')
+  .option('--branch <name>', 'Branch name to resolve (alternative to --pr)')
+  .option('-b, --base-branch <branch>', 'Base branch to rebase onto', 'main')
+  .action(cordResolve);
+
+// ── Top-level commands (preferred) ──────────────────────────────────────────
+
+program
+  .command('start')
+  .description('Decompose a task and run it across parallel agents')
+  .option('-t, --task <task>', 'High-level task description')
+  .option('-b, --base-branch <branch>', 'Base git branch for worktrees', 'main')
+  .option('-n, --max-agents <n>', 'Maximum parallel agents', '3')
+  .option('-r, --repo <path...>', 'Repo path(s) to operate on (defaults to cwd)')
+  .option('--no-merge', 'Skip auto-merge after completion')
+  .action(cordStart);
+
+program
+  .command('status')
+  .description('Show current session status and task states')
+  .option('-w, --watch', 'Poll and redraw every 3 seconds until done')
+  .action(cordStatus);
+
+program
+  .command('stop')
+  .description('Stop all running agents and clean up worktrees')
+  .action(cordStop);
+
+program
   .command('resolve')
   .description('Resolve merge conflicts on a PR branch (rebase + agent)')
   .option('-p, --pr <number>', 'PR number to resolve')
