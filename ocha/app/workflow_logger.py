@@ -13,7 +13,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Sequence
+from typing import Iterator, Sequence
 
 
 # ── Log levels ────────────────────────────────────────────────────────
@@ -175,6 +175,42 @@ class WorkflowLogger:
     def prompt(self, message: str, level: LogLevel = LogLevel.INFO) -> LogEntry:
         return self.log(level, message, EventCategory.PROMPT)
 
+    # ── Filtering ─────────────────────────────────────────────────────
+
+    def filter(
+        self,
+        *,
+        level: LogLevel | None = None,
+        min_level: LogLevel | None = None,
+        category: EventCategory | None = None,
+    ) -> list[LogEntry]:
+        """Return entries matching the given filters.
+
+        *level* selects a single exact level.  *min_level* selects that
+        level and all higher-severity levels (uses the ordering
+        ``DEBUG < INFO < SUCCESS < WARNING < ERROR``).  *category*
+        restricts to a single event category.  All filters that are set
+        are combined with AND logic.
+        """
+        severity_order: list[LogLevel] = [
+            LogLevel.DEBUG,
+            LogLevel.INFO,
+            LogLevel.SUCCESS,
+            LogLevel.WARNING,
+            LogLevel.ERROR,
+        ]
+        result: list[LogEntry] = []
+        for entry in self.entries:
+            if level is not None and entry.level != level:
+                continue
+            if min_level is not None:
+                if severity_order.index(entry.level) < severity_order.index(min_level):
+                    continue
+            if category is not None and entry.category != category:
+                continue
+            result.append(entry)
+        return result
+
     # ── Bulk access ───────────────────────────────────────────────────
 
     def plain_lines(self) -> list[str]:
@@ -190,6 +226,9 @@ class WorkflowLogger:
 
     def __bool__(self) -> bool:
         return bool(self.entries)
+
+    def __iter__(self) -> Iterator[LogEntry]:
+        return iter(self.entries)
 
 
 # ── Factory helper ────────────────────────────────────────────────────

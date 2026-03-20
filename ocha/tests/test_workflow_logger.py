@@ -141,6 +141,65 @@ class TestWorkflowLogger:
         assert entry.session_id == "S-001-01"
 
 
+class TestWorkflowLoggerFilter:
+    def _populated_logger(self) -> WorkflowLogger:
+        logger = WorkflowLogger(role="lead", session_id="S-001-02")
+        logger.debug("dbg", EventCategory.SYSTEM)
+        logger.info("info-lifecycle", EventCategory.LIFECYCLE)
+        logger.success("ok-git", EventCategory.GIT)
+        logger.warning("warn-junie", EventCategory.JUNIE)
+        logger.error("err-pipeline", EventCategory.PIPELINE)
+        return logger
+
+    def test_filter_by_exact_level(self):
+        logger = self._populated_logger()
+        results = logger.filter(level=LogLevel.WARNING)
+        assert len(results) == 1
+        assert results[0].message == "warn-junie"
+
+    def test_filter_by_min_level(self):
+        logger = self._populated_logger()
+        results = logger.filter(min_level=LogLevel.WARNING)
+        assert len(results) == 2
+        levels = {e.level for e in results}
+        assert levels == {LogLevel.WARNING, LogLevel.ERROR}
+
+    def test_filter_by_category(self):
+        logger = self._populated_logger()
+        results = logger.filter(category=EventCategory.GIT)
+        assert len(results) == 1
+        assert results[0].message == "ok-git"
+
+    def test_filter_combined(self):
+        logger = self._populated_logger()
+        results = logger.filter(min_level=LogLevel.INFO, category=EventCategory.JUNIE)
+        assert len(results) == 1
+        assert results[0].message == "warn-junie"
+
+    def test_filter_no_match(self):
+        logger = self._populated_logger()
+        results = logger.filter(level=LogLevel.SUCCESS, category=EventCategory.PROMPT)
+        assert results == []
+
+    def test_filter_no_args_returns_all(self):
+        logger = self._populated_logger()
+        results = logger.filter()
+        assert len(results) == 5
+
+
+class TestWorkflowLoggerIter:
+    def test_iter_yields_entries(self):
+        logger = WorkflowLogger()
+        logger.info("a")
+        logger.info("b")
+        messages = [e.message for e in logger]
+        assert messages == ["a", "b"]
+
+    def test_iter_empty(self):
+        logger = WorkflowLogger()
+        assert list(logger) == []
+
+
 class TestMakeLogger:
     def test_factory_returns_configured_logger(self):
         legacy: deque[str] = deque(maxlen=100)

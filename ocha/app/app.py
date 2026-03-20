@@ -871,7 +871,7 @@ class OchaApp(App[None]):
         thread via ``asyncio.to_thread`` so the Textual event loop stays
         responsive while git operations execute.
         """
-        log = task_obj.workers[-1].workflow_log
+        wl = _wlog(task_obj.workers[-1])
         branch_name = OCHA_BRANCH
 
         def _run_git(*args: str, timeout: int = 30, **kwargs) -> subprocess.CompletedProcess[str]:
@@ -879,9 +879,11 @@ class OchaApp(App[None]):
                 list(args), capture_output=True, text=True, timeout=timeout, **kwargs,
             )
 
-        def _git_flow_sync() -> list[str]:
+        GitMsg = tuple[LogLevel, str]
+
+        def _git_flow_sync() -> list[GitMsg]:
             """Execute git flow in a sync context (called via to_thread)."""
-            messages: list[str] = []
+            messages: list[GitMsg] = []
             worktree_shas = [
                 w.worktree_commit_sha
                 for w in task_obj.workers
@@ -890,12 +892,12 @@ class OchaApp(App[None]):
 
             if worktree_shas:
                 merge_logs = merge_worktree_commits(worktree_shas, branch_name)
-                messages.extend(merge_logs)
+                messages.extend((LogLevel.INFO, m) for m in merge_logs)
             else:
                 current = _run_git("git", "rev-parse", "--abbrev-ref", "HEAD", timeout=5)
                 if current.returncode == 0 and current.stdout.strip() != branch_name:
                     _run_git("git", "checkout", branch_name, timeout=10)
-                messages.append(f"On branch {branch_name} (no worktree commits).")
+                messages.append((LogLevel.INFO, f"On branch {branch_name} (no worktree commits)."))
 
                 _run_git("git", "add", "-A", "--", ".", ":!.worktrees", ":!.env", timeout=10)
 
@@ -904,31 +906,34 @@ class OchaApp(App[None]):
                     commit_msg = f"ocha: {task_obj.title}"
                     commit_result = _run_git("git", "commit", "-m", commit_msg, timeout=15)
                     if commit_result.returncode == 0:
-                        messages.append(f"Committed: {commit_msg}")
+                        messages.append((LogLevel.SUCCESS, f"Committed: {commit_msg}"))
                     else:
-                        messages.append(f"Commit note: {commit_result.stdout.strip() or commit_result.stderr.strip()}")
+                        messages.append((
+                            LogLevel.WARNING,
+                            f"Commit note: {commit_result.stdout.strip() or commit_result.stderr.strip()}",
+                        ))
                 else:
-                    messages.append("No changes to commit.")
+                    messages.append((LogLevel.DEBUG, "No changes to commit."))
 
             _run_git("git", "fetch", "origin", branch_name, timeout=30)
             rebase_result = _run_git("git", "rebase", f"origin/{branch_name}", timeout=30)
             if rebase_result.returncode == 0:
-                messages.append(f"Rebased on origin/{branch_name}.")
+                messages.append((LogLevel.SUCCESS, f"Rebased on origin/{branch_name}."))
             else:
-                messages.append(f"Rebase skipped: {rebase_result.stderr.strip()}")
+                messages.append((LogLevel.WARNING, f"Rebase skipped: {rebase_result.stderr.strip()}"))
 
             push_result = _run_git("git", "push", "-u", "origin", branch_name, timeout=30)
             if push_result.returncode == 0:
-                messages.append(f"Pushed branch {branch_name} to origin.")
+                messages.append((LogLevel.SUCCESS, f"Pushed branch {branch_name} to origin."))
             else:
-                messages.append(f"Push failed: {push_result.stderr.strip()}")
+                messages.append((LogLevel.ERROR, f"Push failed: {push_result.stderr.strip()}"))
 
             # Format a clean PR title and create-or-update the PR
             pr_title = format_pr_title(task_obj.task_id, task_obj.title)
             pr_msg = ensure_pr_title(branch_name, pr_title)
-            messages.append(pr_msg)
+            messages.append((LogLevel.INFO, pr_msg))
 
-            messages.append(f"Staying on shared branch {branch_name}.")
+            messages.append((LogLevel.INFO, f"Staying on shared branch {branch_name}."))
 
             for w in task_obj.workers:
                 wt = Path(w.worktree_path)
@@ -938,14 +943,15 @@ class OchaApp(App[None]):
                     except Exception:
                         pass
             _run_git("git", "worktree", "prune", timeout=10)
-            messages.append("Cleaned up worktrees.")
+            messages.append((LogLevel.DEBUG, "Cleaned up worktrees."))
             return messages
 
         try:
             messages = await asyncio.to_thread(_git_flow_sync)
-            log.extend(messages)
+            for level, msg in messages:
+                wl.git(msg, level)
         except Exception as exc:
-            log.append(f"Git flow error: {exc}")
+            wl.git(f"Git flow error: {exc}", LogLevel.ERROR)
 
     def _sync_selection_from_sidebar(self, list_view: ListView) -> None:
         if list_view.index is None or list_view.index == self.state.selected_index:
