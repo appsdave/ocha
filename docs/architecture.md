@@ -17,6 +17,7 @@ app.py (OchaApp)
   └── workflow_logger.py (WorkflowLogger, make_logger, LogLevel, EventCategory)
 
 orchestrator.py
+  ├── file_lock.py     (acquire_lock, release_lock, validate_commit_scope)
   ├── state.py         (AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession)
   └── workflow_logger.py (make_logger, LogLevel, EventCategory)
 
@@ -39,12 +40,19 @@ OchaTask
   ├── title: str
   ├── user_task: str
   ├── branch: str            # always "agent"
-  └── workers: list[WorkerSession]
+  ├── workers: list[WorkerSession]
+  ├── status: WorkerStatus   # (property) min priority across workers
+  ├── started_at: datetime   # (property) earliest worker start
+  ├── finished_at: datetime  # (property) latest worker finish, or None
+  ├── elapsed: str           # (property) human-readable duration
+  ├── latest_event: str      # (property) most recent worker event
+  ├── summary: str           # (property) primary worker's summary
+  ├── primary_worker         # (property) worker with highest-priority status
+  └── pipeline_summary: str  # (property) role/status pairs for display
 
 WorkerSession
   ├── session_id: str        # "S-001-01"
   ├── task_id: str
-<<<<<<< HEAD
   ├── title: str
   ├── role: WorkerRole       # coordinator | lead | builder | reviewer
   ├── status: WorkerStatus   # running | completed | failed | stopped | queued
@@ -63,17 +71,6 @@ WorkerSession
   ├── retry_count: int
   ├── started_at: datetime
   └── finished_at: datetime | None
-=======
-  ├── role: WorkerRole       # coordinator | lead | builder | reviewer
-  ├── status: WorkerStatus   # running | completed | failed | stopped | queued
-  ├── worktree_path: str
-  ├── owned_directory: str
-  ├── wlog: WorkflowLogger   # structured logger
-  ├── workflow_log: deque     # legacy plain-text log
-  ├── raw_log: deque          # raw Junie output
-  ├── task_prompt: str        # full prompt sent to Junie
-  └── upstream_summary: str   # output from prior pipeline phase
->>>>>>> 388980a (ocha: coordinator S-001-01)
 ```
 
 ### Enums
@@ -166,25 +163,17 @@ OchaApp
         │     │     ├── Static.pane-title ("Tasks")
         │     │     └── ListView#workers-list
         │     │           └── WorkerListItem (per task)
-<<<<<<< HEAD
         │     │                 └── Static.worker-row
-=======
->>>>>>> 388980a (ocha: coordinator S-001-01)
         │     └── Vertical#detail-pane
         │           ├── TaskHeader#task-header (Static)
         │           └── OutputPane#output-pane (VerticalScroll)
         │                 └── Static#output-content
-<<<<<<< HEAD
         ├── HelpBar#help-bar (Static)
         └── StatusBar#status-bar (Static)
 
   Overlays (modal screens):
   ├── NewTaskOverlay → #new-task-box (TextArea + hints)
   └── KillConfirmOverlay → #kill-box (confirmation buttons)
-=======
-        ├── HelpBar#help-bar
-        └── StatusBar#status-bar
->>>>>>> 388980a (ocha: coordinator S-001-01)
 ```
 
 ## Role directory ownership
@@ -213,6 +202,30 @@ OchaApp
 | `update_repo(target)` | Fetch + hard reset + re-bootstrap; preserves `.env` |
 | `ensure_bootstrap(target)` | Create venv + `pip install -e` the project |
 | `relaunch_from_bootstrap(result)` | `os.execv` into the venv's `ocha` binary |
+
+## Key bindings
+
+| Key | Action | Method |
+|-----|--------|--------|
+| `q` | Quit | `action_quit` |
+| `↑` / `↓` | Move task selection | `action_move_up` / `action_move_down` |
+| `v` | Toggle workflow / raw log view | `action_toggle_view` |
+| `←` / `→` | Focus agents pane / output pane | `action_focus_agents` / `action_focus_output` |
+| `Tab` | Cycle focus between panes | `action_cycle_focus` |
+| `n` | Open new task overlay | `action_new_task` |
+| `c` | Clear finished tasks | `action_clear_finished` |
+| `x` | Kill selected task (with confirmation) | `action_kill_selected` |
+
+## CLI interface (cli.py)
+
+| Command | Purpose |
+|---------|---------|
+| `ocha` | Launch the TUI application (auto-bootstraps if Textual is missing) |
+| `ocha task "<prompt>"` | Create a persisted task from a prompt (accepts arg or stdin) |
+| `ocha task --json "<prompt>"` | Same, but output as JSON |
+| `ocha launch "<task>"` | Dry-run: show role-based launch specs without executing |
+| `ocha download [TARGET]` | Clone the ocha repo to `~/.ocha` and bootstrap venv |
+| `ocha update [TARGET]` | Fetch latest from origin + re-bootstrap |
 
 ## Structured logging (workflow_logger.py)
 
