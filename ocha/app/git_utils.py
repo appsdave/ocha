@@ -15,10 +15,16 @@ Solution
 2. ``merge_worktree_commits(shas, branch)`` — cherry-picks each worktree
    SHA onto the shared branch from the main repo directory, falling back to
    ``git diff | git apply`` when cherry-pick fails (e.g. overlapping edits).
+3. ``format_pr_title(task_id, title)`` — produces a clean, consistent PR
+   title from task metadata.
+4. ``ensure_pr_title(branch, title)`` — creates or updates the PR title
+   so merged PRs always look clean in the git history.
 """
 
 from __future__ import annotations
 
+import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -240,3 +246,86 @@ def merge_worktree_commits(
             )
 
     return logs
+
+
+# ── PR title formatting & renaming ────────────────────────────────────
+
+
+def format_pr_title(task_id: str, raw_title: str) -> str:
+    """Produce a clean, consistent PR title from task metadata.
+
+    Format: ``[T-001] Short capitalised description``
+
+    The function:
+    - Strips leading/trailing whitespace and trailing ellipsis (``…``).
+    - Collapses internal whitespace runs.
+    - Capitalises the first letter of the description.
+    - Prepends the task-id tag when not already present.
+    - Truncates to 72 characters (GitHub's recommended max).
+    """
+    desc = raw_title.strip().rstrip("…").rstrip(".").strip()
+    desc = re.sub(r"\s+", " ", desc)
+    if not desc:
+        desc = "Automated task"
+
+    tag = f"[{task_id}]"
+
+    # Don't double-tag if the title already contains the task id
+    if desc.upper().startswith(tag.upper()):
+        desc = desc[len(tag):].strip()
+
+    # Capitalise first letter of description
+    if desc and desc[0].islower():
+        desc = desc[0].upper() + desc[1:]
+
+    full = f"{tag} {desc}"
+    if len(full) > 72:
+        full = full[:69].rstrip() + "…"
+    return full
+
+
+def ensure_pr_title(
+    branch: str,
+    title: str,
+    *,
+    base: str = "main",
+    timeout: int = 30,
+) -> str:
+    """Create a new PR or update the existing PR's title on *branch*.
+
+    Uses the ``gh`` CLI.  Returns a human-readable status message.
+    If ``gh`` is not installed the function returns a skip message
+    without raising.
+    """
+    gh_bin = shutil.which("gh")
+    if not gh_bin:
+        return "gh CLI not found — skipping PR title update."
+
+    # Try to edit the existing PR first (most common path when agents push
+    # multiple times during a task).
+    edit = subprocess.run(
+        [gh_bin, "pr", "edit", branch, "--title", title],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if edit.returncode == 0:
+        return f"PR title updated to: {title}"
+
+    # No existing PR — create one.
+    create = subprocess.run(
+        [
+            gh_bin, "pr", "create",
+            "--title", title,
+            "--body", f"Automated PR for task {title.split(']')[0].strip('[') if ']' in title else 'ocha'}.",
+            "--base", base,
+            "--head", branch,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if create.returncode == 0:
+        return f"PR created: {create.stdout.strip()}"
+
+    return f"PR update/create note: {edit.stderr.strip()} / {create.stderr.strip()}"
