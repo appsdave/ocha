@@ -148,12 +148,12 @@ NewTaskOverlay {
     height: auto;
     border: solid #504945;
     background: #282828;
-    padding: 1 2;
+    padding: 0 1;
 }
 
 #new-task-title {
     color: #ebdbb2;
-    padding: 0 0 1 0;
+    padding: 0;
 }
 
 #new-task-box TextArea {
@@ -169,8 +169,8 @@ NewTaskOverlay {
 
 #new-task-hint {
     color: #928374;
-    padding: 1 0 0 0;
-    height: 1;
+    padding: 0;
+    height: auto;
 }
 
 /* ── Kill-confirm overlay ── */
