@@ -13,7 +13,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.git_utils import commit_worktree_changes, format_pr_title, merge_worktree_commits
+from unittest.mock import patch, MagicMock
+
+from app.git_utils import commit_worktree_changes, ensure_pr_title, format_pr_title, merge_worktree_commits
 
 
 def _init_repo(tmp: Path) -> Path:
@@ -268,6 +270,93 @@ class TestFormatPrTitle(unittest.TestCase):
     def test_already_capitalised(self) -> None:
         result = format_pr_title("T-009", "Update the README")
         self.assertEqual(result, "[T-009] Update the README")
+
+
+class TestEnsurePrTitle(unittest.TestCase):
+    """Tests for ensure_pr_title() — gh CLI interactions are mocked."""
+
+    @patch("app.git_utils.shutil.which", return_value=None)
+    def test_no_gh_cli_returns_skip(self, _which: MagicMock) -> None:
+        result = ensure_pr_title("agent", "[T-001] Fix bug")
+        self.assertIn("skipping", result.lower())
+
+    @patch("app.git_utils.subprocess.run")
+    @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
+    def test_edit_succeeds(self, _which: MagicMock, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        result = ensure_pr_title("agent", "[T-001] Fix bug")
+        self.assertIn("updated", result.lower())
+        # Should only call edit, not create
+        mock_run.assert_called_once()
+        args = mock_run.call_args[0][0]
+        self.assertIn("edit", args)
+
+    @patch("app.git_utils.subprocess.run")
+    @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
+    def test_edit_fails_then_create_succeeds(self, _which: MagicMock, mock_run: MagicMock) -> None:
+        edit_result = MagicMock(returncode=1, stdout="", stderr="no PR found")
+        create_result = MagicMock(returncode=0, stdout="https://github.com/o/r/pull/1", stderr="")
+        mock_run.side_effect = [edit_result, create_result]
+        result = ensure_pr_title("agent", "[T-001] Fix bug")
+        self.assertIn("created", result.lower())
+        self.assertEqual(mock_run.call_count, 2)
+
+    @patch("app.git_utils.subprocess.run")
+    @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
+    def test_both_fail_returns_note(self, _which: MagicMock, mock_run: MagicMock) -> None:
+        fail = MagicMock(returncode=1, stdout="", stderr="network error")
+        mock_run.return_value = fail
+        result = ensure_pr_title("agent", "[T-001] Fix bug")
+        self.assertIn("note", result.lower())
+
+    @patch("app.git_utils.subprocess.run")
+    @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
+    def test_create_uses_correct_base_branch(self, _which: MagicMock, mock_run: MagicMock) -> None:
+        edit_result = MagicMock(returncode=1, stdout="", stderr="no PR")
+        create_result = MagicMock(returncode=0, stdout="https://github.com/o/r/pull/2", stderr="")
+        mock_run.side_effect = [edit_result, create_result]
+        ensure_pr_title("agent", "[T-001] Fix", base="develop")
+        create_call_args = mock_run.call_args_list[1][0][0]
+        self.assertIn("--base", create_call_args)
+        base_idx = create_call_args.index("--base")
+        self.assertEqual(create_call_args[base_idx + 1], "develop")
+
+    @patch("app.git_utils.subprocess.run")
+    @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
+    def test_pr_body_contains_task_id(self, _which: MagicMock, mock_run: MagicMock) -> None:
+        edit_result = MagicMock(returncode=1, stdout="", stderr="no PR")
+        create_result = MagicMock(returncode=0, stdout="url", stderr="")
+        mock_run.side_effect = [edit_result, create_result]
+        ensure_pr_title("agent", "[T-042] New feature")
+        create_call_args = mock_run.call_args_list[1][0][0]
+        body_idx = create_call_args.index("--body")
+        self.assertIn("T-042", create_call_args[body_idx + 1])
+
+
+class TestFormatPrTitleEdgeCases(unittest.TestCase):
+    """Additional edge-case tests for format_pr_title."""
+
+    def test_multiple_trailing_dots_and_ellipsis(self) -> None:
+        result = format_pr_title("T-010", "fix stuff...…")
+        self.assertNotIn("…", result)
+        self.assertNotIn("...", result)
+
+    def test_title_exactly_72_chars_not_truncated(self) -> None:
+        # [T-011] = 7 chars + 1 space = 8; so desc can be 64 chars
+        desc = "A" * 64
+        result = format_pr_title("T-011", desc)
+        self.assertEqual(len(result), 72)
+        self.assertFalse(result.endswith("…"))
+
+    def test_special_characters_preserved(self) -> None:
+        result = format_pr_title("T-012", "fix `widget` & <html> encoding")
+        self.assertIn("`widget`", result)
+        self.assertIn("&", result)
+
+    def test_case_insensitive_double_tag_check(self) -> None:
+        result = format_pr_title("T-013", "[t-013] lowercase tag")
+        self.assertEqual(result.count("T-013"), 1)
+        self.assertTrue(result.startswith("[T-013]"))
 
 
 if __name__ == "__main__":

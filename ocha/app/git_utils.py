@@ -263,7 +263,9 @@ def format_pr_title(task_id: str, raw_title: str) -> str:
     - Prepends the task-id tag when not already present.
     - Truncates to 72 characters (GitHub's recommended max).
     """
-    desc = raw_title.strip().rstrip("…").rstrip(".").strip()
+    desc = raw_title.strip().rstrip("…").rstrip(".").rstrip(".").strip()
+    # Also strip trailing ASCII ellipsis (three dots)
+    desc = re.sub(r"\.{3,}$", "", desc).strip()
     desc = re.sub(r"\s+", " ", desc)
     if not desc:
         desc = "Automated task"

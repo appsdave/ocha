@@ -158,8 +158,8 @@ NewTaskOverlay {
 
 #new-task-box {
     width: 1fr;
-    max-width: 96;
-    margin: 1 2;
+    max-width: 72;
+    margin: 2 4;
     height: auto;
     border: solid #504945;
     background: #282828;
@@ -175,7 +175,7 @@ NewTaskOverlay {
     background: #3c3836;
     color: #fbf1c7;
     border: solid #504945;
-    height: 14;
+    height: 8;
     width: 1fr;
 }
 
