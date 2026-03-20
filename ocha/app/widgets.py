@@ -230,9 +230,9 @@ class MainLayout(Widget):
                 yield OutputPane(id="output-pane")
         yield HelpBar(
             "[#504945]│[/] [#fabd2f]n[/] [#ebdbb2]new[/] "
-            "[#504945]│[/] [#fabd2f]j/k[/] [#ebdbb2]move[/] "
+            "[#504945]│[/] [#fabd2f]↑/↓[/] [#ebdbb2]move[/] "
             "[#504945]│[/] [#fabd2f]v[/] [#ebdbb2]view[/] "
-            "[#504945]│[/] [#fabd2f]h/l[/] [#ebdbb2]focus[/] "
+            "[#504945]│[/] [#fabd2f]←/→[/] [#ebdbb2]focus[/] "
             "[#504945]│[/] [#fabd2f]tab[/] [#ebdbb2]cycle[/] "
             "[#504945]│[/] [#fabd2f]c[/] [#ebdbb2]clear[/] "
             "[#504945]│[/] [#fabd2f]x[/] [#ebdbb2]kill[/] "

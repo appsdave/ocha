@@ -315,11 +315,11 @@ class OchaApp(App[None]):
     CSS = CSS
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("up,k", "move_up", "Up", show=False),
-        Binding("down,j", "move_down", "Down", show=False),
+        Binding("up", "move_up", "Up", show=False),
+        Binding("down", "move_down", "Down", show=False),
         Binding("v", "toggle_view", "Toggle View"),
-        Binding("h,left", "focus_agents", "Focus Agents"),
-        Binding("l,right", "focus_output", "Focus Output"),
+        Binding("left", "focus_agents", "Focus Agents"),
+        Binding("right", "focus_output", "Focus Output"),
         Binding("n", "new_task", "New Task"),
         Binding("c", "clear_finished", "Clear Finished"),
         Binding("x", "kill_selected", "Kill Selected"),
