@@ -157,23 +157,26 @@ NewTaskOverlay {
 }
 
 #new-task-box {
-    width: 60;
+    width: 1fr;
+    max-width: 96;
+    margin: 1 2;
     height: auto;
     border: solid #504945;
     background: #282828;
-    padding: 0 1;
+    padding: 1 2;
 }
 
 #new-task-title {
     color: #ebdbb2;
-    padding: 0;
+    padding: 0 0 1 0;
 }
 
 #new-task-box TextArea {
     background: #3c3836;
     color: #fbf1c7;
     border: solid #504945;
-    height: 8;
+    height: 14;
+    width: 1fr;
 }
 
 #new-task-box TextArea:focus {
@@ -182,7 +185,7 @@ NewTaskOverlay {
 
 #new-task-hint {
     color: #928374;
-    padding: 0;
+    padding: 1 0 0 0;
     height: auto;
 }
 
