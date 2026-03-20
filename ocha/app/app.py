@@ -125,6 +125,12 @@ ListView {
         &:hover {
             background: #282828;
         }
+        &.--selected {
+            background: #3c3836;
+        }
+        &.--selected.-highlight {
+            background: #3c3836;
+        }
     }
     &:focus {
         background-tint: transparent;
@@ -133,6 +139,12 @@ ListView {
             color: #ebdbb2;
             text-style: none;
             background-tint: transparent;
+        }
+        & > ListItem.--selected {
+            background: #3c3836;
+        }
+        & > ListItem.--selected.-highlight {
+            background: #3c3836;
         }
     }
 }

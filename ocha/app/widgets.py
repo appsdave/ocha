@@ -29,17 +29,18 @@ STATUS_LABEL_COLOR = {
 class WorkerListItem(ListItem):
     def __init__(self, task: OchaTask, selected: bool = False) -> None:
         self.ocha_task = task
-        label = Static(self._format_task(task), classes="worker-row")
+        label = Static(self._format_task(task, selected=selected), classes="worker-row")
         super().__init__(label)
 
     @staticmethod
-    def _format_task(task: OchaTask) -> str:
+    def _format_task(task: OchaTask, selected: bool = False) -> str:
         icon = STATUS_ICON[task.status]
         color = STATUS_LABEL_COLOR[task.status]
         elapsed = task.elapsed
         title = task.title if len(task.title) <= 40 else task.title[:37] + "..."
+        arrow = "[#b8bb26]▶[/] " if selected else "  "
         return (
-            f"{icon} [{color}]{task.task_id}[/]  {title}\n"
+            f"{arrow}{icon} [{color}]{task.task_id}[/]  {title}\n"
             f"  [#928374]{task.branch}[/] · [{color}]{task.status.value}[/] · [#928374]{elapsed}[/]"
         )
 
@@ -49,6 +50,7 @@ class AgentsPane(Widget):
         super().__init__(**kwargs)
         self._last_task_ids: list[str] = []
         self._last_status_snap: list[tuple[str, str]] = []
+        self._last_selected_index: int | None = None
 
     def compose(self):
         yield Static("[b][#b8bb26]Tasks[/][/b]", classes="pane-title")
@@ -66,31 +68,45 @@ class AgentsPane(Widget):
         list_view = self.query_one(ListView)
         task_ids = self._structure_snapshot(state)
         status_snap = self._status_snapshot(state)
+        selected_index = state.selected_index
 
         needs_rebuild = task_ids != self._last_task_ids
+        selection_changed = selected_index != self._last_selected_index
 
         if needs_rebuild:
             # Structure changed — full rebuild required
             self._last_task_ids = task_ids
             self._last_status_snap = status_snap
+            self._last_selected_index = selected_index
             list_view.clear()
             for i, task in enumerate(state.tasks):
-                list_view.append(WorkerListItem(task, selected=(i == state.selected_index)))
-            list_view.index = state.selected_index if state.tasks else None
+                item = WorkerListItem(task, selected=(i == selected_index))
+                if i == selected_index:
+                    item.add_class("--selected")
+                list_view.append(item)
+            list_view.index = selected_index if state.tasks else None
             return
 
         # Structure same — update labels in-place to avoid flicker
-        if status_snap != self._last_status_snap:
+        children = list(list_view.children)
+        needs_label_update = status_snap != self._last_status_snap or selection_changed
+
+        if needs_label_update:
             self._last_status_snap = status_snap
-            children = list(list_view.children)
+            self._last_selected_index = selected_index
             for i, task in enumerate(state.tasks):
                 if i < len(children):
                     item = children[i]
+                    is_sel = i == selected_index
                     label_widget = item.query_one(Static)
-                    label_widget.update(WorkerListItem._format_task(task))
+                    label_widget.update(WorkerListItem._format_task(task, selected=is_sel))
+                    if is_sel:
+                        item.add_class("--selected")
+                    else:
+                        item.remove_class("--selected")
 
-        if list_view.index != state.selected_index:
-            list_view.index = state.selected_index if state.tasks else None
+        if list_view.index != selected_index:
+            list_view.index = selected_index if state.tasks else None
 
 
 class TaskHeader(Static):

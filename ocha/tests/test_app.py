@@ -148,6 +148,138 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class SelectedTaskIndicatorTests(unittest.TestCase):
+    """Verify the ▶ arrow and --selected CSS class for the active task."""
+
+    def _task(self, task_id: str, status: WorkerStatus = WorkerStatus.RUNNING) -> OchaTask:
+        return OchaTask(
+            task_id=task_id,
+            title=f"Task {task_id}",
+            user_task=f"Task {task_id}",
+            branch="agent",
+            workers=[WorkerSession(
+                session_id=f"S-{task_id[2:]}-01",
+                task_id=task_id,
+                title=f"Worker for {task_id}",
+                role=WorkerRole.COORDINATOR,
+                status=status,
+                branch="agent",
+                worktree_path=f"/tmp/{task_id.lower()}",
+                owned_directory="docs/",
+                summary="summary",
+                workflow_log=["workflow"],
+                raw_log=["raw"],
+                task_prompt="prompt",
+                role_prompt_path="app/roles/coordinator.md",
+                latest_event="done",
+            )],
+        )
+
+    def test_format_task_selected_has_arrow(self) -> None:
+        from app.widgets import WorkerListItem
+        task = self._task("T-001")
+        text = WorkerListItem._format_task(task, selected=True)
+        self.assertIn("▶", text)
+
+    def test_format_task_unselected_no_arrow(self) -> None:
+        from app.widgets import WorkerListItem
+        task = self._task("T-001")
+        text = WorkerListItem._format_task(task, selected=False)
+        self.assertNotIn("▶", text)
+
+    def test_format_task_default_is_unselected(self) -> None:
+        from app.widgets import WorkerListItem
+        task = self._task("T-001")
+        text = WorkerListItem._format_task(task)
+        self.assertNotIn("▶", text)
+
+    def test_css_contains_selected_class(self) -> None:
+        from app.app import CSS
+        self.assertIn("--selected", CSS)
+
+    def test_css_selected_has_highlight_background(self) -> None:
+        from app.app import CSS
+        self.assertIn("#3c3836", CSS)
+
+
+class SelectedTaskIndicatorAsyncTests(unittest.IsolatedAsyncioTestCase):
+    """Async tests for the ▶ arrow indicator and --selected CSS class in the running app."""
+
+    def _task(self, task_id: str, status: WorkerStatus = WorkerStatus.RUNNING) -> OchaTask:
+        return OchaTask(
+            task_id=task_id,
+            title=f"Task {task_id}",
+            user_task=f"Task {task_id}",
+            branch="agent",
+            workers=[WorkerSession(
+                session_id=f"S-{task_id[2:]}-01",
+                task_id=task_id,
+                title=f"Worker for {task_id}",
+                role=WorkerRole.COORDINATOR,
+                status=status,
+                branch="agent",
+                worktree_path=f"/tmp/{task_id.lower()}",
+                owned_directory="docs/",
+                summary="summary",
+                workflow_log=["workflow"],
+                raw_log=["raw"],
+                task_prompt="prompt",
+                role_prompt_path="app/roles/coordinator.md",
+                latest_event="done",
+            )],
+        )
+
+    async def test_selected_task_gets_selected_css_class(self) -> None:
+        from app.widgets import AgentsPane
+        app = OchaApp()
+        app.state = AppState(
+            tasks=[self._task("T-001"), self._task("T-002")],
+            selected_index=0,
+        )
+        async with app.run_test() as pilot:
+            app.refresh_from_state()
+            await pilot.pause()
+
+            list_view = app.query_one("#workers-list")
+            items = list(list_view.children)
+            self.assertTrue(items[0].has_class("--selected"))
+            self.assertFalse(items[1].has_class("--selected"))
+
+    async def test_selection_change_moves_selected_class(self) -> None:
+        app = OchaApp()
+        app.state = AppState(
+            tasks=[self._task("T-001"), self._task("T-002")],
+            selected_index=0,
+        )
+        async with app.run_test() as pilot:
+            app.refresh_from_state()
+            await pilot.pause()
+
+            # Move selection to second task
+            app.state.selected_index = 1
+            app.refresh_from_state()
+            await pilot.pause()
+
+            list_view = app.query_one("#workers-list")
+            items = list(list_view.children)
+            self.assertFalse(items[0].has_class("--selected"))
+            self.assertTrue(items[1].has_class("--selected"))
+
+    async def test_single_task_is_selected(self) -> None:
+        app = OchaApp()
+        app.state = AppState(
+            tasks=[self._task("T-001")],
+            selected_index=0,
+        )
+        async with app.run_test() as pilot:
+            app.refresh_from_state()
+            await pilot.pause()
+
+            list_view = app.query_one("#workers-list")
+            items = list(list_view.children)
+            self.assertTrue(items[0].has_class("--selected"))
+
+
 class ScrollbarHiddenCSSTests(unittest.TestCase):
     """Verify scrollbars are hidden via CSS to prevent lag while preserving scroll."""
 
