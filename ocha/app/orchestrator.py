@@ -9,6 +9,7 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Any
 
+from .file_lock import acquire_lock, release_lock, validate_commit_scope
 from .state import AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession, WorkerStatus
 from .workflow_logger import EventCategory, LogLevel, make_logger
 
@@ -219,6 +220,30 @@ def launch_task(state: AppState, user_task: str, *, project_path: Path | None = 
         logger.lifecycle(
             f"Prepared headless Junie session for {spec.role} in {spec.worktree_path}.",
         )
+
+        # Acquire file-ownership lock for this worker
+        _lock_entry, conflicts = acquire_lock(
+            repo_root,
+            spec.session_id,
+            task_id,
+            spec.role,
+            [spec.owned_directory],
+        )
+        if conflicts:
+            conflict_desc = "; ".join(
+                f"{c.holder_role}({c.holder_session_id}) holds {c.path_or_pattern}"
+                for c in conflicts
+            )
+            logger.lifecycle(
+                f"⚠ File-lock conflict detected: {conflict_desc}",
+                LogLevel.WARNING,
+            )
+        else:
+            logger.lifecycle(
+                f"Acquired file lock for {spec.owned_directory}.",
+                LogLevel.DEBUG,
+            )
+
         if status == WorkerStatus.QUEUED:
             logger.lifecycle("Queued — waiting for prior pipeline phase.", LogLevel.DEBUG)
         else:

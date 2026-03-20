@@ -828,7 +828,7 @@ class OchaApp(App[None]):
         for w in reversed(task_obj.workers):
             if w.status == WorkerStatus.COMPLETED:
                 if w.workflow_log:
-                    upstream = "\n".join(w.workflow_log[-MAX_UPSTREAM_LINES:])
+                    upstream = "\n".join(list(w.workflow_log)[-MAX_UPSTREAM_LINES:])
                 elif w.summary:
                     upstream = w.summary
                 if len(upstream) > MAX_UPSTREAM_CHARS:

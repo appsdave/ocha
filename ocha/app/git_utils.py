@@ -27,6 +27,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Sequence
 
 
 def commit_worktree_changes(
@@ -331,3 +332,88 @@ def ensure_pr_title(
         return f"PR created: {create.stdout.strip()}"
 
     return f"PR update/create note: {edit.stderr.strip()} / {create.stderr.strip()}"
+
+
+# ── Scope-validated merge helpers ─────────────────────────────────────
+
+
+def get_changed_files(
+    sha: str,
+    *,
+    repo_dir: str | Path | None = None,
+    timeout: int = 30,
+) -> list[str]:
+    """Return the list of files changed in commit *sha*.
+
+    Paths are repo-relative (e.g. ``ocha/app/state.py``).
+    """
+    cwd = str(repo_dir) if repo_dir else None
+    result = subprocess.run(
+        ["git", "diff-tree", "--no-commit-id", "-r", "--name-only", sha],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        return []
+    return [f for f in result.stdout.strip().splitlines() if f]
+
+
+def scope_validated_merge(
+    shas: list[str],
+    branch: str,
+    owned_patterns_by_sha: dict[str, Sequence[str]],
+    *,
+    repo_dir: str | Path | None = None,
+    timeout: int = 30,
+) -> list[str]:
+    """Merge worktree commits with scope validation.
+
+    Before merging each SHA, checks that the changed files fall within the
+    worker's declared ``owned_patterns``.  Out-of-scope files are logged
+    as warnings but the merge still proceeds (advisory mode).
+
+    Parameters
+    ----------
+    shas:
+        Commit SHAs to merge.
+    branch:
+        Target branch.
+    owned_patterns_by_sha:
+        Mapping from SHA → list of owned directory/glob patterns.
+    repo_dir:
+        Working directory for git commands.
+    timeout:
+        Per-command timeout in seconds.
+
+    Returns
+    -------
+    list[str]
+        Log messages including any scope violations.
+    """
+    from .file_lock import validate_commit_scope
+
+    logs: list[str] = []
+
+    # Validate scope for each SHA before merging
+    for sha in shas:
+        if not sha:
+            continue
+        patterns = owned_patterns_by_sha.get(sha, [])
+        if not patterns:
+            continue
+        changed = get_changed_files(sha, repo_dir=repo_dir, timeout=timeout)
+        violations = validate_commit_scope(changed, patterns)
+        if violations:
+            violation_list = ", ".join(violations[:5])
+            suffix = f" (+{len(violations) - 5} more)" if len(violations) > 5 else ""
+            logs.append(
+                f"⚠ Scope violation in {sha[:8]}: "
+                f"{violation_list}{suffix} outside owned {patterns}"
+            )
+
+    # Proceed with the standard merge
+    merge_logs = merge_worktree_commits(shas, branch, repo_dir=repo_dir, timeout=timeout)
+    logs.extend(merge_logs)
+    return logs
