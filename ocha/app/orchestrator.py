@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from importlib import resources
 from pathlib import Path
 from textwrap import dedent
@@ -65,7 +66,14 @@ def _strip_front_matter(text: str) -> str:
     return text[end + 3:].strip()
 
 
+@lru_cache(maxsize=1)
 def load_role_definitions() -> dict[WorkerRole, RoleDefinition]:
+    """Load and cache role prompt definitions from package resources.
+
+    Results are cached after the first call since role markdown files
+    do not change at runtime.  This avoids redundant disk I/O on every
+    task launch and pipeline advance.
+    """
     roles_package = resources.files("app.roles")
     definitions: dict[WorkerRole, RoleDefinition] = {}
     for role in WorkerRole:
