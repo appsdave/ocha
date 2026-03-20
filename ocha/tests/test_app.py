@@ -201,6 +201,40 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
         from app.app import CSS
         self.assertIn("#3c3836", CSS)
 
+    def test_format_task_selected_uses_status_color_for_pointer(self) -> None:
+        from app.widgets import WorkerListItem, STATUS_LABEL_COLOR
+        for status in WorkerStatus:
+            task = self._task("T-001", status=status)
+            text = WorkerListItem._format_task(task, selected=True)
+            color = STATUS_LABEL_COLOR[status]
+            self.assertIn(color, text, f"Selected task with {status} should use {color}")
+
+    def test_format_task_unselected_dims_title(self) -> None:
+        from app.widgets import WorkerListItem
+        task = self._task("T-001")
+        text = WorkerListItem._format_task(task, selected=False)
+        self.assertIn("#ebdbb2", text, "Unselected task title should use dimmed color")
+
+    def test_format_task_selected_brightens_title(self) -> None:
+        from app.widgets import WorkerListItem
+        task = self._task("T-001")
+        text = WorkerListItem._format_task(task, selected=True)
+        self.assertIn("#fbf1c7", text, "Selected task title should use bright color")
+
+    def test_css_contains_status_border_classes(self) -> None:
+        from app.app import CSS
+        for status_cls in ("--status-running", "--status-completed", "--status-failed",
+                           "--status-queued", "--status-stopped"):
+            self.assertIn(status_cls, CSS, f"CSS should contain {status_cls}")
+
+    def test_css_focused_selected_has_brighter_background(self) -> None:
+        from app.app import CSS
+        self.assertIn("#504945", CSS, "Focused selected items should use brighter background")
+
+    def test_css_hover_has_subtle_background(self) -> None:
+        from app.app import CSS
+        self.assertIn("#32302f", CSS, "Hover state should use subtle background highlight")
+
 
 class SelectedTaskIndicatorAsyncTests(unittest.IsolatedAsyncioTestCase):
     """Async tests for the ▶ arrow indicator and --selected CSS class in the running app."""
@@ -278,6 +312,40 @@ class SelectedTaskIndicatorAsyncTests(unittest.IsolatedAsyncioTestCase):
             list_view = app.query_one("#workers-list")
             items = list(list_view.children)
             self.assertTrue(items[0].has_class("--selected"))
+
+    async def test_selected_item_has_status_css_class(self) -> None:
+        app = OchaApp()
+        app.state = AppState(
+            tasks=[self._task("T-001", status=WorkerStatus.RUNNING)],
+            selected_index=0,
+        )
+        async with app.run_test() as pilot:
+            app.refresh_from_state()
+            await pilot.pause()
+
+            list_view = app.query_one("#workers-list")
+            items = list(list_view.children)
+            self.assertTrue(items[0].has_class("--status-running"))
+
+    async def test_status_class_updates_on_status_change(self) -> None:
+        app = OchaApp()
+        app.state = AppState(
+            tasks=[
+                self._task("T-001", status=WorkerStatus.RUNNING),
+                self._task("T-002", status=WorkerStatus.COMPLETED),
+            ],
+            selected_index=0,
+        )
+        async with app.run_test() as pilot:
+            app.refresh_from_state()
+            await pilot.pause()
+
+            list_view = app.query_one("#workers-list")
+            items = list(list_view.children)
+            self.assertTrue(items[0].has_class("--status-running"))
+            self.assertTrue(items[1].has_class("--status-completed"))
+            self.assertFalse(items[0].has_class("--status-completed"))
+            self.assertFalse(items[1].has_class("--status-running"))
 
 
 class ScrollbarHiddenCSSTests(unittest.TestCase):

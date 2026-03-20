@@ -26,6 +26,15 @@ STATUS_LABEL_COLOR = {
 }
 
 
+STATUS_CSS_CLASS = {
+    WorkerStatus.RUNNING: "--status-running",
+    WorkerStatus.COMPLETED: "--status-completed",
+    WorkerStatus.FAILED: "--status-failed",
+    WorkerStatus.STOPPED: "--status-stopped",
+    WorkerStatus.QUEUED: "--status-queued",
+}
+
+
 class WorkerListItem(ListItem):
     def __init__(self, task: OchaTask, selected: bool = False, index: int = 0, total: int = 0) -> None:
         self.ocha_task = task
@@ -34,6 +43,7 @@ class WorkerListItem(ListItem):
         super().__init__(label)
         if selected:
             self.add_class("--selected")
+        self.add_class(STATUS_CSS_CLASS[task.status])
 
     @staticmethod
     def _format_task(task: OchaTask, selected: bool = False, index: int = 0, total: int = 0) -> str:
@@ -128,6 +138,10 @@ class AgentsPane(Widget):
                         item.add_class("--selected")
                     else:
                         item.remove_class("--selected")
+                    # Sync status CSS class for border color
+                    for cls in STATUS_CSS_CLASS.values():
+                        item.remove_class(cls)
+                    item.add_class(STATUS_CSS_CLASS[task.status])
 
         if list_view.index != selected_index:
             list_view.index = selected_index

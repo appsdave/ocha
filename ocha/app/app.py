@@ -126,7 +126,7 @@ ListView {
     scrollbar-size: 0 0;
     & > ListItem {
         background: #282828;
-        color: #ebdbb2;
+        color: #a89984;
         &.-highlight {
             background: #32302f;
             color: #ebdbb2;
@@ -138,11 +138,28 @@ ListView {
         }
         &.--selected {
             background: #3c3836;
-            border-left: tall #b8bb26;
+            color: #ebdbb2;
+            border-left: tall #665c54;
         }
         &.--selected.-highlight {
             background: #3c3836;
+            color: #ebdbb2;
+            border-left: tall #665c54;
+        }
+        &.--status-running.--selected {
             border-left: tall #b8bb26;
+        }
+        &.--status-completed.--selected {
+            border-left: tall #83a598;
+        }
+        &.--status-failed.--selected {
+            border-left: tall #fb4934;
+        }
+        &.--status-queued.--selected {
+            border-left: tall #fabd2f;
+        }
+        &.--status-stopped.--selected {
+            border-left: tall #928374;
         }
     }
     &:focus {
@@ -156,12 +173,26 @@ ListView {
         }
         & > ListItem.--selected {
             background: #3c3836;
-            border-left: tall #b8bb26;
+            color: #fbf1c7;
         }
         & > ListItem.--selected.-highlight {
             background: #504945;
-            border-left: tall #b8bb26;
             color: #fbf1c7;
+        }
+        & > ListItem.--selected.--status-running {
+            border-left: tall #b8bb26;
+        }
+        & > ListItem.--selected.--status-completed {
+            border-left: tall #83a598;
+        }
+        & > ListItem.--selected.--status-failed {
+            border-left: tall #fb4934;
+        }
+        & > ListItem.--selected.--status-queued {
+            border-left: tall #fabd2f;
+        }
+        & > ListItem.--selected.--status-stopped {
+            border-left: tall #928374;
         }
     }
 }
