@@ -15,6 +15,7 @@ from .install import (
     relaunch_from_bootstrap,
     update_repo,
 )
+from .update_log import format_update_log
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -88,16 +89,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if command == "update":
             result = update_repo(resolve_target(args.target), branch=args.branch)
-            if result.changed:
-                print(f"Updated {result.target} from {result.repo_url} on {result.branch} @ {result.revision}")
-                if result.previous_revision:
-                    print(f"Previous revision: {result.previous_revision}")
-                if result.change_summary:
-                    print("Changes:")
-                    for line in result.change_summary:
-                        print(f"- {line}")
-            else:
-                print("Already up to date")
+            print(format_update_log(result))
             return 0
         if command == "launch":
             specs = build_launch_specs(args.task, project_path=Path(args.project).expanduser())

@@ -9,8 +9,8 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Any
 
-from .file_lock import acquire_lock, release_lock, validate_commit_scope
-from .state import AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession, WorkerStatus
+from .file_lock import acquire_lock, can_run_parallel, release_lock, validate_commit_scope
+from .state import AppState, ConcurrencyPolicy, ExecutionGroup, OchaTask, TaskStatus, WorkerRole, WorkerSession, WorkerStatus
 from .workflow_logger import EventCategory, LogLevel, make_logger
 
 
@@ -293,6 +293,41 @@ def summarize_task(user_task: str) -> str:
     if not normalized:
         return "Untitled task"
     return normalized[:72] + ("…" if len(normalized) > 72 else "")
+
+
+def compute_execution_plan(
+    workers: list[WorkerSession],
+    policy: ConcurrencyPolicy = ConcurrencyPolicy.AUTO,
+) -> list[ExecutionGroup]:
+    """Partition *workers* into sequential execution groups.
+
+    - ``SEQUENTIAL`` — one worker per group (current behaviour).
+    - ``PARALLEL`` — all workers in a single group (unsafe but fast).
+    - ``AUTO`` — use :func:`can_run_parallel` to group workers by
+      ownership overlap: non-conflicting workers run together, conflicting
+      workers are serialised into later groups.
+
+    Returns a list of :class:`ExecutionGroup` in execution order.
+    """
+    if policy == ConcurrencyPolicy.SEQUENTIAL:
+        return [
+            ExecutionGroup(group_index=i, worker_indices=[i])
+            for i in range(len(workers))
+        ]
+
+    if policy == ConcurrencyPolicy.PARALLEL:
+        return [ExecutionGroup(group_index=0, worker_indices=list(range(len(workers))))]
+
+    # AUTO — delegate to the graph-colouring algorithm in file_lock
+    worker_tuples = [
+        (w.session_id, w.role, [w.owned_directory])
+        for w in workers
+    ]
+    raw_groups = can_run_parallel(worker_tuples)
+    return [
+        ExecutionGroup(group_index=idx, worker_indices=indices)
+        for idx, indices in enumerate(raw_groups)
+    ]
 
 
 @dataclass(slots=True, frozen=True)

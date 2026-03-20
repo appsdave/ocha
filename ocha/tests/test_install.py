@@ -5,7 +5,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.install import InstallError, clone_repo, default_install_dir, ensure_bootstrap, resolve_project_dir, update_repo
+from app.install import (
+    FileChangeStat,
+    InstallError,
+    UpdateChangelog,
+    build_update_changelog,
+    clone_repo,
+    default_install_dir,
+    ensure_bootstrap,
+    resolve_project_dir,
+    update_repo,
+    _parse_numstat_line,
+    _parse_name_status_line,
+)
 
 
 class InstallTests(unittest.TestCase):
@@ -60,14 +72,23 @@ class InstallTests(unittest.TestCase):
             target = Path(tmpdir) / "checkout"
             (target / ".git").mkdir(parents=True)
 
+            R = type("Result", (), {})
+
+            def _make(stdout: str = ""):
+                r = R()
+                r.stdout = stdout
+                return r
+
             with patch("app.install.run_git") as run_git:
                 run_git.side_effect = [
-                    type("Result", (), {"stdout": "abc123\n"})(),
-                    None,
-                    None,
-                    None,
-                    type("Result", (), {"stdout": "git@github.com:appsdave/ocha.git\n"})(),
-                    type("Result", (), {"stdout": "abc123\n"})(),
+                    _make("abc123\n"),   # resolve_revision (before)
+                    None,                 # fetch
+                    None,                 # checkout
+                    None,                 # reset
+                    _make("git@github.com:appsdave/ocha.git\n"),  # remote get-url
+                    _make("abc123\n"),   # resolve_revision (after)
+                    # summarize_revision_range returns [] (same rev)
+                    # build_update_changelog returns empty (same rev)
                 ]
 
                 result = update_repo(target, bootstrap=False)
@@ -76,6 +97,8 @@ class InstallTests(unittest.TestCase):
         self.assertFalse(result.changed)
         self.assertEqual(result.revision, "abc123")
         self.assertEqual(result.change_summary, [])
+        self.assertIsNotNone(result.changelog)
+        self.assertEqual(result.changelog.commits, [])
         self.assertEqual(
             [call.args[0] for call in run_git.call_args_list[:4]],
             [
@@ -91,15 +114,29 @@ class InstallTests(unittest.TestCase):
             target = Path(tmpdir) / "checkout"
             (target / ".git").mkdir(parents=True)
 
+            R = type("Result", (), {})
+
+            def _make(stdout: str = ""):
+                r = R()
+                r.stdout = stdout
+                return r
+
             with patch("app.install.run_git") as run_git:
                 run_git.side_effect = [
-                    type("Result", (), {"stdout": "abc123\n"})(),
-                    None,
-                    None,
-                    None,
-                    type("Result", (), {"stdout": "git@github.com:appsdave/ocha.git\n"})(),
-                    type("Result", (), {"stdout": "def456\n"})(),
-                    type("Result", (), {"stdout": "def456 Add task model\n987abc Show update summary\n"})(),
+                    _make("abc123\n"),   # resolve_revision (before)
+                    None,                 # fetch
+                    None,                 # checkout
+                    None,                 # reset
+                    _make("git@github.com:appsdave/ocha.git\n"),  # remote get-url
+                    _make("def456\n"),   # resolve_revision (after)
+                    # summarize_revision_range
+                    _make("def456 Add task model\n987abc Show update summary\n"),
+                    # build_update_changelog: log
+                    _make("def456 Add task model\n987abc Show update summary\n"),
+                    # build_update_changelog: diff --numstat
+                    _make("10\t2\tocha/app/cli.py\n5\t0\tocha/app/new.py\n"),
+                    # build_update_changelog: diff --name-status
+                    _make("M\tocha/app/cli.py\nA\tocha/app/new.py\n"),
                 ]
 
                 result = update_repo(target, bootstrap=False)
@@ -109,6 +146,12 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(result.revision, "def456")
         self.assertEqual(result.previous_revision, "abc123")
         self.assertEqual(result.change_summary, ["def456 Add task model", "987abc Show update summary"])
+        self.assertIsNotNone(result.changelog)
+        self.assertEqual(len(result.changelog.commits), 2)
+        self.assertEqual(result.changelog.files_added, 1)
+        self.assertEqual(result.changelog.files_modified, 1)
+        self.assertEqual(result.changelog.total_insertions, 15)
+        self.assertEqual(result.changelog.total_deletions, 2)
         self.assertEqual(
             [call.args[0] for call in run_git.call_args_list[:4]],
             [
