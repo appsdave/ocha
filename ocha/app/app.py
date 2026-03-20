@@ -165,11 +165,7 @@ NewTaskOverlay {
 
 #new-task-title {
     color: #ebdbb2;
-<<<<<<< HEAD
     padding: 0;
-=======
-    padding: 0 0 0 0;
->>>>>>> 87ce2ed (ocha: coordinator S-001-01)
 }
 
 #new-task-box TextArea {
@@ -185,11 +181,7 @@ NewTaskOverlay {
 
 #new-task-hint {
     color: #928374;
-<<<<<<< HEAD
     padding: 0;
-=======
-    padding: 0 0 0 0;
->>>>>>> 87ce2ed (ocha: coordinator S-001-01)
     height: auto;
 }
 
