@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import deque
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib import resources
@@ -9,6 +10,7 @@ from textwrap import dedent
 from typing import Any
 
 from .state import AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession, WorkerStatus
+from .workflow_logger import EventCategory, LogLevel, make_logger
 
 
 SHARED_BRANCH = "agent"
@@ -211,6 +213,16 @@ def launch_task(state: AppState, user_task: str, *, project_path: Path | None = 
 
     for position, spec in enumerate(specs):
         status = WorkerStatus.RUNNING if position == 0 else WorkerStatus.QUEUED
+        workflow_log = deque(maxlen=5_000)
+        logger = make_logger(spec.role, spec.session_id, legacy_deque=workflow_log)
+        logger.prompt(f"Loaded role prompt from {spec.prompt_path}.", LogLevel.INFO)
+        logger.lifecycle(
+            f"Prepared headless Junie session for {spec.role} in {spec.worktree_path}.",
+        )
+        if status == WorkerStatus.QUEUED:
+            logger.lifecycle("Queued — waiting for prior pipeline phase.", LogLevel.DEBUG)
+        else:
+            logger.lifecycle("Waiting for orchestrator execution and streamed events.")
         task_workers.append(
             WorkerSession(
                 session_id=spec.session_id,
@@ -222,16 +234,16 @@ def launch_task(state: AppState, user_task: str, *, project_path: Path | None = 
                 worktree_path=str(spec.worktree_path),
                 owned_directory=spec.owned_directory,
                 summary=f"Prepared {spec.role} headless Junie launch from {spec.prompt_path}.",
-                workflow_log=[
-                    f"Loaded role prompt from {spec.prompt_path}.",
-                    f"Prepared headless Junie session for {spec.role} in {spec.worktree_path}.",
-                    "Waiting for orchestrator execution and streamed events.",
-                ],
-                raw_log=[
-                    f"prompt_file={spec.prompt_path}",
-                    f"junie_command={' '.join(spec.command[:-1])} <prompt>",
-                    spec.prompt,
-                ],
+                workflow_log=workflow_log,
+                raw_log=deque(
+                    [
+                        f"prompt_file={spec.prompt_path}",
+                        f"junie_command={' '.join(spec.command[:-1])} <prompt>",
+                        spec.prompt,
+                    ],
+                    maxlen=5_000,
+                ),
+                wlog=logger,
                 task_prompt=spec.prompt,
                 role_prompt_path=spec.prompt_path,
                 latest_event="launch_prepared",

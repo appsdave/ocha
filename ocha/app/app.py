@@ -18,8 +18,18 @@ from .git_utils import commit_worktree_changes, ensure_pr_title, format_pr_title
 from .orchestrator import build_role_prompt, launch_task, load_role_definitions
 from .state import AppState, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
+from .workflow_logger import EventCategory, LogLevel, WorkflowLogger, make_logger
 
 OCHA_BRANCH = "agent"
+
+
+def _wlog(worker) -> WorkflowLogger:
+    """Return the worker's structured logger, creating one on the fly if missing."""
+    if worker.wlog is None:
+        worker.wlog = make_logger(
+            worker.role, worker.session_id, legacy_deque=worker.workflow_log,
+        )
+    return worker.wlog
 
 
 # ── Gruvbox Dark Green theme ──────────────────────────────────────────
@@ -553,7 +563,10 @@ class OchaApp(App[None]):
                     _kill_process_tree(proc)
                 from datetime import datetime
                 worker.finished_at = datetime.now()
-                worker.workflow_log.append(f"Killed by operator at {worker.finished_at:%H:%M:%S}.")
+                _wlog(worker).lifecycle(
+                    f"Killed by operator at {worker.finished_at:%H:%M:%S}.",
+                    LogLevel.WARNING,
+                )
                 worker.summary = "Killed by operator."
                 killed_count += 1
         self.refresh_from_state()
@@ -618,12 +631,12 @@ class OchaApp(App[None]):
                     capture_output=True, text=True, timeout=30,
                 )
             if result.returncode == 0:
-                worker.workflow_log.append(f"Created worktree at {wt}.")
+                _wlog(worker).git(f"Created worktree at {wt}.", LogLevel.SUCCESS)
                 return True
-            worker.workflow_log.append(f"Worktree creation failed: {result.stderr.strip()}")
+            _wlog(worker).git(f"Worktree creation failed: {result.stderr.strip()}", LogLevel.ERROR)
             return False
         except Exception as exc:
-            worker.workflow_log.append(f"Worktree error: {exc}")
+            _wlog(worker).git(f"Worktree error: {exc}", LogLevel.ERROR)
             return False
 
     def _write_prompt_file(self, worker) -> Path:
@@ -678,8 +691,9 @@ class OchaApp(App[None]):
             task_text = prompt_file.read_text(encoding="utf-8")
             if len(task_text.encode("utf-8")) > MAX_TASK_BYTES:
                 task_text = task_text[:MAX_TASK_BYTES].rsplit("\n", 1)[0]
-                worker.workflow_log.append(
-                    f"Prompt truncated to ~{MAX_TASK_BYTES // 1000} KB to stay within Junie limits."
+                _wlog(worker).prompt(
+                    f"Prompt truncated to ~{MAX_TASK_BYTES // 1000} KB to stay within Junie limits.",
+                    LogLevel.WARNING,
                 )
                 prompt_file.write_text(task_text, encoding="utf-8")
 
@@ -706,7 +720,7 @@ class OchaApp(App[None]):
             proc.stdin.write_eof()
             self._running_procs[worker.session_id] = proc
 
-            worker.workflow_log.append(f"Started junie process (PID {proc.pid}).")
+            _wlog(worker).junie(f"Started junie process (PID {proc.pid}).")
             worker.latest_event = "junie_started"
             self.refresh_from_state()
 
@@ -714,7 +728,7 @@ class OchaApp(App[None]):
                 line = raw_line.decode(errors="replace").rstrip()
                 worker.raw_log.append(line)
                 if line:
-                    worker.workflow_log.append(line)
+                    _wlog(worker).junie(line, LogLevel.DEBUG)
                     worker.latest_event = line[:80]
                     self.refresh_from_state()
 
@@ -723,10 +737,11 @@ class OchaApp(App[None]):
 
             from datetime import datetime
             worker.finished_at = datetime.now()
+            wl = _wlog(worker)
             if rc == 0:
                 worker.status = WorkerStatus.COMPLETED
                 worker.summary = "Junie session completed successfully."
-                worker.workflow_log.append("Session completed.")
+                wl.lifecycle("Session completed.", LogLevel.SUCCESS)
                 # Commit changes inside the worktree so they are reachable
                 try:
                     sha = commit_worktree_changes(
@@ -735,15 +750,15 @@ class OchaApp(App[None]):
                     )
                     if sha:
                         worker.worktree_commit_sha = sha
-                        worker.workflow_log.append(f"Worktree committed: {sha[:8]}")
+                        wl.git(f"Worktree committed: {sha[:8]}", LogLevel.SUCCESS)
                     else:
-                        worker.workflow_log.append("Worktree clean — nothing to commit.")
+                        wl.git("Worktree clean — nothing to commit.", LogLevel.DEBUG)
                 except Exception as commit_exc:
-                    worker.workflow_log.append(f"Worktree commit error: {commit_exc}")
+                    wl.git(f"Worktree commit error: {commit_exc}", LogLevel.ERROR)
             else:
                 worker.status = WorkerStatus.FAILED
                 worker.summary = f"Junie exited with code {rc}."
-                worker.workflow_log.append(f"Session failed (exit code {rc}).")
+                wl.lifecycle(f"Session failed (exit code {rc}).", LogLevel.ERROR)
 
             self.refresh_from_state()
             # Advance pipeline: start next queued worker in this task
@@ -754,7 +769,7 @@ class OchaApp(App[None]):
             worker.finished_at = datetime.now()
             worker.status = WorkerStatus.FAILED
             worker.summary = f"Error: {exc}"
-            worker.workflow_log.append(f"Error launching junie: {exc}")
+            _wlog(worker).junie(f"Error launching junie: {exc}", LogLevel.ERROR)
             self._advance_pipeline(task_obj)
 
     def _advance_pipeline(self, task_obj) -> None:
@@ -795,31 +810,34 @@ class OchaApp(App[None]):
             # All done — summarize
             completed = sum(1 for w in task_obj.workers if w.status == WorkerStatus.COMPLETED)
             failed = sum(1 for w in task_obj.workers if w.status == WorkerStatus.FAILED)
-            task_obj.workers[-1].workflow_log.append(
-                f"Pipeline finished — {completed} completed, {failed} failed."
+            level = LogLevel.SUCCESS if failed == 0 else LogLevel.WARNING
+            _wlog(task_obj.workers[-1]).pipeline(
+                f"Pipeline finished — {completed} completed, {failed} failed.",
+                level,
             )
             # Run the branch/push/PR process
             self.run_worker(self._post_pipeline_git_flow(task_obj))
             return
 
         # Inject upstream output into the next worker's prompt
+        nwl = _wlog(next_worker)
         if upstream:
             next_worker.upstream_summary = upstream
             next_worker.task_prompt = self._rebuild_prompt_with_upstream(
                 next_worker, task_obj, upstream,
             )
-            next_worker.workflow_log.append(
-                f"Received upstream output from prior phase ({len(upstream)} chars)."
+            nwl.pipeline(
+                f"Received upstream output from prior phase ({len(upstream)} chars).",
             )
 
         # Advance this worker to running and spawn junie
         next_worker.status = WorkerStatus.RUNNING
-        next_worker.workflow_log.append(f"Pipeline advanced — starting {next_worker.role}.")
+        nwl.pipeline(f"Pipeline advanced — starting {next_worker.role}.")
         junie_bin = shutil.which("junie")
         if not junie_bin:
             next_worker.status = WorkerStatus.FAILED
             next_worker.summary = "junie CLI not found"
-            next_worker.workflow_log.append("junie CLI not found on PATH.")
+            nwl.junie("junie CLI not found on PATH.", LogLevel.ERROR)
             return
         self.run_worker(self._run_junie_for_worker(next_worker, task_obj, self._load_junie_api_key()))
 
