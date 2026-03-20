@@ -11,7 +11,7 @@ import unittest
 from collections import deque
 
 from app.orchestrator import load_role_definitions
-from app.state import LOG_BUFFER_MAX, OchaTask, OutputMode, WorkerRole, WorkerSession, WorkerStatus
+from app.state import MAX_LOG_LINES, OchaTask, OutputMode, WorkerRole, WorkerSession, WorkerStatus
 
 
 def _make_worker(**overrides) -> WorkerSession:
@@ -70,20 +70,20 @@ class TestDequeLogBuffers(unittest.TestCase):
 
     def test_workflow_log_has_maxlen(self) -> None:
         w = _make_worker()
-        self.assertEqual(w.workflow_log.maxlen, LOG_BUFFER_MAX)
+        self.assertEqual(w.workflow_log.maxlen, MAX_LOG_LINES)
 
     def test_raw_log_has_maxlen(self) -> None:
         w = _make_worker()
-        self.assertEqual(w.raw_log.maxlen, LOG_BUFFER_MAX)
+        self.assertEqual(w.raw_log.maxlen, MAX_LOG_LINES)
 
     def test_deque_drops_oldest_when_full(self) -> None:
         w = _make_worker()
-        for i in range(LOG_BUFFER_MAX + 100):
+        for i in range(MAX_LOG_LINES + 100):
             w.workflow_log.append(f"line-{i}")
-        self.assertEqual(len(w.workflow_log), LOG_BUFFER_MAX)
+        self.assertEqual(len(w.workflow_log), MAX_LOG_LINES)
         # Oldest lines should have been evicted
         self.assertEqual(w.workflow_log[0], "line-100")
-        self.assertEqual(w.workflow_log[-1], f"line-{LOG_BUFFER_MAX + 99}")
+        self.assertEqual(w.workflow_log[-1], f"line-{MAX_LOG_LINES + 99}")
 
     def test_append_works_normally_under_limit(self) -> None:
         w = _make_worker()

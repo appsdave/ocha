@@ -4,10 +4,6 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
-from typing import Sequence
-
-
-LOG_BUFFER_MAX = 5000
 
 
 # Maximum number of log lines retained per worker to bound memory usage.
