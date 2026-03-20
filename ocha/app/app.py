@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 import shutil
 import subprocess
 from pathlib import Path
@@ -283,6 +284,31 @@ class KillConfirmOverlay(ModalScreen[bool]):
         self.dismiss(False)
 
 
+def _kill_process_tree(proc: asyncio.subprocess.Process) -> None:
+    """Kill a subprocess and all of its descendants.
+
+    When ``start_new_session=True`` was used to spawn the process, every
+    child (including Java processes started by Junie) shares the same
+    session-id.  Sending SIGKILL to the negative PID kills the entire
+    process group so nothing is left behind consuming RAM/swap.
+
+    Falls back to killing just the direct process when the group signal
+    fails (e.g. the process already exited).
+    """
+    pid = proc.pid
+    if pid is None:
+        return
+    try:
+        # Kill the entire process group rooted at the session leader.
+        os.killpg(os.getpgid(pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        # Process (group) already gone or we lack permissions — try direct kill.
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+
+
 class OchaApp(App[None]):
     TITLE = "ocha"
     SUB_TITLE = "Python/Textual rebuild"
@@ -310,14 +336,12 @@ class OchaApp(App[None]):
         yield MainLayout()
 
     async def on_unmount(self) -> None:
-        """Terminate all running subprocesses so transports are cleaned up
-        before the event loop closes (avoids 'Event loop is closed' errors)."""
+        """Terminate all running subprocesses and their entire process trees
+        before the event loop closes (avoids 'Event loop is closed' errors
+        and prevents leaked Java/child processes from consuming RAM)."""
         for proc in list(self._running_procs.values()):
             if proc.returncode is None:
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
+                _kill_process_tree(proc)
         for proc in list(self._running_procs.values()):
             try:
                 await proc.wait()
@@ -488,13 +512,10 @@ class OchaApp(App[None]):
         for worker in task.workers:
             if worker.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED):
                 worker.status = WorkerStatus.STOPPED
-                # Kill the actual junie process if running
+                # Kill the actual junie process and all its children (e.g. Java)
                 proc = self._running_procs.pop(worker.session_id, None)
                 if proc and proc.returncode is None:
-                    try:
-                        proc.terminate()
-                    except ProcessLookupError:
-                        pass
+                    _kill_process_tree(proc)
                 from datetime import datetime
                 worker.finished_at = datetime.now()
                 worker.workflow_log.append(f"Killed by operator at {worker.finished_at:%H:%M:%S}.")
@@ -641,6 +662,7 @@ class OchaApp(App[None]):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
+                start_new_session=True,
             )
 
             # Feed the task via stdin to avoid CLI arg-length and
