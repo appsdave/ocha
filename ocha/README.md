@@ -1,18 +1,16 @@
-# ocha Documentation Notes
+# ocha
 
-This folder is a concept-focused explanation of what `ocha` does today and how its terminal UI works.
+A Python/Textual TUI for orchestrating multiple Junie coding agents against one git repository.
 
-## Python rebuild command surface
+## Quick start
 
-### First-time install for a brand-new user
-
-The new bootstrap flow is a true one-line installer:
+### One-line install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/appsdave/ocha/main/install.sh | bash
 ```
 
-That installer will:
+The installer will:
 
 - install missing system prerequisites with `apt` when available (`git`, `python3`, `python3-pip`, `python3-venv`)
 - clone this repo into `~/.ocha`
@@ -20,243 +18,45 @@ That installer will:
 - install the Python app from the repo's `ocha/` project directory
 - symlink `~/.local/bin/ocha` to the managed launcher
 
-After that, the normal commands are:
+After that:
 
 ```bash
-ocha
-ocha update
+ocha          # launch the TUI dashboard
+ocha update   # pull latest changes and refresh the runtime
 ```
 
-If `~/.local/bin` is not already on `PATH`, add it in your shell profile:
+If `~/.local/bin` is not on `PATH`, add it to your shell profile:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-The current Python/Textual rebuild now ships a small command surface behind `ocha`:
+## Command surface
 
-- `ocha` — launch the Textual dashboard
-- `ocha download [target]` — clone the canonical repo into `~/.ocha` and install its runtime dependencies
-- `ocha update [target]` — fast-forward an existing `~/.ocha` install from `origin/main` and refresh dependencies
-- `ocha task <prompt>` — create a new task from a prompt (also accepts stdin)
-- `ocha launch <task>` — preview generated role-based headless Junie launches without opening the TUI
+| Command | Description |
+|---------|-------------|
+| `ocha` | Launch the Textual dashboard |
+| `ocha download [target]` | Clone the canonical repo into `~/.ocha` and install its runtime |
+| `ocha update [target]` | Fast-forward an existing `~/.ocha` install from `origin/main` and refresh dependencies |
+| `ocha task <prompt>` | Create a new task from a prompt (also accepts stdin) |
+| `ocha launch <task>` | Preview generated role-based headless Junie launches without opening the TUI |
 
-If no target is provided for `download` or `update`, `ocha` uses `~/.ocha`.
+If no target is provided for `download` or `update`, ocha defaults to `~/.ocha`.
 
-The intended install model is self-managed: the `ocha` command keeps its checked-out project and virtual environment under `~/.ocha`, and first-run/bootstrap setup prepares the needed dependencies there. The repository checkout lives in `~/.ocha`, while the Python package itself is installed from `~/.ocha/ocha`.
-
-## What ocha is
-
-`ocha` is a Node.js CLI/TUI for orchestrating multiple Junie coding agents against one git repository.
-
-At a high level, it does this:
-
-1. You enter one high-level task in the TUI.
-2. A **coordinator** enhances that task with project context.
-3. A **lead agent** breaks the task into smaller builder tasks.
-4. Each builder task runs in its own **isolated git worktree** while sharing the same repo branch model.
-5. A **reviewer agent** checks each builder result.
-6. The result is synchronized carefully so parallel worktrees do not step on each other.
-
-That means `ocha` is really two things at once:
-
-- a **workflow engine** for multi-agent coding
-- a **terminal dashboard** for watching and controlling that workflow
-
-## Current runtime stack
-
-- CLI parsing: `commander`
-- TUI rendering: `blessed`
-- styling/output: `chalk`
-- spinners: `ora`
-- language/runtime: Node.js
-
-Main entrypoint:
-
-- `bin/ocha.js`
-
-Main implementation areas:
-
-- `src/lib/tui.js` — TUI shell behavior
-- `src/lib/tui-layout.js` — TUI widget layout
-- `src/lib/tui-agents.js` — agent spawning and persisted state
-- `src/lib/coordinator.js` — orchestration pipeline
-- `src/lib/lead.js` — task planning and work allocation
-- `src/lib/worktree.js` — isolated worktree lifecycle
-
-## The concept of how the TUI works
-
-The current TUI is not a text editor. It is closer to a lightweight operations console.
-
-Its job is to let you:
-
-- submit a new high-level task
-- see all spawned agent sessions in one place
-- inspect the selected task's state and output
-- switch between a simplified workflow summary and raw logs
-- kill or clear finished agents
-
-### Layout model
-
-The screen is split into 4 functional areas:
-
-1. **Left sidebar: Agents list**
-   - shows all known agent sessions
-   - shows status badges like running, completed, failed, stopped
-   - keeps the selected agent highlighted
-
-2. **Top-right: Task header**
-   - shows the selected task title
-   - shows branch/state context
-   - shows pipeline progress in a compact form
-
-3. **Bottom-right: Output pane**
-   - shows either a workflow-style summary or raw logs
-   - includes completion summaries with branch, duration, and PR link
-   - is intentionally wrapped/structured so long lines do not bleed across the UI
-
-4. **Bottom bars**
-   - hint bar for keybindings
-   - status bar for task counts and selected branch/session info
-
-### Interaction model
-
-The TUI is keyboard-first.
-
-Current keybindings in the code:
-
-- `n` — open new task prompt (multi-line editor)
-- `↑` / `↓` / `j` / `k` — move through tasks
-- `x` — kill selected task
-- `c` — clear completed / failed / stopped tasks
-- `v` — toggle workflow view vs raw log view
-- `h` / `←` — focus left pane (agents)
-- `l` / `→` — focus right pane (output)
-- `Tab` — cycle focus between panes
-- `q` — quit
-
-Inside the task prompt (multi-line `TextArea`):
-
-- `Enter` — insert newline
-- `Ctrl+S` — submit task
-- `Esc` — cancel without creating a task
-
-Submitting a prompt creates a four-phase pipeline: coordinator → lead → builder → reviewer. Each phase runs as a headless Junie session with a role-specific markdown prompt. The operator prompt is persisted to `.ocha/tasks/T-NNN/prompt.md` for crash recovery and audit.
-
-### Why the interface feels structured
-
-The TUI works because it deliberately separates three ideas:
-
-- **task selection** on the left
-- **task metadata** on the top-right
-- **task output** on the bottom-right
-
-That separation keeps the right side readable instead of mixing title, state, and logs into one scrolling wall.
-
-The code also explicitly wraps text and strips ANSI noise before rendering summaries, which is why the interface aims to avoid text bleeding and messy overflow.
-
-## The concept of the orchestration pipeline
-
-Internally, each task moves through a fixed mental model:
-
-1. **Coordinator**
-   - accepts the original user task
-   - gathers repo context
-   - enhances the prompt
-
-2. **Lead**
-   - reads the enhanced task
-   - plans subtasks
-   - assigns subtasks to separate worktrees and preferably separate repo areas
-   - assigns subtasks to separate worktrees and preferably separate repo areas
-
-3. **Builder**
-   - runs in an isolated worktree
-   - makes code/doc/test changes
-
-4. **Reviewer**
-   - runs after the builder in the same isolated worktree
-   - checks the builder output
-
-5. **Sync / push**
-   - each task still works from its own isolated worktree
-   - all worktrees share the single `agent` branch rather than splitting into branch-per-agent workflows
-   - agents should fetch/rebase against the latest `agent` branch state before pushing
-   - conflict avoidance should come primarily from worktree isolation plus task/directory separation
-
-6. **Cleanup**
-   - worktrees are removed after success or stop/cleanup
-
-## Why worktrees matter
-
-The core design choice is isolation.
-
-Every task is supposed to be isolated in its own worktree so that:
-
-- tasks do not overwrite each other
-- agents can run in parallel safely
-- merge conflicts are reduced
-- each result can be reviewed independently
-
-In the branch model described by these notes, the important isolation boundary is the worktree, not a separate branch per agent. The intended idea is one shared branch line with multiple worktrees, while the orchestrator tries to keep agents on different files or directories and rebases before pushing when needed.
-
-So the TUI is really visualizing a queue of isolated worktrees, not just a queue of logs.
-
-## What makes this different from a normal CLI
-
-A normal CLI would run a command, print logs, and exit.
-
-`ocha` instead keeps an always-on session model:
-
-- agent state is persisted
-- tasks can be reloaded into the UI
-- the operator can watch long-running work as it happens
-- the operator can manage multiple agent runs from one screen
-
-That is the main concept: **one operator console for many isolated agent worktrees**.
-
-## Related notes in this folder
-
-- `ocha/python-textual-rebuild.md` — concept for rebuilding the same experience in Python with Textual
-- `ocha/junie-headless-sessions.md` — concept for how `ocha` launches and manages headless Junie worker sessions
-
-## Headless Junie role prompts
-
-The Python rebuild now ships markdown role files in `app/roles/`:
-
-- `coordinator.md`
-- `lead.md`
-- `builder.md`
-- `reviewer.md`
-
-When a new task is launched, `ocha` loads the matching markdown file for each role, appends runtime context like `task_id`, `session_id`, `project_path`, `worktree_path`, `owned_directory`, and the shared branch `agent`, then builds the headless Junie invocation.
-
-The current command shape is:
+### Task creation examples
 
 ```bash
-junie --project /path/to/project --session-id S-001-01 --output-format text --task "<role markdown + runtime context + operator task>"
-```
-
-You can preview the generated role-based launches without opening the TUI:
-
-```bash
-ocha launch "finish building the app with role markdown prompts"
-```
-
-That prints the coordinator/lead/builder/reviewer worktree targets plus the headless `junie` command shape `ocha` will use for each session.
-
-### Prompt-based task creation
-
-The `ocha task` command is the primary CLI entry-point for creating tasks from a prompt:
-
-```bash
+# Direct prompt
 ocha task "Ship prompt based task creation"
-```
 
-You can also pipe a prompt via stdin:
-
-```bash
+# Pipe via stdin
 echo "Fix the login bug" | ocha task
+
+# Specify project root
+ocha task "Add dark mode" --project ~/src/myapp
+
+# JSON output
+ocha task "Refactor auth module" --json
 ```
 
 This will:
@@ -264,10 +64,234 @@ This will:
 1. Persist the prompt to `.ocha/tasks/T-NNN/prompt.md`
 2. Write a `status.json` marker (initially `pending`)
 3. Build launch specs for all four roles (coordinator, lead, builder, reviewer)
-4. Print a summary with the task ID, title, and worker session targets
+4. Write per-session prompt files for each worker
+5. Print a summary with the task ID, title, and worker session targets
 
-The `--project` flag sets the project root (defaults to `.`):
+## What ocha does
+
+At a high level:
+
+1. You enter one high-level task (via the TUI or `ocha task`).
+2. A **coordinator** enhances that task with project context.
+3. A **lead agent** breaks the task into smaller builder tasks.
+4. Each builder task runs in its own **isolated git worktree** while sharing a single `agent` branch.
+5. A **reviewer agent** checks each builder result.
+6. Results are committed per-worktree, cherry-picked onto the shared branch, rebased, and pushed.
+
+That makes ocha two things at once:
+
+- a **workflow engine** for multi-agent coding
+- a **terminal dashboard** for watching and controlling that workflow
+
+## Runtime stack
+
+| Layer | Technology |
+|-------|------------|
+| Language | Python ≥ 3.11 |
+| TUI framework | [Textual](https://textual.textualize.io/) ≥ 0.58 |
+| Build system | setuptools ≥ 68 |
+| Entry point | `app.__main__:main` |
+| Theme | Gruvbox Dark Green |
+
+## Project layout
+
+```
+ocha/
+├── pyproject.toml              # Package metadata and dependencies
+├── README.md                   # This file
+├── app/
+│   ├── __init__.py
+│   ├── __main__.py             # Entry point (delegates to cli.main)
+│   ├── app.py                  # OchaApp — Textual application, CSS, overlays,
+│   │                           #   Junie process spawning, pipeline advancement,
+│   │                           #   post-pipeline git flow (commit/rebase/push/PR)
+│   ├── cli.py                  # CLI argument parser and command dispatch
+│   ├── git_utils.py            # Worktree commit, cherry-pick/merge, PR title formatting
+│   ├── install.py              # Clone, update, bootstrap, and venv management
+│   ├── orchestrator.py         # Role prompt loading, launch spec building, task creation
+│   ├── state.py                # Data models: AppState, OchaTask, WorkerSession, enums
+│   ├── widgets.py              # TUI widgets: AgentsPane, TaskHeader, OutputPane,
+│   │                           #   StatusBar, HelpBar, MainLayout
+│   ├── workflow_logger.py      # Structured logging: LogEntry, WorkflowLogger, levels/categories
+│   └── roles/
+│       ├── coordinator.md      # Coordinator role prompt
+│       ├── lead.md             # Lead role prompt
+│       ├── builder.md          # Builder role prompt
+│       └── reviewer.md         # Reviewer role prompt
+├── tests/
+│   ├── test_app.py
+│   ├── test_cli.py
+│   ├── test_git_utils.py
+│   ├── test_install.py
+│   ├── test_orchestrator.py
+│   ├── test_performance.py
+│   └── test_workflow_logger.py
+├── python-textual-rebuild.md   # Design notes for the Python/Textual rebuild
+└── junie-headless-sessions.md  # Design notes for headless Junie session management
+```
+
+## TUI layout
+
+The dashboard is a keyboard-first operations console split into four areas:
+
+```
+┌──────────────────┬─────────────────────────────────────┐
+│  Agents sidebar   │  Task header                        │
+│  (task list with  │  (selected task ID, status, branch, │
+│   status badges)  │   elapsed, pipeline visualization)  │
+│                   ├─────────────────────────────────────┤
+│                   │  Output pane                        │
+│                   │  (workflow log or raw log view,     │
+│                   │   color-coded by role)              │
+├───────────────────┴─────────────────────────────────────┤
+│  Help bar (keybindings)                                 │
+├─────────────────────────────────────────────────────────┤
+│  Status bar (counts, selected task, branch, view mode)  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Keybindings
+
+| Key | Action |
+|-----|--------|
+| `n` | Open new task prompt (multi-line editor) |
+| `↑` / `↓` | Move through tasks |
+| `x` | Kill selected task (with confirmation) |
+| `c` | Clear completed / failed / stopped tasks |
+| `v` | Toggle workflow view ↔ raw log view |
+| `h` / `←` | Focus agents sidebar |
+| `l` / `→` | Focus output pane |
+| `Tab` | Cycle focus between panes |
+| `q` | Quit |
+
+Inside the new task overlay:
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Insert newline |
+| `Ctrl+S` | Submit task |
+| `Esc` | Cancel |
+
+## Orchestration pipeline
+
+Each task moves through a fixed four-phase pipeline:
+
+### 1. Coordinator
+
+- Accepts the original user task
+- Gathers repo context
+- Enhances the prompt
+- Owned directory: `docs/`
+
+### 2. Lead
+
+- Reads the enhanced task
+- Plans subtasks
+- Assigns subtasks to separate worktrees and preferably separate repo areas
+- Owned directory: `planning/`
+
+### 3. Builder
+
+- Runs in an isolated worktree
+- Makes code/doc/test changes
+- Owned directory: `app/`
+
+### 4. Reviewer
+
+- Runs after the builder in the same isolated worktree
+- Checks the builder output
+- Owned directory: `app/`
+
+### Pipeline mechanics
+
+- Each phase runs as a headless Junie session with a role-specific markdown prompt
+- When a phase completes, the orchestrator captures its output summary and injects it into the next phase's prompt as `upstream_output`
+- Upstream output is capped at 20 lines / 4 KB to stay within Junie's parser limits
+- Prompts exceeding 32 KB are truncated before being sent to Junie
+
+### Junie invocation
+
+The task prompt is fed via stdin to avoid shell arg-length limits:
 
 ```bash
-ocha task "Add dark mode" --project ~/src/myapp
+junie --auth=<key> --project <worktree_path> --output-format text < prompt.md
 ```
+
+Preview what ocha will launch without starting the TUI:
+
+```bash
+ocha launch "finish building the app with role markdown prompts"
+```
+
+### Headless Junie role prompts
+
+Role markdown files live in `app/roles/`:
+
+- `coordinator.md`
+- `lead.md`
+- `builder.md`
+- `reviewer.md`
+
+When a new task is launched, ocha loads the matching markdown file for each role, appends runtime context (`task_id`, `session_id`, `project_path`, `worktree_path`, `owned_directory`, branch `agent`), and builds the headless Junie invocation.
+
+## Git workflow
+
+### Branch model
+
+All worktrees share a single `agent` branch — there is no branch-per-agent complexity.
+
+### Worktree isolation
+
+Every task worker gets its own git worktree so that:
+
+- tasks do not overwrite each other
+- agents can run in parallel safely
+- merge conflicts are reduced
+- each result can be reviewed independently
+
+The TUI is really visualizing a queue of isolated worktrees, not just a queue of logs.
+
+### Post-pipeline sync
+
+After all workers finish, ocha runs an automated git flow:
+
+1. **Commit** — each worker's changes are committed inside its worktree during execution
+2. **Cherry-pick** — worktree commits are cherry-picked onto the `agent` branch (falls back to `git diff | git apply` on conflict)
+3. **Rebase** — `agent` is rebased on `origin/agent`
+4. **Push** — the branch is pushed to origin
+5. **PR** — a pull request is created or updated via `gh` CLI with a formatted title `[T-001] Task description`
+6. **Cleanup** — worktrees are removed and pruned
+
+## Structured workflow logging
+
+The `WorkflowLogger` provides timestamped, levelled, categorised log entries for each worker:
+
+**Log levels:** `DEBUG` · `INFO` · `SUCCESS` · `WARNING` · `ERROR`
+
+**Event categories:** `lifecycle` · `pipeline` · `git` · `junie` · `prompt` · `system`
+
+Each entry renders as both plain text (for raw mode) and Rich markup (for the TUI workflow view), with Gruvbox-themed colors and category icons.
+
+## Install model
+
+The intended install model is self-managed:
+
+- The repository checkout lives in `~/.ocha`
+- A virtual environment is maintained at `~/.ocha/.venv`
+- The Python package is installed in editable mode from `~/.ocha/ocha`
+- The launcher at `~/.local/bin/ocha` points into the venv
+- `ocha update` pulls latest changes and refreshes the venv
+- The `.env` file (containing `JUNIE_API_KEY`) is preserved across updates
+
+## Environment
+
+ocha looks for `JUNIE_API_KEY` in:
+
+1. The `JUNIE_API_KEY` environment variable
+2. A `.env` file in the current directory
+3. `~/.ocha/.env`
+
+## Related design notes
+
+- `python-textual-rebuild.md` — concept for rebuilding the experience in Python with Textual
+- `junie-headless-sessions.md` — concept for how ocha launches and manages headless Junie worker sessions
