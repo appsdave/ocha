@@ -57,6 +57,7 @@ class WorkerSession:
     task_prompt: str = ""
     role_prompt_path: str = ""
     upstream_summary: str = ""
+    worktree_commit_sha: str | None = None
     latest_event: str = ""
     retry_count: int = 0
     started_at: datetime = field(default_factory=datetime.now)
