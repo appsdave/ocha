@@ -53,7 +53,7 @@ Screen {
 
 #task-header {
     height: auto;
-    max-height: 12;
+    max-height: 14;
     border: solid #504945;
     padding: 0 1;
     background: #282828;
@@ -128,9 +128,11 @@ ListView {
         }
         &.--selected {
             background: #3c3836;
+            border-left: tall #b8bb26;
         }
         &.--selected.-highlight {
             background: #3c3836;
+            border-left: tall #b8bb26;
         }
     }
     &:focus {
@@ -467,7 +469,9 @@ class OchaApp(App[None]):
         try:
             self.query_one(AgentsPane).load(self.state)
             selected = self.state.selected_task
-            self.query_one(TaskHeader).update_task(selected)
+            total = len(self.state.tasks)
+            position = f"{self.state.selected_index + 1}/{total}" if total > 0 else ""
+            self.query_one(TaskHeader).update_task(selected, position=position)
             self.query_one(OutputPane).update_task(selected, self.state.output_mode)
             self.query_one(StatusBar).update_state(self.state)
         except Exception:
