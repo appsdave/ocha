@@ -54,10 +54,10 @@ class WorkerListItem(ListItem):
         position = f"{index + 1}/{total}" if total > 0 else ""
         if selected:
             pointer = f"[{color}]▶[/] "
-            id_label = f"[b][#fbf1c7]{task.task_id}[/][/b]"
+            id_label = f"[b][{color}]{task.task_id}[/][/b]"
             pos_label = f"  [{color}]{position}[/]" if position else ""
             title_color = "#fbf1c7"
-            meta_color = "#d5c4a1"
+            meta_color = "#bdae93"
         else:
             pointer = "  "
             id_label = f"[#a89984]{task.task_id}[/]"

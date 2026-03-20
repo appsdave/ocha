@@ -127,6 +127,8 @@ ListView {
     & > ListItem {
         background: #282828;
         color: #a89984;
+        /* Neutralise Textual's built-in highlight — we rely on the
+           status-colored arrow and border-left instead. */
         &.-highlight {
             background: #282828;
             color: #a89984;
@@ -136,15 +138,14 @@ ListView {
         &:hover {
             background: #32302f;
         }
+        /* Active / selected task — subtle bg bump + status border */
         &.--selected {
-            background: #282828;
+            background: #32302f;
             color: #ebdbb2;
         }
         &.--selected.-highlight {
-            background: #282828;
+            background: #32302f;
             color: #ebdbb2;
-            text-style: none;
-            background-tint: transparent;
         }
         &.--status-running.--selected {
             border-left: tall #b8bb26;
@@ -164,18 +165,20 @@ ListView {
     }
     &:focus {
         background-tint: transparent;
+        /* Focused-pane cursor (non-selected item) — very faint */
         & > ListItem.-highlight {
-            background: #282828;
-            color: #a89984;
+            background: #32302f;
+            color: #ebdbb2;
             text-style: none;
             background-tint: transparent;
         }
+        /* Focused + selected — slightly brighter bg */
         & > ListItem.--selected {
             background: #282828;
             color: #fbf1c7;
         }
         & > ListItem.--selected.-highlight {
-            background: #32302f;
+            background: #3c3836;
             color: #fbf1c7;
             text-style: none;
             background-tint: transparent;
