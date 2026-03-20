@@ -159,8 +159,8 @@ The dashboard is a keyboard-first operations console split into four areas:
 | `x` | Kill selected task (with confirmation) |
 | `c` | Clear completed / failed / stopped tasks |
 | `v` | Toggle workflow view ↔ raw log view |
-| `h` / `←` | Focus agents sidebar |
-| `l` / `→` | Focus output pane |
+| `←` | Focus agents sidebar |
+| `→` | Focus output pane |
 | `Tab` | Cycle focus between panes |
 | `q` | Quit |
 

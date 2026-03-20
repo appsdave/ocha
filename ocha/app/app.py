@@ -14,11 +14,13 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, ListView, Static, TextArea
 
+from .concurrency import ConcurrencyPolicy, compute_execution_plan
 from .git_utils import commit_worktree_changes, ensure_pr_title, format_pr_title, merge_worktree_commits
 from .orchestrator import build_role_prompt, launch_task, load_role_definitions
 from .state import AppState, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
 from .workflow_logger import EventCategory, LogLevel, WorkflowLogger, make_logger
+from .worktree_manager import ensure_worktree as wt_ensure, cleanup_worktrees
 
 OCHA_BRANCH = "agent"
 
@@ -127,24 +129,25 @@ ListView {
     & > ListItem {
         background: #282828;
         color: #a89984;
+        /* Neutralise Textual's built-in highlight — we rely on the
+           status-colored arrow and border-left instead. */
         &.-highlight {
-            background: #32302f;
-            color: #ebdbb2;
+            background: #282828;
+            color: #a89984;
             text-style: none;
             background-tint: transparent;
         }
         &:hover {
             background: #32302f;
         }
+        /* Active / selected task — subtle bg bump + status border */
         &.--selected {
-            background: #3c3836;
+            background: #32302f;
             color: #ebdbb2;
-            border-left: tall #665c54;
         }
         &.--selected.-highlight {
-            background: #3c3836;
+            background: #32302f;
             color: #ebdbb2;
-            border-left: tall #665c54;
         }
         &.--status-running.--selected {
             border-left: tall #b8bb26;
@@ -164,20 +167,23 @@ ListView {
     }
     &:focus {
         background-tint: transparent;
+        /* Focused-pane cursor (non-selected item) — very faint */
         & > ListItem.-highlight {
+            background: #32302f;
+            color: #ebdbb2;
+            text-style: none;
+            background-tint: transparent;
+        }
+        /* Focused + selected — slightly brighter bg */
+        & > ListItem.--selected {
+            background: #282828;
+            color: #fbf1c7;
+        }
+        & > ListItem.--selected.-highlight {
             background: #3c3836;
             color: #fbf1c7;
             text-style: none;
             background-tint: transparent;
-            border-left: tall #928374;
-        }
-        & > ListItem.--selected {
-            background: #3c3836;
-            color: #fbf1c7;
-        }
-        & > ListItem.--selected.-highlight {
-            background: #504945;
-            color: #fbf1c7;
         }
         & > ListItem.--selected.--status-running {
             border-left: tall #b8bb26;
@@ -648,28 +654,16 @@ class OchaApp(App[None]):
     def _ensure_worktree(self, worker) -> bool:
         """Create a git worktree for the worker if it doesn't exist.
 
+        Delegates to :func:`worktree_manager.ensure_worktree` for
+        idempotent, error-isolated worktree creation.
+
         Returns True on success, False on failure.
         """
-        wt = Path(worker.worktree_path)
-        if wt.exists():
-            return True
         try:
-            wt.parent.mkdir(parents=True, exist_ok=True)
-            result = subprocess.run(
-                ["git", "worktree", "add", str(wt), OCHA_BRANCH],
-                capture_output=True, text=True, timeout=30,
-            )
-            if result.returncode != 0:
-                # Branch may already be checked out; try detached
-                result = subprocess.run(
-                    ["git", "worktree", "add", "--detach", str(wt)],
-                    capture_output=True, text=True, timeout=30,
-                )
-            if result.returncode == 0:
-                _wlog(worker).git(f"Created worktree at {wt}.", LogLevel.SUCCESS)
-                return True
-            _wlog(worker).git(f"Worktree creation failed: {result.stderr.strip()}", LogLevel.ERROR)
-            return False
+            ok, msg = wt_ensure(worker.worktree_path, OCHA_BRANCH)
+            level = LogLevel.SUCCESS if ok else LogLevel.ERROR
+            _wlog(worker).git(msg, level)
+            return ok
         except Exception as exc:
             _wlog(worker).git(f"Worktree error: {exc}", LogLevel.ERROR)
             return False
@@ -808,11 +802,15 @@ class OchaApp(App[None]):
             self._advance_pipeline(task_obj)
 
     def _advance_pipeline(self, task_obj) -> None:
-        """Start the next queued worker in the pipeline after one finishes.
+        """Start the next queued worker(s) in the pipeline after one finishes.
 
-        Captures the most recently completed worker's summary and injects it
-        as ``upstream_output`` into the next worker's prompt so each phase
-        receives the prior phase's artifact.
+        Uses :func:`compute_execution_plan` to determine which queued
+        workers can safely run in parallel (non-overlapping owned
+        directories), then launches them concurrently.
+
+        Captures the most recently completed worker's summary and injects
+        it as ``upstream_output`` into each next worker's prompt so every
+        phase receives the prior phase's artifact.
         """
         # Check if any worker is still running
         still_running = any(w.status == WorkerStatus.RUNNING for w in task_obj.workers)
@@ -835,13 +833,9 @@ class OchaApp(App[None]):
                     upstream = upstream[:MAX_UPSTREAM_CHARS].rsplit("\n", 1)[0]
                 break
 
-        # Find next queued worker
-        next_worker = None
-        for w in task_obj.workers:
-            if w.status == WorkerStatus.QUEUED:
-                next_worker = w
-                break
-        if next_worker is None:
+        # Compute which queued workers can run concurrently
+        plan = compute_execution_plan(task_obj.workers, ConcurrencyPolicy.AUTO)
+        if not plan:
             # All done — summarize
             completed = sum(1 for w in task_obj.workers if w.status == WorkerStatus.COMPLETED)
             failed = sum(1 for w in task_obj.workers if w.status == WorkerStatus.FAILED)
@@ -854,27 +848,33 @@ class OchaApp(App[None]):
             self.run_worker(self._post_pipeline_git_flow(task_obj))
             return
 
-        # Inject upstream output into the next worker's prompt
-        nwl = _wlog(next_worker)
-        if upstream:
-            next_worker.upstream_summary = upstream
-            next_worker.task_prompt = self._rebuild_prompt_with_upstream(
-                next_worker, task_obj, upstream,
-            )
-            nwl.pipeline(
-                f"Received upstream output from prior phase ({len(upstream)} chars).",
-            )
-
-        # Advance this worker to running and spawn junie
-        next_worker.status = WorkerStatus.RUNNING
-        nwl.pipeline(f"Pipeline advanced — starting {next_worker.role}.")
+        # Launch the first execution group (non-conflicting workers)
+        group = plan[0]
         junie_bin = shutil.which("junie")
         if not junie_bin:
-            next_worker.status = WorkerStatus.FAILED
-            next_worker.summary = "junie CLI not found"
-            nwl.junie("junie CLI not found on PATH.", LogLevel.ERROR)
+            for w in group.workers:
+                w.status = WorkerStatus.FAILED
+                w.summary = "junie CLI not found"
+                _wlog(w).junie("junie CLI not found on PATH.", LogLevel.ERROR)
             return
-        self.run_worker(self._run_junie_for_worker(next_worker, task_obj, self._load_junie_api_key()))
+
+        api_key = self._load_junie_api_key()
+        for next_worker in group.workers:
+            # Inject upstream output into the worker's prompt
+            nwl = _wlog(next_worker)
+            if upstream:
+                next_worker.upstream_summary = upstream
+                next_worker.task_prompt = self._rebuild_prompt_with_upstream(
+                    next_worker, task_obj, upstream,
+                )
+                nwl.pipeline(
+                    f"Received upstream output from prior phase ({len(upstream)} chars).",
+                )
+
+            # Advance this worker to running and spawn junie
+            next_worker.status = WorkerStatus.RUNNING
+            nwl.pipeline(f"Pipeline advanced — starting {next_worker.role}.")
+            self.run_worker(self._run_junie_for_worker(next_worker, task_obj, api_key))
 
     def _rebuild_prompt_with_upstream(
         self, worker, task_obj, upstream_output: str,
@@ -970,15 +970,9 @@ class OchaApp(App[None]):
 
             messages.append((LogLevel.INFO, f"Staying on shared branch {branch_name}."))
 
-            for w in task_obj.workers:
-                wt = Path(w.worktree_path)
-                if wt.exists():
-                    try:
-                        _run_git("git", "worktree", "remove", "--force", str(wt), timeout=15)
-                    except Exception:
-                        pass
-            _run_git("git", "worktree", "prune", timeout=10)
-            messages.append((LogLevel.DEBUG, "Cleaned up worktrees."))
+            cleanup_msgs = cleanup_worktrees(task_obj.workers)
+            for cm in cleanup_msgs:
+                messages.append((LogLevel.DEBUG, cm))
             return messages
 
         try:
