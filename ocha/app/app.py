@@ -13,6 +13,7 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, ListView, Static, TextArea
 
+from .git_utils import commit_worktree_changes, merge_worktree_commits
 from .orchestrator import build_role_prompt, launch_task, load_role_definitions
 from .state import AppState, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
@@ -698,6 +699,19 @@ class OchaApp(App[None]):
                 worker.status = WorkerStatus.COMPLETED
                 worker.summary = "Junie session completed successfully."
                 worker.workflow_log.append("Session completed.")
+                # Commit changes inside the worktree so they are reachable
+                try:
+                    sha = commit_worktree_changes(
+                        worker.worktree_path,
+                        f"ocha: {worker.role} {worker.session_id}",
+                    )
+                    if sha:
+                        worker.worktree_commit_sha = sha
+                        worker.workflow_log.append(f"Worktree committed: {sha[:8]}")
+                    else:
+                        worker.workflow_log.append("Worktree clean — nothing to commit.")
+                except Exception as commit_exc:
+                    worker.workflow_log.append(f"Worktree commit error: {commit_exc}")
             else:
                 worker.status = WorkerStatus.FAILED
                 worker.summary = f"Junie exited with code {rc}."
@@ -805,39 +819,57 @@ class OchaApp(App[None]):
             return worker.task_prompt + f"\n\n## Prior phase output\n\n{upstream_output}"
 
     async def _post_pipeline_git_flow(self, task_obj) -> None:
-        """After all workers finish, commit on ``agent``, rebase, and push."""
+        """After all workers finish, cherry-pick worktree commits onto ``agent``, rebase, and push."""
         log = task_obj.workers[-1].workflow_log
         branch_name = OCHA_BRANCH
         try:
-            # Ensure we are on the shared agent branch
-            current = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if current.returncode == 0 and current.stdout.strip() != branch_name:
+            # Collect worktree commit SHAs from all workers
+            worktree_shas = [
+                w.worktree_commit_sha
+                for w in task_obj.workers
+                if w.worktree_commit_sha
+            ]
+
+            if worktree_shas:
+                # Cherry-pick worktree commits onto the shared branch
+                merge_logs = merge_worktree_commits(worktree_shas, branch_name)
+                log.extend(merge_logs)
+            else:
+                # No worktree commits — fall back to staging from main repo
+                current = subprocess.run(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if current.returncode == 0 and current.stdout.strip() != branch_name:
+                    subprocess.run(
+                        ["git", "checkout", branch_name],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                log.append(f"On branch {branch_name} (no worktree commits).")
+
+                # Stage all changes (scoped to avoid committing worktree artifacts)
                 subprocess.run(
-                    ["git", "checkout", branch_name],
+                    ["git", "add", "-A", "--", ".", ":!.worktrees", ":!.env"],
                     capture_output=True, text=True, timeout=10,
                 )
-            log.append(f"On branch {branch_name}.")
 
-            # Stage all changes (scoped to avoid committing worktree artifacts)
-            subprocess.run(
-                ["git", "add", "-A", "--", ".", ":!.worktrees", ":!.env"],
-                capture_output=True, text=True, timeout=10,
-            )
-            log.append("Staged all changes.")
-
-            # Commit
-            commit_msg = f"ocha: {task_obj.title}"
-            commit_result = subprocess.run(
-                ["git", "commit", "-m", commit_msg, "--allow-empty"],
-                capture_output=True, text=True, timeout=15,
-            )
-            if commit_result.returncode == 0:
-                log.append(f"Committed: {commit_msg}")
-            else:
-                log.append(f"Commit note: {commit_result.stdout.strip() or commit_result.stderr.strip()}")
+                # Only commit if there are staged changes
+                diff_check = subprocess.run(
+                    ["git", "diff", "--cached", "--quiet"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if diff_check.returncode != 0:
+                    commit_msg = f"ocha: {task_obj.title}"
+                    commit_result = subprocess.run(
+                        ["git", "commit", "-m", commit_msg],
+                        capture_output=True, text=True, timeout=15,
+                    )
+                    if commit_result.returncode == 0:
+                        log.append(f"Committed: {commit_msg}")
+                    else:
+                        log.append(f"Commit note: {commit_result.stdout.strip() or commit_result.stderr.strip()}")
+                else:
+                    log.append("No changes to commit.")
 
             # Fetch and rebase before pushing to reduce conflicts
             subprocess.run(
