@@ -104,7 +104,7 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
             list_view = app.query_one(ListView)
             second_item = list(list_view.query("ListItem").results())[1]
             list_view.index = 1
-            list_view.post_message(ListView.Selected(list_view, second_item))
+            list_view.post_message(ListView.Selected(list_view, second_item, index=1))
             await pilot.pause()
 
             header = app.query_one(TaskHeader)
