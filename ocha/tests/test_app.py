@@ -213,7 +213,7 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
         from app.widgets import WorkerListItem
         task = self._task("T-001")
         text = WorkerListItem._format_task(task, selected=False)
-        self.assertIn("#bdae93", text, "Unselected task title should use muted color")
+        self.assertIn("#bdae93", text, "Unselected task title should use dimmed color")
 
     def test_format_task_selected_brightens_title(self) -> None:
         from app.widgets import WorkerListItem
