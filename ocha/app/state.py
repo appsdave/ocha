@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
+
+
+# Maximum number of log lines retained per worker to bound memory usage.
+# Older entries are discarded automatically when the limit is exceeded.
+MAX_LOG_LINES = 5_000
 
 
 class WorkerStatus(StrEnum):
@@ -52,8 +58,8 @@ class WorkerSession:
     worktree_path: str
     owned_directory: str
     summary: str
-    workflow_log: list[str] = field(default_factory=list)
-    raw_log: list[str] = field(default_factory=list)
+    workflow_log: deque[str] = field(default_factory=lambda: deque(maxlen=MAX_LOG_LINES))
+    raw_log: deque[str] = field(default_factory=lambda: deque(maxlen=MAX_LOG_LINES))
     task_prompt: str = ""
     role_prompt_path: str = ""
     upstream_summary: str = ""
@@ -135,12 +141,31 @@ class OchaTask:
             for worker in sorted(self.workers, key=lambda worker: worker.role.value)
         )
 
+    _output_cache_key: tuple = field(default=(), repr=False, compare=False)
+    _output_cache: list[str] = field(default_factory=list, repr=False, compare=False)
+
     def output_lines(self, mode: OutputMode) -> list[str]:
+        """Build prefixed log output for display.
+
+        Uses a lightweight cache keyed on the total line count per mode
+        so repeated calls within the same tick skip the rebuild entirely.
+        """
+        total = sum(
+            len(w.workflow_log if mode == OutputMode.WORKFLOW else w.raw_log)
+            for w in self.workers
+        )
+        cache_key = (mode, total)
+        if self._output_cache_key == cache_key:
+            return self._output_cache
+
         lines: list[str] = []
         for worker in self.workers:
             source_lines = worker.workflow_log if mode == OutputMode.WORKFLOW else worker.raw_log
-            for line in source_lines:
-                lines.append(f"[{worker.role}] {line}")
+            role_tag = f"[{worker.role}] "
+            lines.extend(role_tag + line for line in source_lines)
+
+        self._output_cache_key = cache_key
+        self._output_cache = lines
         return lines
 
 

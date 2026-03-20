@@ -5,6 +5,7 @@ import os
 import signal
 import shutil
 import subprocess
+from functools import partial
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -372,27 +373,35 @@ class OchaApp(App[None]):
         self._ensure_ocha_branch()
         self.refresh_from_state()
         self.action_focus_agents()
-        self.set_interval(2.0, self._tick)
+        self.set_interval(1.0, self._tick)
 
     def _tick(self) -> None:
         """Periodic UI refresh for elapsed timers and async state changes."""
         if not self.state.tasks:
             return
-        if any(t.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED) for t in self.state.tasks):
-            # Build a lightweight fingerprint to skip refresh when nothing changed
-            selected = self.state.selected_task
-            if selected is not None:
-                fp = (
-                    selected.task_id,
-                    selected.status.value,
-                    self.state.output_mode,
-                    sum(len(w.workflow_log) + len(w.raw_log) for w in selected.workers),
-                )
-            else:
-                fp = ()
-            if fp != self._tick_fingerprint:
-                self._tick_fingerprint = fp
-                self.refresh_from_state()
+        has_active = any(
+            t.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED)
+            for t in self.state.tasks
+        )
+        if not has_active:
+            return
+        # Build a lightweight fingerprint to skip refresh when nothing changed
+        selected = self.state.selected_task
+        if selected is not None:
+            fp: tuple = (
+                selected.task_id,
+                selected.status.value,
+                self.state.output_mode,
+                # Only count total lines — avoids iterating every line
+                sum(len(w.workflow_log) + len(w.raw_log) for w in selected.workers),
+                # Include elapsed so timers update
+                selected.elapsed,
+            )
+        else:
+            fp = ()
+        if fp != self._tick_fingerprint:
+            self._tick_fingerprint = fp
+            self.refresh_from_state()
 
     def _ensure_ocha_branch(self) -> None:
         """Create and checkout the agent branch if it doesn't already exist."""
@@ -831,11 +840,23 @@ class OchaApp(App[None]):
             return worker.task_prompt + f"\n\n## Prior phase output\n\n{upstream_output}"
 
     async def _post_pipeline_git_flow(self, task_obj) -> None:
-        """After all workers finish, cherry-pick worktree commits onto ``agent``, rebase, and push."""
+        """After all workers finish, cherry-pick worktree commits onto ``agent``, rebase, and push.
+
+        All blocking ``subprocess.run`` calls are delegated to a background
+        thread via ``asyncio.to_thread`` so the Textual event loop stays
+        responsive while git operations execute.
+        """
         log = task_obj.workers[-1].workflow_log
         branch_name = OCHA_BRANCH
-        try:
-            # Collect worktree commit SHAs from all workers
+
+        def _run_git(*args: str, timeout: int = 30, **kwargs) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                list(args), capture_output=True, text=True, timeout=timeout, **kwargs,
+            )
+
+        def _git_flow_sync() -> list[str]:
+            """Execute git flow in a sync context (called via to_thread)."""
+            messages: list[str] = []
             worktree_shas = [
                 w.worktree_commit_sha
                 for w in task_obj.workers
@@ -843,110 +864,73 @@ class OchaApp(App[None]):
             ]
 
             if worktree_shas:
-                # Cherry-pick worktree commits onto the shared branch
                 merge_logs = merge_worktree_commits(worktree_shas, branch_name)
-                log.extend(merge_logs)
+                messages.extend(merge_logs)
             else:
-                # No worktree commits — fall back to staging from main repo
-                current = subprocess.run(
-                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                    capture_output=True, text=True, timeout=5,
-                )
+                current = _run_git("git", "rev-parse", "--abbrev-ref", "HEAD", timeout=5)
                 if current.returncode == 0 and current.stdout.strip() != branch_name:
-                    subprocess.run(
-                        ["git", "checkout", branch_name],
-                        capture_output=True, text=True, timeout=10,
-                    )
-                log.append(f"On branch {branch_name} (no worktree commits).")
+                    _run_git("git", "checkout", branch_name, timeout=10)
+                messages.append(f"On branch {branch_name} (no worktree commits).")
 
-                # Stage all changes (scoped to avoid committing worktree artifacts)
-                subprocess.run(
-                    ["git", "add", "-A", "--", ".", ":!.worktrees", ":!.env"],
-                    capture_output=True, text=True, timeout=10,
-                )
+                _run_git("git", "add", "-A", "--", ".", ":!.worktrees", ":!.env", timeout=10)
 
-                # Only commit if there are staged changes
-                diff_check = subprocess.run(
-                    ["git", "diff", "--cached", "--quiet"],
-                    capture_output=True, text=True, timeout=5,
-                )
+                diff_check = _run_git("git", "diff", "--cached", "--quiet", timeout=5)
                 if diff_check.returncode != 0:
                     commit_msg = f"ocha: {task_obj.title}"
-                    commit_result = subprocess.run(
-                        ["git", "commit", "-m", commit_msg],
-                        capture_output=True, text=True, timeout=15,
-                    )
+                    commit_result = _run_git("git", "commit", "-m", commit_msg, timeout=15)
                     if commit_result.returncode == 0:
-                        log.append(f"Committed: {commit_msg}")
+                        messages.append(f"Committed: {commit_msg}")
                     else:
-                        log.append(f"Commit note: {commit_result.stdout.strip() or commit_result.stderr.strip()}")
+                        messages.append(f"Commit note: {commit_result.stdout.strip() or commit_result.stderr.strip()}")
                 else:
-                    log.append("No changes to commit.")
+                    messages.append("No changes to commit.")
 
-            # Fetch and rebase before pushing to reduce conflicts
-            subprocess.run(
-                ["git", "fetch", "origin", branch_name],
-                capture_output=True, text=True, timeout=30,
-            )
-            rebase_result = subprocess.run(
-                ["git", "rebase", f"origin/{branch_name}"],
-                capture_output=True, text=True, timeout=30,
-            )
+            _run_git("git", "fetch", "origin", branch_name, timeout=30)
+            rebase_result = _run_git("git", "rebase", f"origin/{branch_name}", timeout=30)
             if rebase_result.returncode == 0:
-                log.append(f"Rebased on origin/{branch_name}.")
+                messages.append(f"Rebased on origin/{branch_name}.")
             else:
-                log.append(f"Rebase skipped: {rebase_result.stderr.strip()}")
+                messages.append(f"Rebase skipped: {rebase_result.stderr.strip()}")
 
-            # Push branch
-            push_result = subprocess.run(
-                ["git", "push", "-u", "origin", branch_name],
-                capture_output=True, text=True, timeout=30,
-            )
+            push_result = _run_git("git", "push", "-u", "origin", branch_name, timeout=30)
             if push_result.returncode == 0:
-                log.append(f"Pushed branch {branch_name} to origin.")
+                messages.append(f"Pushed branch {branch_name} to origin.")
             else:
-                log.append(f"Push failed: {push_result.stderr.strip()}")
+                messages.append(f"Push failed: {push_result.stderr.strip()}")
 
-            # Try to create a PR via gh CLI (agent → main)
             gh_bin = shutil.which("gh")
             if gh_bin:
-                pr_result = subprocess.run(
-                    [
-                        "gh", "pr", "create",
-                        "--title", task_obj.title,
-                        "--body", f"Automated PR from ocha task {task_obj.task_id}.",
-                        "--base", "main",
-                        "--head", branch_name,
-                    ],
-                    capture_output=True, text=True, timeout=30,
+                pr_result = _run_git(
+                    "gh", "pr", "create",
+                    "--title", task_obj.title,
+                    "--body", f"Automated PR from ocha task {task_obj.task_id}.",
+                    "--base", "main",
+                    "--head", branch_name,
+                    timeout=30,
                 )
                 if pr_result.returncode == 0:
-                    pr_url = pr_result.stdout.strip()
-                    log.append(f"PR created: {pr_url}")
+                    messages.append(f"PR created: {pr_result.stdout.strip()}")
                 else:
-                    log.append(f"PR creation: {pr_result.stderr.strip()}")
+                    messages.append(f"PR creation: {pr_result.stderr.strip()}")
             else:
-                log.append("gh CLI not found — push completed, create PR manually.")
+                messages.append("gh CLI not found — push completed, create PR manually.")
 
-            log.append(f"Staying on shared branch {branch_name}.")
+            messages.append(f"Staying on shared branch {branch_name}.")
 
-            # Clean up worktrees
             for w in task_obj.workers:
                 wt = Path(w.worktree_path)
                 if wt.exists():
                     try:
-                        subprocess.run(
-                            ["git", "worktree", "remove", "--force", str(wt)],
-                            capture_output=True, text=True, timeout=15,
-                        )
+                        _run_git("git", "worktree", "remove", "--force", str(wt), timeout=15)
                     except Exception:
                         pass
-            subprocess.run(
-                ["git", "worktree", "prune"],
-                capture_output=True, text=True, timeout=10,
-            )
-            log.append("Cleaned up worktrees.")
+            _run_git("git", "worktree", "prune", timeout=10)
+            messages.append("Cleaned up worktrees.")
+            return messages
 
+        try:
+            messages = await asyncio.to_thread(_git_flow_sync)
+            log.extend(messages)
         except Exception as exc:
             log.append(f"Git flow error: {exc}")
 
