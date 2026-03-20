@@ -128,8 +128,8 @@ ListView {
         background: #282828;
         color: #a89984;
         &.-highlight {
-            background: #32302f;
-            color: #ebdbb2;
+            background: #282828;
+            color: #a89984;
             text-style: none;
             background-tint: transparent;
         }
@@ -137,14 +137,14 @@ ListView {
             background: #32302f;
         }
         &.--selected {
-            background: #3c3836;
+            background: #282828;
             color: #ebdbb2;
-            border-left: tall #665c54;
         }
         &.--selected.-highlight {
-            background: #3c3836;
+            background: #282828;
             color: #ebdbb2;
-            border-left: tall #665c54;
+            text-style: none;
+            background-tint: transparent;
         }
         &.--status-running.--selected {
             border-left: tall #b8bb26;
@@ -165,19 +165,20 @@ ListView {
     &:focus {
         background-tint: transparent;
         & > ListItem.-highlight {
-            background: #3c3836;
-            color: #fbf1c7;
+            background: #282828;
+            color: #a89984;
             text-style: none;
             background-tint: transparent;
-            border-left: tall #928374;
         }
         & > ListItem.--selected {
-            background: #3c3836;
+            background: #282828;
             color: #fbf1c7;
         }
         & > ListItem.--selected.-highlight {
-            background: #504945;
+            background: #32302f;
             color: #fbf1c7;
+            text-style: none;
+            background-tint: transparent;
         }
         & > ListItem.--selected.--status-running {
             border-left: tall #b8bb26;
