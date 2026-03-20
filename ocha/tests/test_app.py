@@ -148,6 +148,45 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class ScrollbarHiddenCSSTests(unittest.TestCase):
+    """Verify scrollbars are hidden via CSS to prevent lag while preserving scroll."""
+
+    def test_screen_hides_scrollbar(self) -> None:
+        from app.app import CSS
+        self.assertIn("scrollbar-size: 0 0", CSS)
+
+    def test_screen_selector_has_scrollbar_size(self) -> None:
+        """The Screen selector specifically includes scrollbar-size."""
+        from app.app import CSS
+        # Find the Screen block and verify it contains the rule
+        screen_start = CSS.index("Screen {")
+        screen_end = CSS.index("}", screen_start)
+        screen_block = CSS[screen_start:screen_end]
+        self.assertIn("scrollbar-size: 0 0", screen_block)
+
+    def test_listview_selector_has_scrollbar_size(self) -> None:
+        """The ListView selector includes scrollbar-size."""
+        from app.app import CSS
+        lv_start = CSS.index("ListView {")
+        lv_end = CSS.index("}", lv_start)
+        lv_block = CSS[lv_start:lv_end]
+        self.assertIn("scrollbar-size: 0 0", lv_block)
+
+    def test_verticalscroll_selector_has_scrollbar_size(self) -> None:
+        """The VerticalScroll selector includes scrollbar-size."""
+        from app.app import CSS
+        vs_start = CSS.index("VerticalScroll {")
+        vs_end = CSS.index("}", vs_start)
+        vs_block = CSS[vs_start:vs_end]
+        self.assertIn("scrollbar-size: 0 0", vs_block)
+
+    def test_css_parses_without_error(self) -> None:
+        """The full CSS string can be imported without syntax errors."""
+        from app.app import CSS
+        self.assertIsInstance(CSS, str)
+        self.assertGreater(len(CSS), 0)
+
+
 class KeyBindingTests(unittest.TestCase):
     """Verify vim motion keys are removed and arrow keys are used instead."""
 

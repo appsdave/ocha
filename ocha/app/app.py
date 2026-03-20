@@ -26,6 +26,7 @@ Screen {
     layout: vertical;
     background: #282828;
     color: #ebdbb2;
+    scrollbar-size: 0 0;
 }
 
 #main-row {
@@ -104,8 +105,13 @@ Screen {
     padding: 0 0 1 0;
 }
 
+VerticalScroll {
+    scrollbar-size: 0 0;
+}
+
 ListView {
     background: #282828;
+    scrollbar-size: 0 0;
     & > ListItem {
         background: #282828;
         color: #ebdbb2;
