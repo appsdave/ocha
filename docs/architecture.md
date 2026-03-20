@@ -44,6 +44,7 @@ OchaTask
 WorkerSession
   ├── session_id: str        # "S-001-01"
   ├── task_id: str
+<<<<<<< HEAD
   ├── title: str
   ├── role: WorkerRole       # coordinator | lead | builder | reviewer
   ├── status: WorkerStatus   # running | completed | failed | stopped | queued
@@ -62,6 +63,17 @@ WorkerSession
   ├── retry_count: int
   ├── started_at: datetime
   └── finished_at: datetime | None
+=======
+  ├── role: WorkerRole       # coordinator | lead | builder | reviewer
+  ├── status: WorkerStatus   # running | completed | failed | stopped | queued
+  ├── worktree_path: str
+  ├── owned_directory: str
+  ├── wlog: WorkflowLogger   # structured logger
+  ├── workflow_log: deque     # legacy plain-text log
+  ├── raw_log: deque          # raw Junie output
+  ├── task_prompt: str        # full prompt sent to Junie
+  └── upstream_summary: str   # output from prior pipeline phase
+>>>>>>> 388980a (ocha: coordinator S-001-01)
 ```
 
 ### Enums
@@ -154,17 +166,25 @@ OchaApp
         │     │     ├── Static.pane-title ("Tasks")
         │     │     └── ListView#workers-list
         │     │           └── WorkerListItem (per task)
+<<<<<<< HEAD
         │     │                 └── Static.worker-row
+=======
+>>>>>>> 388980a (ocha: coordinator S-001-01)
         │     └── Vertical#detail-pane
         │           ├── TaskHeader#task-header (Static)
         │           └── OutputPane#output-pane (VerticalScroll)
         │                 └── Static#output-content
+<<<<<<< HEAD
         ├── HelpBar#help-bar (Static)
         └── StatusBar#status-bar (Static)
 
   Overlays (modal screens):
   ├── NewTaskOverlay → #new-task-box (TextArea + hints)
   └── KillConfirmOverlay → #kill-box (confirmation buttons)
+=======
+        ├── HelpBar#help-bar
+        └── StatusBar#status-bar
+>>>>>>> 388980a (ocha: coordinator S-001-01)
 ```
 
 ## Role directory ownership

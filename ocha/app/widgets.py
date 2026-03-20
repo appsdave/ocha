@@ -46,14 +46,18 @@ class WorkerListItem(ListItem):
             pointer = "[#b8bb26]▶[/] "
             id_label = f"[b][#b8bb26]{task.task_id}[/][/b]"
             pos_label = f"  [#b8bb26]{position}[/]" if position else ""
+            title_color = "#fbf1c7"
+            meta_color = "#a89984"
         else:
             pointer = "  "
             id_label = f"[{color}]{task.task_id}[/]"
             pos_label = f"  [#504945]{position}[/]" if position else ""
+            title_color = "#ebdbb2"
+            meta_color = "#928374"
         return (
             f"{pointer}{icon} {id_label}{pos_label}\n"
-            f"    [#ebdbb2]{title}[/]\n"
-            f"    [#928374]{task.branch}[/] · [{color}]{task.status.value}[/] · [#928374]{elapsed}[/]"
+            f"    [{title_color}]{title}[/]\n"
+            f"    [{meta_color}]{task.branch}[/] · [{color}]{task.status.value}[/] · [{meta_color}]{elapsed}[/]"
         )
 
 
