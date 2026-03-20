@@ -128,13 +128,13 @@ ListView {
         background: #282828;
         color: #ebdbb2;
         &.-highlight {
-            background: transparent;
+            background: #32302f;
             color: #ebdbb2;
             text-style: none;
             background-tint: transparent;
         }
         &:hover {
-            background: #282828;
+            background: #32302f;
         }
         &.--selected {
             background: #3c3836;
@@ -148,16 +148,20 @@ ListView {
     &:focus {
         background-tint: transparent;
         & > ListItem.-highlight {
-            background: transparent;
-            color: #ebdbb2;
+            background: #3c3836;
+            color: #fbf1c7;
             text-style: none;
             background-tint: transparent;
+            border-left: tall #928374;
         }
         & > ListItem.--selected {
             background: #3c3836;
+            border-left: tall #b8bb26;
         }
         & > ListItem.--selected.-highlight {
-            background: #3c3836;
+            background: #504945;
+            border-left: tall #b8bb26;
+            color: #fbf1c7;
         }
     }
 }
