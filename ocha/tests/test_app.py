@@ -148,6 +148,36 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class KeyBindingTests(unittest.TestCase):
+    """Verify vim motion keys are removed and arrow keys are used instead."""
+
+    def test_no_vim_keys_in_bindings(self) -> None:
+        vim_keys = {"h", "j", "k", "l"}
+        for binding in OchaApp.BINDINGS:
+            keys = {k.strip() for k in binding.key.split(",")}
+            self.assertTrue(
+                keys.isdisjoint(vim_keys),
+                f"Binding '{binding.key}' still contains vim key(s): {keys & vim_keys}",
+            )
+
+    def test_arrow_keys_are_bound(self) -> None:
+        all_keys = set()
+        for binding in OchaApp.BINDINGS:
+            all_keys.update(k.strip() for k in binding.key.split(","))
+        for arrow in ("up", "down", "left", "right"):
+            self.assertIn(arrow, all_keys, f"Arrow key '{arrow}' not found in BINDINGS")
+
+    def test_help_bar_uses_arrow_symbols(self) -> None:
+        import inspect
+        from app.widgets import MainLayout
+
+        source = inspect.getsource(MainLayout.compose)
+        self.assertIn("↑/↓", source, "Help bar should show ↑/↓ for move")
+        self.assertIn("←/→", source, "Help bar should show ←/→ for focus")
+        self.assertNotIn("j/k", source, "Help bar should not show j/k")
+        self.assertNotIn("h/l", source, "Help bar should not show h/l")
+
+
 class AdvancePipelineTests(unittest.TestCase):
     """Test that _advance_pipeline captures upstream summary for the next worker."""
 
