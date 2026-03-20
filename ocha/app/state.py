@@ -4,6 +4,10 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
+from typing import Sequence
+
+
+LOG_BUFFER_MAX = 5000
 
 
 # Maximum number of log lines retained per worker to bound memory usage.
@@ -90,6 +94,8 @@ class OchaTask:
     user_task: str
     branch: str
     workers: list[WorkerSession] = field(default_factory=list)
+    _output_cache_key: tuple | None = field(default=None, repr=False, compare=False)
+    _output_cache_value: list[str] = field(default_factory=list, repr=False, compare=False)
 
     @property
     def status(self) -> WorkerStatus:
@@ -141,9 +147,6 @@ class OchaTask:
             for worker in sorted(self.workers, key=lambda worker: worker.role.value)
         )
 
-    _output_cache_key: tuple = field(default=(), repr=False, compare=False)
-    _output_cache: list[str] = field(default_factory=list, repr=False, compare=False)
-
     def output_lines(self, mode: OutputMode) -> list[str]:
         """Build prefixed log output for display.
 
@@ -156,7 +159,7 @@ class OchaTask:
         )
         cache_key = (mode, total)
         if self._output_cache_key == cache_key:
-            return self._output_cache
+            return self._output_cache_value
 
         lines: list[str] = []
         for worker in self.workers:
@@ -165,7 +168,7 @@ class OchaTask:
             lines.extend(role_tag + line for line in source_lines)
 
         self._output_cache_key = cache_key
-        self._output_cache = lines
+        self._output_cache_value = lines
         return lines
 
 
