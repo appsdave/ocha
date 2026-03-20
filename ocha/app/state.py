@@ -4,6 +4,10 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .workflow_logger import WorkflowLogger
 
 
 # Maximum number of log lines retained per worker to bound memory usage.
@@ -60,6 +64,7 @@ class WorkerSession:
     summary: str
     workflow_log: deque[str] = field(default_factory=lambda: deque(maxlen=MAX_LOG_LINES))
     raw_log: deque[str] = field(default_factory=lambda: deque(maxlen=MAX_LOG_LINES))
+    wlog: WorkflowLogger | None = field(default=None, repr=False)
     task_prompt: str = ""
     role_prompt_path: str = ""
     upstream_summary: str = ""
@@ -148,6 +153,12 @@ class OchaTask:
 
         Uses a lightweight cache keyed on the total line count per mode
         so repeated calls within the same tick skip the rebuild entirely.
+
+        In WORKFLOW mode, if a worker carries a structured
+        :class:`WorkflowLogger` the rich-formatted lines are used so the
+        TUI gets timestamps, icons and colour.  Falls back to the legacy
+        ``workflow_log`` deque for workers created before the logger was
+        wired in.
         """
         total = sum(
             len(w.workflow_log if mode == OutputMode.WORKFLOW else w.raw_log)
@@ -159,9 +170,12 @@ class OchaTask:
 
         lines: list[str] = []
         for worker in self.workers:
-            source_lines = worker.workflow_log if mode == OutputMode.WORKFLOW else worker.raw_log
-            role_tag = f"[{worker.role}] "
-            lines.extend(role_tag + line for line in source_lines)
+            if mode == OutputMode.WORKFLOW and worker.wlog is not None:
+                lines.extend(worker.wlog.rich_lines())
+            else:
+                source_lines = worker.workflow_log if mode == OutputMode.WORKFLOW else worker.raw_log
+                role_tag = f"[{worker.role}] "
+                lines.extend(role_tag + line for line in source_lines)
 
         self._output_cache_key = cache_key
         self._output_cache_value = lines
