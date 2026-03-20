@@ -14,7 +14,7 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, ListView, Static, TextArea
 
-from .git_utils import commit_worktree_changes, merge_worktree_commits
+from .git_utils import commit_worktree_changes, ensure_pr_title, format_pr_title, merge_worktree_commits
 from .orchestrator import build_role_prompt, launch_task, load_role_definitions
 from .state import AppState, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
@@ -901,22 +901,10 @@ class OchaApp(App[None]):
             else:
                 messages.append(f"Push failed: {push_result.stderr.strip()}")
 
-            gh_bin = shutil.which("gh")
-            if gh_bin:
-                pr_result = _run_git(
-                    "gh", "pr", "create",
-                    "--title", task_obj.title,
-                    "--body", f"Automated PR from ocha task {task_obj.task_id}.",
-                    "--base", "main",
-                    "--head", branch_name,
-                    timeout=30,
-                )
-                if pr_result.returncode == 0:
-                    messages.append(f"PR created: {pr_result.stdout.strip()}")
-                else:
-                    messages.append(f"PR creation: {pr_result.stderr.strip()}")
-            else:
-                messages.append("gh CLI not found — push completed, create PR manually.")
+            # Format a clean PR title and create-or-update the PR
+            pr_title = format_pr_title(task_obj.task_id, task_obj.title)
+            pr_msg = ensure_pr_title(branch_name, pr_title)
+            messages.append(pr_msg)
 
             messages.append(f"Staying on shared branch {branch_name}.")
 

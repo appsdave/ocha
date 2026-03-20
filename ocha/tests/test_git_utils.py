@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.git_utils import commit_worktree_changes, merge_worktree_commits
+from app.git_utils import commit_worktree_changes, format_pr_title, merge_worktree_commits
 
 
 def _init_repo(tmp: Path) -> Path:
@@ -225,6 +225,49 @@ class TestMergeWorktreeCommits(unittest.TestCase):
                 (repo / "app" / "utils" / "helper.py").read_text(),
                 "def help(): pass\n",
             )
+
+
+class TestFormatPrTitle(unittest.TestCase):
+    """Tests for format_pr_title()."""
+
+    def test_basic_formatting(self) -> None:
+        result = format_pr_title("T-001", "add new feature")
+        self.assertEqual(result, "[T-001] Add new feature")
+
+    def test_strips_trailing_ellipsis(self) -> None:
+        result = format_pr_title("T-002", "can we make the agnts to rename the prs when they are pushing to make th…")
+        self.assertTrue(result.startswith("[T-002]"))
+        self.assertNotIn("…", result[len("[T-002]"):].rstrip("…"))
+
+    def test_collapses_whitespace(self) -> None:
+        result = format_pr_title("T-003", "  lots   of   spaces  ")
+        self.assertEqual(result, "[T-003] Lots of spaces")
+
+    def test_empty_title_fallback(self) -> None:
+        result = format_pr_title("T-004", "")
+        self.assertEqual(result, "[T-004] Automated task")
+
+    def test_no_double_tag(self) -> None:
+        result = format_pr_title("T-005", "[T-005] Already tagged title")
+        self.assertEqual(result, "[T-005] Already tagged title")
+
+    def test_truncation_at_72_chars(self) -> None:
+        long_title = "A" * 100
+        result = format_pr_title("T-006", long_title)
+        self.assertLessEqual(len(result), 72)
+        self.assertTrue(result.endswith("…"))
+
+    def test_strips_trailing_period(self) -> None:
+        result = format_pr_title("T-007", "fix the bug.")
+        self.assertEqual(result, "[T-007] Fix the bug")
+
+    def test_whitespace_only_title(self) -> None:
+        result = format_pr_title("T-008", "   ")
+        self.assertEqual(result, "[T-008] Automated task")
+
+    def test_already_capitalised(self) -> None:
+        result = format_pr_title("T-009", "Update the README")
+        self.assertEqual(result, "[T-009] Update the README")
 
 
 if __name__ == "__main__":
