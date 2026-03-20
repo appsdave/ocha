@@ -304,15 +304,31 @@ class OchaApp(App[None]):
         super().__init__()
         self.state: AppState = sample_state()
         self._tick_fingerprint: tuple = ()
+        self._running_procs: dict[str, asyncio.subprocess.Process] = {}
 
     def compose(self) -> ComposeResult:
         yield MainLayout()
+
+    async def on_unmount(self) -> None:
+        """Terminate all running subprocesses so transports are cleaned up
+        before the event loop closes (avoids 'Event loop is closed' errors)."""
+        for proc in list(self._running_procs.values()):
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+        for proc in list(self._running_procs.values()):
+            try:
+                await proc.wait()
+            except Exception:
+                pass
+        self._running_procs.clear()
 
     def on_mount(self) -> None:
         self._ensure_ocha_branch()
         self.refresh_from_state()
         self.action_focus_agents()
-        self._running_procs: dict[str, asyncio.subprocess.Process] = {}
         self.set_interval(2.0, self._tick)
 
     def _tick(self) -> None:
