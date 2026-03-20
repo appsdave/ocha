@@ -30,3 +30,21 @@ Actual fixes if any are needed, plus a short **## Review Summary** containing:
 4. **Status** — one of: `ready`, `needs-rework`, or `blocked`.
 
 **Do NOT produce review documents or markdown-only output.** Your job is to verify by running code and fix what's broken. If you find yourself only writing `.md` files, stop and refocus on running tests and fixing issues.
+
+## Tools available in your session
+
+You are running inside a Junie session that provides built-in file tools. **Use these tools instead of shell commands** (`cat`, `echo`, `sed`, `tee`, etc.) for all file read/write operations.
+
+| Tool | Purpose |
+|------|---------|
+| `open` | View 100 lines of a file starting from a given line number |
+| `open_entire_file` | View the full contents of a file (use sparingly on large files) |
+| `search_replace` | Find and replace an exact block of lines in a file |
+| `multi_edit` | Apply multiple search-and-replace edits to one file atomically |
+| `create` | Create a new file (or fully rewrite one created this session) |
+| `scroll_down` / `scroll_up` | Page through a currently open file |
+| `search_contents_by_grep` | Search file contents with a PCRE regex |
+| `search_paths_by_glob` | Find files by glob pattern |
+| `undo_edit` | Revert the last file edit |
+
+**Key rule:** Do NOT use `bash` commands (`cat`, `echo >>`, `sed -i`, `tee`, etc.) to create or modify files. Always use the tools above.
