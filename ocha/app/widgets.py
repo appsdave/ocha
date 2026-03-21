@@ -64,12 +64,12 @@ class TaskRowHighlight:
         if selected:
             return cls(
                 pointer=f"[{color}]▶[/] ",
-                id_label=f"[b][#d5c4a1]{task.task_id}[/][/b]",
-                position_label=f" [#bdae93]•[/] [#d5c4a1]{position}[/]" if position else "",
+                id_label=f"[b][{color}]{task.task_id}[/][/b]",
+                position_label=f" [#bdae93]•[/] [b][#d5c4a1]{position}[/][/b]" if position else "",
                 title_label=f"[b][#fbf1c7]{_truncate_task_title(task.title)}[/][/b]",
                 meta_label=(
                     f"[b][#d3869b]{task.branch}[/][/b] {TASK_POSITION_BULLET} "
-                    f"[b][#83a598]ACTIVE[/][/b] {TASK_POSITION_BULLET} "
+                    f"[b][{color}]{task.status.value}[/][/b] {TASK_POSITION_BULLET} "
                     f"[#d5c4a1]{task.elapsed}[/]"
                 ),
             )
@@ -105,6 +105,13 @@ def _format_active_task_banner(task: OchaTask, *, position: str) -> str:
         f"  [b][on #504945] {icon} {task.task_id} [/][/b]  "
         f"[b][#fbf1c7]{task.title}[/][/b]{position_label}  {status_chip}"
     )
+
+NOTIFICATION_LEVEL_STYLES = {
+    NotificationLevel.INFO: ("→", "#83a598", "info"),
+    NotificationLevel.SUCCESS: ("✓", "#b8bb26", "success"),
+    NotificationLevel.WARNING: ("⚠", "#fabd2f", "warning"),
+    NotificationLevel.ERROR: ("✕", "#fb4934", "error"),
+}
 
 NOTIFICATION_LEVEL_STYLES = {
     NotificationLevel.INFO: ("→", "#83a598", "info"),

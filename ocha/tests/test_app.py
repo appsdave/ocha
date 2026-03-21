@@ -228,7 +228,7 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
         from app.app import CSS
         self.assertIn("--selected", CSS)
 
-    def test_css_selected_has_highlight_background(self) -> None:
+    def test_css_selected_is_transparent_until_focused(self) -> None:
         from app.app import CSS
         self.assertIn("&.--selected {\n            background: transparent;", CSS)
 
@@ -252,26 +252,27 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
         text = WorkerListItem._format_task(task, selected=True)
         self.assertIn("#fbf1c7", text, "Selected task title should use bright color")
 
-    def test_format_task_selected_shows_active_badge(self) -> None:
+    def test_format_task_selected_shows_status_text_without_active_badge(self) -> None:
         from app.widgets import WorkerListItem
 
         task = self._task("T-001")
 
         text = WorkerListItem._format_task(task, selected=True)
 
-        self.assertIn("ACTIVE", text)
+        self.assertIn("running", text)
+        self.assertNotIn("ACTIVE", text)
+        self.assertNotIn("[on #458588]", text)
         self.assertNotIn(" running ", text)
-        self.assertNotIn("[on #458588] ACTIVE [/]", text)
 
-    def test_format_task_selected_does_not_use_task_id_box(self) -> None:
+    def test_format_task_selected_uses_task_id_text_emphasis(self) -> None:
         from app.widgets import WorkerListItem
 
         task = self._task("T-001")
 
         text = WorkerListItem._format_task(task, selected=True)
 
-        self.assertIn("[b][#d5c4a1]T-001[/][/b]", text)
-        self.assertNotIn("[on #3c3836] T-001 [/]", text)
+        self.assertIn("[b][#b8bb26]T-001[/][/b]", text)
+        self.assertNotIn("[on #3c3836]", text)
 
     def test_format_task_selected_bolds_branch_label(self) -> None:
         from app.widgets import WorkerListItem
@@ -298,12 +299,12 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
                            "--status-queued", "--status-stopped"):
             self.assertIn(status_cls, CSS, f"CSS should contain {status_cls}")
 
-    def test_css_focused_selected_has_brighter_background(self) -> None:
+    def test_css_focused_selected_has_subtle_background(self) -> None:
         from app.app import CSS
         self.assertIn(
             "& > ListItem.--selected.-highlight {\n            background: #32302f;",
             CSS,
-            "Focused selected items should use brighter background",
+            "Focused selected items should use subtle background",
         )
 
     def test_css_hover_has_subtle_background(self) -> None:
@@ -331,25 +332,15 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
         self.assertIn("2/5", selected_text)
         self.assertIn("2/5", unselected_text)
 
-    def test_format_task_selected_uses_plain_position_label(self) -> None:
+    def test_format_task_selected_uses_position_text_emphasis(self) -> None:
         from app.widgets import WorkerListItem
 
         task = self._task("T-001")
 
         text = WorkerListItem._format_task(task, selected=True, index=1, total=5)
 
-        self.assertIn("[#d5c4a1]2/5[/]", text)
-        self.assertNotIn("[on #3c3836] 2/5 [/]", text)
-
-    def test_format_task_selected_active_label_has_no_background_box(self) -> None:
-        from app.widgets import WorkerListItem
-
-        task = self._task("T-001")
-
-        text = WorkerListItem._format_task(task, selected=True)
-
-        self.assertIn("[b][#83a598]ACTIVE[/][/b]", text)
-        self.assertNotIn("[on #458588] ACTIVE [/]", text)
+        self.assertIn("[b][#d5c4a1]2/5[/][/b]", text)
+        self.assertNotIn("[on #3c3836]", text)
 
     def test_task_header_highlights_banner_and_pipeline(self) -> None:
         builder = self._worker("T-001", role=WorkerRole.BUILDER, status=WorkerStatus.RUNNING, summary="builder")

@@ -1,25 +1,28 @@
 # ocha — Documentation
 
-This directory contains design documentation and execution briefs for the ocha project.
+This directory contains the long-lived documentation for the ocha project: architecture notes, workflow behavior, and operational design references.
 
-## Contents
+## Core references
 
 | Document | Description |
 |----------|-------------|
-| [architecture.md](architecture.md) | Internal architecture: module graph, data model, request flows, widget hierarchy, git operations, CLI surface, and structured logging |
-| [merge-conflict-prevention.md](merge-conflict-prevention.md) | File-ownership lock system that prevents merge conflicts between concurrent workers |
-| [`../ocha/README.md#task-creation-examples`](../ocha/README.md#task-creation-examples) | Current task artifact layout, including `.ocha/tasks/T-*/sessions/S-*/prompt.md` and `session.json` |
+| [architecture.md](architecture.md) | Current application structure, task artifact model, pipeline advancement flow, CLI surface, and runtime behavior |
+| [merge-conflict-prevention.md](merge-conflict-prevention.md) | Shared-branch conflict-avoidance model: lock registry, execution grouping, scope checks, and role ownership |
+| [`../ocha/README.md`](../ocha/README.md) | Operator-facing install guide, command reference, orchestration pipeline, and git workflow |
+| [`../ocha/junie-headless-sessions.md`](../ocha/junie-headless-sessions.md) | Headless Junie session design notes and runtime constraints |
+| [`../ocha/python-textual-rebuild.md`](../ocha/python-textual-rebuild.md) | Background notes for the Python/Textual rebuild |
 
-## Task briefs
+## Task artifact references
 
-Task-specific execution briefs are created by the coordinator role during each task pipeline:
+Task-specific briefs exist as supporting artifacts, but they should not be treated as the source of truth for the current product behavior:
 
-| Brief | Task |
-|-------|------|
-| [T-001-highlight-active-focus-brief.md](T-001-highlight-active-focus-brief.md) | Better highlighting of the currently focused TUI pane |
+| Brief | Notes |
+|-------|-------|
+| [T-001-highlight-active-focus-brief.md](T-001-highlight-active-focus-brief.md) | Historical coordinator brief retained for reference |
+| [`../ocha/docs/t-001-execution-brief.md`](../ocha/docs/t-001-execution-brief.md) | Package-local execution brief produced for the prompt-based task-creation work |
 
 ## Quick links
 
-- **Main README**: [`ocha/README.md`](../ocha/README.md) — install instructions, CLI usage, orchestration pipeline, git workflow
 - **Role prompts**: [`ocha/app/roles/`](../ocha/app/roles/) — markdown prompts for coordinator, lead, builder, reviewer
-- **Design notes**: [`ocha/python-textual-rebuild.md`](../ocha/python-textual-rebuild.md), [`ocha/junie-headless-sessions.md`](../ocha/junie-headless-sessions.md)
+- **Task artifact layout**: [`../ocha/README.md#task-creation-examples`](../ocha/README.md#task-creation-examples) — `.ocha/tasks/T-*/prompt.md`, `status.json`, and per-session `prompt.md` / `session.json`
+- **Shared branch model**: [`../ocha/README.md#git-workflow`](../ocha/README.md#git-workflow) — all workers stay on `agent`
