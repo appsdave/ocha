@@ -23,6 +23,7 @@ Solution
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -304,18 +305,38 @@ def ensure_pr_title(
     if not gh_bin:
         return "gh CLI not found — skipping PR title update."
 
-    # Try to edit the existing PR first (most common path when agents push
-    # multiple times during a task).
-    edit = subprocess.run(
-        [gh_bin, "pr", "edit", branch, "--title", title],
+    lookup = subprocess.run(
+        [
+            gh_bin, "pr", "list",
+            "--state", "open",
+            "--head", branch,
+            "--json", "number",
+        ],
         capture_output=True,
         text=True,
         timeout=timeout,
     )
-    if edit.returncode == 0:
-        return f"PR title updated to: {title}"
+    if lookup.returncode == 0:
+        try:
+            prs = json.loads(lookup.stdout or "[]")
+        except json.JSONDecodeError:
+            prs = None
+        if prs:
+            pr_number = prs[0].get("number")
+            if pr_number is not None:
+                edit = subprocess.run(
+                    [gh_bin, "pr", "edit", str(pr_number), "--title", title],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+                if edit.returncode == 0:
+                    return f"Open PR #{pr_number} title updated to: {title}"
+                return (
+                    f"PR update/create note: failed to update open PR #{pr_number}: "
+                    f"{edit.stderr.strip()}"
+                )
 
-    # No existing PR — create one.
     create = subprocess.run(
         [
             gh_bin, "pr", "create",
@@ -331,7 +352,13 @@ def ensure_pr_title(
     if create.returncode == 0:
         return f"PR created: {create.stdout.strip()}"
 
-    return f"PR update/create note: {edit.stderr.strip()} / {create.stderr.strip()}"
+    lookup_err = lookup.stderr.strip()
+    create_err = create.stderr.strip()
+    if lookup.returncode != 0:
+        return f"PR update/create note: {lookup_err} / {create_err}"
+    if prs is None:
+        return f"PR update/create note: failed to parse gh pr list output / {create_err}"
+    return f"PR update/create note: no open PR found for {branch} / {create_err}"
 
 
 # ── Scope-validated merge helpers ─────────────────────────────────────

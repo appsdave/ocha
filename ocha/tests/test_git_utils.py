@@ -282,21 +282,24 @@ class TestEnsurePrTitle(unittest.TestCase):
 
     @patch("app.git_utils.subprocess.run")
     @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
-    def test_edit_succeeds(self, _which: MagicMock, mock_run: MagicMock) -> None:
-        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    def test_updates_existing_open_pr(self, _which: MagicMock, mock_run: MagicMock) -> None:
+        list_result = MagicMock(returncode=0, stdout='[{"number": 17}]', stderr="")
+        edit_result = MagicMock(returncode=0, stdout="", stderr="")
+        mock_run.side_effect = [list_result, edit_result]
         result = ensure_pr_title("agent", "[T-001] Fix bug")
         self.assertIn("updated", result.lower())
-        # Should only call edit, not create
-        mock_run.assert_called_once()
-        args = mock_run.call_args[0][0]
+        self.assertIn("#17", result)
+        self.assertEqual(mock_run.call_count, 2)
+        args = mock_run.call_args_list[1][0][0]
         self.assertIn("edit", args)
+        self.assertIn("17", args)
 
     @patch("app.git_utils.subprocess.run")
     @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
-    def test_edit_fails_then_create_succeeds(self, _which: MagicMock, mock_run: MagicMock) -> None:
-        edit_result = MagicMock(returncode=1, stdout="", stderr="no PR found")
+    def test_no_open_pr_then_create_succeeds(self, _which: MagicMock, mock_run: MagicMock) -> None:
+        list_result = MagicMock(returncode=0, stdout="[]", stderr="")
         create_result = MagicMock(returncode=0, stdout="https://github.com/o/r/pull/1", stderr="")
-        mock_run.side_effect = [edit_result, create_result]
+        mock_run.side_effect = [list_result, create_result]
         result = ensure_pr_title("agent", "[T-001] Fix bug")
         self.assertIn("created", result.lower())
         self.assertEqual(mock_run.call_count, 2)
@@ -304,17 +307,18 @@ class TestEnsurePrTitle(unittest.TestCase):
     @patch("app.git_utils.subprocess.run")
     @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
     def test_both_fail_returns_note(self, _which: MagicMock, mock_run: MagicMock) -> None:
-        fail = MagicMock(returncode=1, stdout="", stderr="network error")
-        mock_run.return_value = fail
+        list_fail = MagicMock(returncode=1, stdout="", stderr="network error")
+        create_fail = MagicMock(returncode=1, stdout="", stderr="create error")
+        mock_run.side_effect = [list_fail, create_fail]
         result = ensure_pr_title("agent", "[T-001] Fix bug")
         self.assertIn("note", result.lower())
 
     @patch("app.git_utils.subprocess.run")
     @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
     def test_create_uses_correct_base_branch(self, _which: MagicMock, mock_run: MagicMock) -> None:
-        edit_result = MagicMock(returncode=1, stdout="", stderr="no PR")
+        list_result = MagicMock(returncode=0, stdout="[]", stderr="")
         create_result = MagicMock(returncode=0, stdout="https://github.com/o/r/pull/2", stderr="")
-        mock_run.side_effect = [edit_result, create_result]
+        mock_run.side_effect = [list_result, create_result]
         ensure_pr_title("agent", "[T-001] Fix", base="develop")
         create_call_args = mock_run.call_args_list[1][0][0]
         self.assertIn("--base", create_call_args)
@@ -324,13 +328,40 @@ class TestEnsurePrTitle(unittest.TestCase):
     @patch("app.git_utils.subprocess.run")
     @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
     def test_pr_body_contains_task_id(self, _which: MagicMock, mock_run: MagicMock) -> None:
-        edit_result = MagicMock(returncode=1, stdout="", stderr="no PR")
+        list_result = MagicMock(returncode=0, stdout="[]", stderr="")
         create_result = MagicMock(returncode=0, stdout="url", stderr="")
-        mock_run.side_effect = [edit_result, create_result]
+        mock_run.side_effect = [list_result, create_result]
         ensure_pr_title("agent", "[T-042] New feature")
         create_call_args = mock_run.call_args_list[1][0][0]
         body_idx = create_call_args.index("--body")
         self.assertIn("T-042", create_call_args[body_idx + 1])
+
+    @patch("app.git_utils.subprocess.run")
+    @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
+    def test_invalid_open_pr_list_output_falls_back_to_create(
+        self, _which: MagicMock, mock_run: MagicMock,
+    ) -> None:
+        list_result = MagicMock(returncode=0, stdout="not json", stderr="")
+        create_result = MagicMock(returncode=0, stdout="url", stderr="")
+        mock_run.side_effect = [list_result, create_result]
+
+        result = ensure_pr_title("agent", "[T-001] Fix bug")
+
+        self.assertIn("created", result.lower())
+
+    @patch("app.git_utils.subprocess.run")
+    @patch("app.git_utils.shutil.which", return_value="/usr/bin/gh")
+    def test_existing_open_pr_edit_failure_returns_note(
+        self, _which: MagicMock, mock_run: MagicMock,
+    ) -> None:
+        list_result = MagicMock(returncode=0, stdout='[{"number": 21}]', stderr="")
+        edit_fail = MagicMock(returncode=1, stdout="", stderr="edit error")
+        mock_run.side_effect = [list_result, edit_fail]
+
+        result = ensure_pr_title("agent", "[T-001] Fix bug")
+
+        self.assertIn("note", result.lower())
+        self.assertIn("#21", result)
 
 
 class TestFormatPrTitleEdgeCases(unittest.TestCase):
