@@ -14,21 +14,22 @@ app.py (OchaApp)
   ├── file_lock.py     (release_all_for_task, release_inactive_locks)
   ├── orchestrator.py  (build_role_prompt, launch_task, load_role_definitions)
   ├── git_utils.py     (commit_worktree_changes, merge_worktree_commits, ensure_pr_title)
-  ├── task_files.py    (write_session_manifest, write_session_prompt)
-  ├── worktree_manager.py (ensure_worktree, cleanup_worktrees)
+  ├── notifications.py (NotificationCenter, NotificationEvent, NotificationLevel)
   ├── state.py         (AppState, OchaTask, WorkerSession, enums)
+  ├── task_files.py    (write_session_manifest, write_session_prompt)
   ├── widgets.py       (AgentsPane, TaskHeader, OutputPane, StatusBar, MainLayout)
+  ├── worktree_manager.py (ensure_worktree, cleanup_worktrees)
   └── workflow_logger.py (WorkflowLogger, make_logger, LogLevel, EventCategory)
-
-orchestrator.py
-  ├── file_lock.py     (acquire_lock, release_inactive_locks, cleanup_stale_locks)
-  ├── task_files.py    (ensure_task_artifacts, write_session_manifest, write_session_prompt, write_task_prompt)
-  ├── state.py         (AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession)
-  └── workflow_logger.py (make_logger, LogLevel, EventCategory)
 
 concurrency.py
   ├── file_lock.py     (_patterns_overlap)
   └── state.py         (WorkerSession, WorkerStatus)
+
+orchestrator.py
+  ├── file_lock.py     (acquire_lock, can_run_parallel, release_lock, validate_commit_scope)
+  ├── state.py         (AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession)
+  ├── task_files.py    (ensure_task_artifacts, write_session_manifest, write_session_prompt, write_task_prompt)
+  └── workflow_logger.py (make_logger, LogLevel, EventCategory)
 
 state.py
   └── workflow_logger.py (WorkflowLogger — type hint only)
@@ -151,9 +152,9 @@ Worker completes (exit code 0)
   → OchaApp._advance_pipeline(task)
     → collect upstream output (capped 20 lines / 4 KB)
     → compute_execution_plan(queued_workers, AUTO)
-    → rebuild prompts for the first non-conflicting execution group
-    → set each group member to RUNNING
-    → _run_junie_for_worker(worker) for each launched worker
+    → _rebuild_prompt_with_upstream()        # inject prior phase output
+    → set next execution group to RUNNING
+    → launch each worker in the group
 
 All workers done
   → _post_pipeline_git_flow(task)            # async, runs in background thread
@@ -174,6 +175,7 @@ All workers done
 6. **Streaming** — stdout read line-by-line into `raw_log` and `workflow_log`
 7. **Completion** — exit code checked; changes committed inside worktree
 8. **Kill** — `os.killpg(pgid, SIGKILL)` kills entire process tree (including Java)
+9. **Cleanup** — completed tasks release locks and remove worktrees via `file_lock.py` + `worktree_manager.py`
 
 ## Widget hierarchy
 

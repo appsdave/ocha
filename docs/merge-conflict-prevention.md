@@ -30,7 +30,7 @@ All lock registry operations (`acquire_lock`, `release_lock`, `release_all_for_t
 
 ### Layer 3: Smart Execution Groups (ConcurrencyPolicy)
 
-The app computes an **execution plan** that groups queued workers by ownership overlap:
+The app now computes an **execution plan** that groups queued workers by ownership overlap before launching the next pipeline batch:
 
 ```
 ConcurrencyPolicy.AUTO (default):
@@ -47,16 +47,10 @@ ConcurrencyPolicy.FORCE_PARALLEL:
   Group 0: [coordinator, lead, builder, reviewer]  ← all at once (risky)
 ```
 
-In the live TUI pipeline, `ocha/app/concurrency.py` provides `compute_execution_plan()`, which uses a greedy first-fit grouping strategy over owned-directory overlap and returns ordered `ExecutionGroup` batches. The older `file_lock.can_run_parallel()` / `orchestrator.compute_execution_plan()` path still exists as a compatibility helper, but the active worker-launch path in `app.py` uses the `concurrency.py` scheduler.
+Two scheduling helpers currently exist in the codebase:
 
-At runtime, `app.py` uses `concurrency.compute_execution_plan()` to select the
-next launchable group from queued workers, starts that group in parallel, then
-waits for it to finish before launching the next group. The helper is a greedy
-first-fit scheduler: it walks queued workers in pipeline order and adds each one
-to the earliest group whose ownership patterns do not overlap.
-
-Legacy index-based scheduling helpers still exist in `orchestrator.py` and
-`state.py`, but the active TUI pipeline now goes through `concurrency.py`.
+- `app/concurrency.py` provides the **runtime** `compute_execution_plan()` used by `app.py._advance_pipeline()`. It works on queued `WorkerSession` objects and uses a greedy first-fit grouping strategy while preserving pipeline order.
+- `app/file_lock.py` still exposes `can_run_parallel()` for the legacy tuple-based planner used by `orchestrator.py` helpers and tests. It builds a conflict graph from ownership patterns and assigns workers to the earliest non-conflicting group.
 
 ### Layer 4: Commit-Scope Validation
 
@@ -73,7 +67,7 @@ Before merging worktree commits back onto `agent`, `git_utils.merge_worktree_com
 | **Advisory, not blocking** | A misbehaving agent shouldn't deadlock the entire pipeline. Warnings are logged; the orchestrator decides policy. |
 | **Directory-level granularity** | Matches the existing `ROLE_DIRECTORIES` mapping. Fine-grained file locks would add complexity without proportional benefit. |
 | **JSON on disk + fcntl** | Simple, human-readable, works across worktrees. OS-level locking prevents concurrent corruption. No external dependencies. |
-| **Greedy grouping for groups** | The active runtime scheduler uses a simple first-fit grouping pass; with only four workers, it stays easy to reason about and effectively instant. |
+| **Greedy execution grouping** | Both planner implementations are O(n²) with at most four workers, so they stay simple and effectively instant. |
 | **Advisory scope validation** | Scope checks surface warnings during merge instead of blocking the pipeline outright, matching the non-blocking lock design. |
 | **Centralised worktree manager** | Single module (`worktree_manager.py`) for create/remove/cleanup/list — replaces ad-hoc worktree code in `app.py`. |
 
@@ -89,15 +83,17 @@ Before merging worktree commits back onto `agent`, `git_utils.merge_worktree_com
 | `detect_conflicts(requester, role, patterns, locks)` | Check for overlapping ownership |
 | `validate_commit_scope(changed_files, owned_patterns)` | Verify a commit stayed in scope |
 | `cleanup_stale_locks(project_path, max_age)` | Remove expired locks (atomic) |
-| `can_run_parallel(workers)` | Compute parallel execution groups via graph-colouring |
+| `release_inactive_locks(project_path, active_session_ids)` | Reconcile persisted locks with currently active sessions |
+| `can_run_parallel(workers)` | Compute tuple-based parallel execution groups |
 
 #### concurrency.py
 
-| Function | Purpose |
-|----------|---------|
+| Function / Type | Purpose |
+|-----------------|---------|
+| `ConcurrencyPolicy` | Runtime enum: `sequential`, `auto`, `parallel` |
+| `ExecutionGroup` | Dataclass containing the grouped `WorkerSession` objects |
+| `ExecutionGroup.session_ids` | Convenience view of grouped session IDs for logs/debugging |
 | `compute_execution_plan(workers, policy)` | Partition queued `WorkerSession` objects into runtime launch groups |
-| `ExecutionGroup.session_ids` | Convenience view of the group members for logging/debugging |
-| `ExecutionGroup.workers` | Tuple of workers that can launch concurrently |
 
 #### git_utils.py
 
@@ -136,5 +132,7 @@ The builder ↔ reviewer overlap is the primary conflict vector. Under `AUTO` po
 
 ## Current gaps
 
-- `state.py` / `orchestrator.py` still carry older concurrency types and wrappers alongside the active `concurrency.py` runtime path; this duplication is now documented but not yet consolidated.
-- There is still no user-facing CLI for inspecting or clearing the advisory lock registry.
+- **Single runtime policy** — `app.py` currently hard-codes `ConcurrencyPolicy.AUTO`; there is still no CLI or TUI control to switch policies.
+- **Advisory merge-scope enforcement** — `scope_validated_merge()` logs out-of-scope files but does not block the merge.
+- **Duplicate scheduling types** — both `app/concurrency.py` and `app/state.py` still expose scheduling enums/dataclasses, which is functional but easy to confuse when reading the codebase.
+- **Lock-registry UX** — there is still no user-facing CLI for inspecting or clearing the advisory lock registry.
