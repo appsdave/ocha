@@ -27,8 +27,118 @@ import json
 import re
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
+
+
+@dataclass(frozen=True)
+class GitStateCheckResult:
+    """Outcome of checking/repairing the repository Git state."""
+
+    ok: bool
+    messages: list[str]
+    blocking_reason: str | None = None
+
+
+_UNMERGED_PREFIXES = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
+
+
+def _run_git(
+    *args: str,
+    cwd: str | Path | None = None,
+    timeout: int = 30,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        list(args),
+        cwd=str(cwd) if cwd else None,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def _git_dir(repo_dir: str | Path | None = None, *, timeout: int = 10) -> Path | None:
+    result = _run_git("git", "rev-parse", "--git-dir", cwd=repo_dir, timeout=timeout)
+    if result.returncode != 0:
+        return None
+    git_dir = Path(result.stdout.strip())
+    if not git_dir.is_absolute():
+        base = Path(repo_dir) if repo_dir else Path.cwd()
+        git_dir = (base / git_dir).resolve()
+    return git_dir
+
+
+def _porcelain_lines(repo_dir: str | Path | None = None, *, timeout: int = 10) -> list[str]:
+    status = _run_git("git", "status", "--porcelain", cwd=repo_dir, timeout=timeout)
+    if status.returncode != 0:
+        return []
+    return [line for line in status.stdout.splitlines() if line.strip()]
+
+
+def _has_unmerged_entries(repo_dir: str | Path | None = None, *, timeout: int = 10) -> bool:
+    for line in _porcelain_lines(repo_dir, timeout=timeout):
+        if line[:2] in _UNMERGED_PREFIXES:
+            return True
+    return False
+
+
+def _has_cherry_pick_in_progress(repo_dir: str | Path | None = None, *, timeout: int = 10) -> bool:
+    git_dir = _git_dir(repo_dir, timeout=timeout)
+    return bool(git_dir and (git_dir / "CHERRY_PICK_HEAD").exists())
+
+
+def ensure_clean_git_state(
+    *,
+    repo_dir: str | Path | None = None,
+    require_clean_worktree: bool = False,
+    timeout: int = 30,
+) -> GitStateCheckResult:
+    """Abort unfinished git operations and verify the repo is safe to use."""
+    git_dir = _git_dir(repo_dir, timeout=min(timeout, 10))
+    if git_dir is None:
+        return GitStateCheckResult(False, [], "Not a git repository.")
+
+    messages: list[str] = []
+    operations: list[tuple[str, tuple[str, ...], Path]] = [
+        ("rebase", ("git", "rebase", "--abort"), git_dir / "rebase-merge"),
+        ("rebase", ("git", "rebase", "--abort"), git_dir / "rebase-apply"),
+        ("cherry-pick", ("git", "cherry-pick", "--abort"), git_dir / "CHERRY_PICK_HEAD"),
+        ("merge", ("git", "merge", "--abort"), git_dir / "MERGE_HEAD"),
+    ]
+    aborted: set[str] = set()
+    for label, command, marker in operations:
+        if not marker.exists() or label in aborted:
+            continue
+        result = _run_git(*command, cwd=repo_dir, timeout=timeout)
+        detail = result.stderr.strip() or result.stdout.strip()
+        if result.returncode != 0:
+            reason = detail or f"Failed to abort {label}."
+            return GitStateCheckResult(False, messages, reason)
+        messages.append(f"Aborted unfinished {label} operation.")
+        aborted.add(label)
+
+    if _has_unmerged_entries(repo_dir, timeout=min(timeout, 10)):
+        return GitStateCheckResult(
+            False,
+            messages,
+            "Git index still has unresolved merge conflicts.",
+        )
+
+    if require_clean_worktree:
+        status = _run_git("git", "status", "--porcelain", "--untracked-files=no", cwd=repo_dir, timeout=min(timeout, 10))
+        if status.returncode != 0:
+            detail = status.stderr.strip() or status.stdout.strip() or "Failed to inspect git status."
+            return GitStateCheckResult(False, messages, detail)
+        dirty = [line for line in status.stdout.splitlines() if line.strip()]
+        if dirty:
+            return GitStateCheckResult(
+                False,
+                messages,
+                "Tracked local changes are present; commit, stash, or discard them before continuing.",
+            )
+
+    return GitStateCheckResult(True, messages)
 
 
 def commit_worktree_changes(
@@ -121,7 +231,6 @@ def merge_worktree_commits(
     list[str]
         Log messages describing what happened for each SHA.
     """
-    cwd = str(repo_dir) if repo_dir else None
     logs: list[str] = []
 
     # Filter out None / empty values
@@ -131,78 +240,54 @@ def merge_worktree_commits(
         return logs
 
     # Ensure we are on the target branch
-    subprocess.run(
-        ["git", "checkout", branch],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    checkout = _run_git("git", "checkout", branch, cwd=repo_dir, timeout=timeout)
+    if checkout.returncode != 0:
+        raise subprocess.SubprocessError(checkout.stderr.strip() or f"Failed to checkout {branch}.")
 
     for sha in valid_shas:
         # Try cherry-pick first
-        cp = subprocess.run(
-            ["git", "cherry-pick", sha, "--no-commit"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        cp = _run_git("git", "cherry-pick", sha, "--no-commit", cwd=repo_dir, timeout=timeout)
         if cp.returncode == 0:
             # Stage and commit the cherry-picked changes
-            subprocess.run(
-                ["git", "add", "-A"],
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            add_result = _run_git("git", "add", "-A", cwd=repo_dir, timeout=timeout)
+            if add_result.returncode != 0:
+                raise subprocess.SubprocessError(add_result.stderr.strip() or "git add failed after cherry-pick.")
             # Check if there are actual staged changes
-            diff_check = subprocess.run(
-                ["git", "diff", "--cached", "--quiet"],
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            diff_check = _run_git("git", "diff", "--cached", "--quiet", cwd=repo_dir, timeout=timeout)
             if diff_check.returncode != 0:
-                subprocess.run(
-                    ["git", "commit", "-m", f"Cherry-pick worktree {sha[:8]}"],
-                    cwd=cwd,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
+                commit_result = _run_git(
+                    "git", "commit", "-m", f"Cherry-pick worktree {sha[:8]}", cwd=repo_dir, timeout=timeout,
                 )
+                if commit_result.returncode != 0:
+                    raise subprocess.SubprocessError(
+                        commit_result.stderr.strip() or f"git commit failed for cherry-pick {sha[:8]}."
+                    )
                 logs.append(f"Cherry-picked {sha[:8]}.")
             else:
                 # Cherry-pick resulted in no effective changes (already applied)
-                subprocess.run(
-                    ["git", "cherry-pick", "--abort"],
-                    cwd=cwd,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                )
+                if _has_cherry_pick_in_progress(repo_dir, timeout=min(timeout, 10)):
+                    abort_result = _run_git("git", "cherry-pick", "--abort", cwd=repo_dir, timeout=timeout)
+                    if abort_result.returncode != 0:
+                        raise subprocess.SubprocessError(
+                            abort_result.stderr.strip() or f"Failed to abort empty cherry-pick for {sha[:8]}."
+                        )
                 logs.append(f"Skipped {sha[:8]} — changes already present.")
             continue
 
         # Cherry-pick failed — abort and fall back to patch-based apply
-        subprocess.run(
-            ["git", "cherry-pick", "--abort"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        if _has_cherry_pick_in_progress(repo_dir, timeout=min(timeout, 10)):
+            abort_result = _run_git("git", "cherry-pick", "--abort", cwd=repo_dir, timeout=timeout)
+            if abort_result.returncode != 0:
+                raise subprocess.SubprocessError(
+                    abort_result.stderr.strip() or f"Failed to abort cherry-pick for {sha[:8]}."
+                )
+            cleanup_check = ensure_clean_git_state(repo_dir=repo_dir, timeout=timeout)
+            if not cleanup_check.ok:
+                detail = cleanup_check.blocking_reason or "Repository still dirty after cherry-pick abort."
+                raise subprocess.SubprocessError(detail)
 
         # Generate a patch from the worktree commit
-        diff_result = subprocess.run(
-            ["git", "diff", f"{sha}~1", sha],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        diff_result = _run_git("git", "diff", f"{sha}~1", sha, cwd=repo_dir, timeout=timeout)
         if diff_result.returncode != 0 or not diff_result.stdout.strip():
             logs.append(f"Skipped {sha[:8]} — could not generate patch.")
             continue
@@ -211,38 +296,36 @@ def merge_worktree_commits(
         apply_result = subprocess.run(
             ["git", "apply", "--3way", "--allow-empty"],
             input=diff_result.stdout,
-            cwd=cwd,
+            cwd=str(repo_dir) if repo_dir else None,
             capture_output=True,
             text=True,
             timeout=timeout,
         )
         if apply_result.returncode == 0:
-            subprocess.run(
-                ["git", "add", "-A"],
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-            diff_check = subprocess.run(
-                ["git", "diff", "--cached", "--quiet"],
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            add_result = _run_git("git", "add", "-A", cwd=repo_dir, timeout=timeout)
+            if add_result.returncode != 0:
+                raise subprocess.SubprocessError(add_result.stderr.strip() or "git add failed after patch apply.")
+            diff_check = _run_git("git", "diff", "--cached", "--quiet", cwd=repo_dir, timeout=timeout)
             if diff_check.returncode != 0:
-                subprocess.run(
-                    ["git", "commit", "-m", f"Patch-apply worktree {sha[:8]}"],
-                    cwd=cwd,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
+                commit_result = _run_git(
+                    "git", "commit", "-m", f"Patch-apply worktree {sha[:8]}", cwd=repo_dir, timeout=timeout,
                 )
+                if commit_result.returncode != 0:
+                    raise subprocess.SubprocessError(
+                        commit_result.stderr.strip() or f"git commit failed for patch apply {sha[:8]}."
+                    )
                 logs.append(f"Applied patch for {sha[:8]}.")
             else:
                 logs.append(f"Skipped {sha[:8]} — patch produced no changes.")
         else:
+            reset_result = _run_git("git", "reset", "--hard", "HEAD", cwd=repo_dir, timeout=timeout)
+            if reset_result.returncode != 0:
+                detail = reset_result.stderr.strip() or "Failed to reset repository after patch-apply failure."
+                raise subprocess.SubprocessError(detail)
+            cleanup_check = ensure_clean_git_state(repo_dir=repo_dir, timeout=timeout)
+            if not cleanup_check.ok:
+                detail = cleanup_check.blocking_reason or "Repository still dirty after patch-apply failure."
+                raise subprocess.SubprocessError(detail)
             logs.append(
                 f"Failed to apply {sha[:8]}: {apply_result.stderr.strip()}"
             )

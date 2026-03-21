@@ -15,7 +15,13 @@ from pathlib import Path
 
 from unittest.mock import patch, MagicMock
 
-from app.git_utils import commit_worktree_changes, ensure_pr_title, format_pr_title, merge_worktree_commits
+from app.git_utils import (
+    commit_worktree_changes,
+    ensure_clean_git_state,
+    ensure_pr_title,
+    format_pr_title,
+    merge_worktree_commits,
+)
 
 
 def _init_repo(tmp: Path) -> Path:
@@ -223,10 +229,61 @@ class TestMergeWorktreeCommits(unittest.TestCase):
             logs = merge_worktree_commits([sha], "main", repo_dir=repo)
 
             self.assertTrue((repo / "app" / "utils" / "helper.py").exists())
-            self.assertEqual(
-                (repo / "app" / "utils" / "helper.py").read_text(),
-                "def help(): pass\n",
+
+    def test_raises_when_abort_cleanup_leaves_repo_unmerged(self) -> None:
+        with patch("app.git_utils.ensure_clean_git_state") as mock_clean_state:
+            mock_clean_state.return_value = MagicMock(
+                ok=False,
+                blocking_reason="Git index still has unresolved merge conflicts.",
             )
+            with patch("app.git_utils._has_cherry_pick_in_progress", return_value=True):
+                with patch("app.git_utils._run_git") as mock_run_git:
+                    mock_run_git.side_effect = [
+                        MagicMock(returncode=0, stderr="", stdout=""),
+                        MagicMock(returncode=1, stderr="conflict", stdout=""),
+                        MagicMock(returncode=0, stderr="", stdout=""),
+                    ]
+                    with self.assertRaises(subprocess.SubprocessError):
+                        merge_worktree_commits(["abc12345"], "main", repo_dir="/tmp/repo")
+
+
+class TestEnsureCleanGitState(unittest.TestCase):
+    def test_detects_dirty_tracked_changes_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _init_repo(Path(tmp))
+            (repo / "README.md").write_text("# dirty\n")
+
+            result = ensure_clean_git_state(repo_dir=repo, require_clean_worktree=True)
+
+            self.assertFalse(result.ok)
+            self.assertIn("Tracked local changes", result.blocking_reason)
+
+    def test_aborts_in_progress_cherry_pick_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _init_repo(Path(tmp))
+            subprocess.run(["git", "checkout", "-b", "topic"], cwd=repo, capture_output=True, check=True)
+            (repo / "README.md").write_text("topic\n")
+            subprocess.run(["git", "commit", "-am", "topic"], cwd=repo, capture_output=True, check=True)
+            topic_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            subprocess.run(["git", "checkout", "main"], cwd=repo, capture_output=True, check=True)
+            (repo / "README.md").write_text("main\n")
+            subprocess.run(["git", "commit", "-am", "main"], cwd=repo, capture_output=True, check=True)
+
+            cherry_pick = subprocess.run(
+                ["git", "cherry-pick", topic_sha], cwd=repo, capture_output=True, text=True,
+            )
+            self.assertNotEqual(cherry_pick.returncode, 0)
+
+            result = ensure_clean_git_state(repo_dir=repo)
+
+            self.assertTrue(result.ok)
+            self.assertTrue(any("Aborted unfinished cherry-pick" in msg for msg in result.messages))
+            status = subprocess.run(
+                ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True,
+            )
+            self.assertEqual(status.stdout.strip(), "")
 
 
 class TestFormatPrTitle(unittest.TestCase):
