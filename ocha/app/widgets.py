@@ -7,6 +7,7 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import ListItem, ListView, Static
 
+from .notifications import NotificationEvent, NotificationLevel
 from .state import AppState, OchaTask, OutputMode, WorkerStatus
 
 
@@ -104,6 +105,12 @@ def _format_active_task_banner(task: OchaTask, *, position: str) -> str:
         f"[b][#fbf1c7]{task.title}[/][/b]{position_label}  {status_chip}"
     )
 
+NOTIFICATION_LEVEL_STYLES = {
+    NotificationLevel.INFO: ("→", "#83a598", "info"),
+    NotificationLevel.SUCCESS: ("✓", "#b8bb26", "success"),
+    NotificationLevel.WARNING: ("⚠", "#fabd2f", "warning"),
+    NotificationLevel.ERROR: ("✕", "#fb4934", "error"),
+}
 
 class WorkerListItem(ListItem):
     def __init__(self, task: OchaTask, selected: bool = False, index: int = 0, total: int = 0) -> None:
@@ -118,28 +125,6 @@ class WorkerListItem(ListItem):
     @staticmethod
     def _format_task(task: OchaTask, selected: bool = False, index: int = 0, total: int = 0) -> str:
         icon = STATUS_ICON[task.status]
-<<<<<<< HEAD
-        color = STATUS_LABEL_COLOR[task.status]
-        elapsed = task.elapsed
-        title = task.title if len(task.title) <= 32 else task.title[:29] + "..."
-        position = f"{index + 1}/{total}" if total > 0 else ""
-        if selected:
-            pointer = f"[{color}]▶[/] "
-            id_label = f"[b][{color}]{task.task_id}[/][/b]"
-            pos_label = f"  [{color}]{position}[/]" if position else ""
-            title_color = "#fbf1c7"
-            meta_color = "#bdae93"
-        else:
-            pointer = "  "
-            id_label = f"[#a89984]{task.task_id}[/]"
-            pos_label = f"  [#665c54]{position}[/]" if position else ""
-            title_color = "#bdae93"
-            meta_color = "#7c6f64"
-        return (
-            f"{pointer}{icon} {id_label}{pos_label}\n"
-            f"    [{title_color}]{title}[/]\n"
-            f"    [{meta_color}]{task.branch}[/] · [{color}]{task.status.value}[/] · [{meta_color}]{elapsed}[/]"
-=======
         position = _task_position(index, total)
         highlight = TaskRowHighlight.build(task, selected=selected, position=position)
         return (
@@ -147,7 +132,6 @@ class WorkerListItem(ListItem):
             f"    [{highlight.title_color}]{_truncate_task_title(task.title)}[/]\n"
             f"    [{highlight.branch_color}]{task.branch}[/] {TASK_POSITION_BULLET} "
             f"{highlight.status_label} {TASK_POSITION_BULLET} [{highlight.meta_color}]{task.elapsed}[/]"
->>>>>>> 2215eac (ocha: coordinator S-002-01)
         )
 
 
@@ -244,26 +228,8 @@ class TaskHeader(Static):
             return
         worker = task.primary_worker
         color = STATUS_LABEL_COLOR[task.status]
-<<<<<<< HEAD
-        icon = STATUS_ICON[task.status]
-
-        # Build pipeline visualization with arrow connectors
-        pipeline_parts = []
-        for w in sorted(task.workers, key=lambda w: w.role.value):
-            wc = STATUS_LABEL_COLOR[w.status]
-            wi = STATUS_ICON[w.status]
-            pipeline_parts.append(f"{wi} [{wc}]{w.role}[/] [{wc}]{w.status.value}[/]")
-        pipeline = "  [#504945]→[/]  ".join(pipeline_parts)
-
-        # Position indicator (e.g. "2/5")
-        pos_label = f"  [#928374]([/][#b8bb26]{position}[/][#928374])[/]" if position else ""
-
-        # Active task banner — makes it very clear which task is selected
-        banner_line = f"  [b][on #3c3836] {icon} {task.task_id} [/][/b]  [b]{task.title}[/b]{pos_label}"
-=======
         pipeline = _format_pipeline(task)
         banner_line = _format_active_task_banner(task, position=position)
->>>>>>> 2215eac (ocha: coordinator S-002-01)
 
         new_text = (
             f"[b][#b8bb26]▸ Active Task[/][/b]\n\n"
@@ -348,6 +314,42 @@ class OutputPane(VerticalScroll):
             self.call_after_refresh(self.scroll_end, animate=False)
 
 
+class NotificationPane(Widget):
+    MAX_VISIBLE_NOTIFICATIONS = 6
+
+    def compose(self):
+        yield Static("[b][#b8bb26]Notifications[/][/b]", classes="pane-title")
+        yield Static(id="notifications-content")
+
+    def load(self, history: tuple[NotificationEvent, ...]) -> None:
+        title = self.query_one(".pane-title", Static)
+        content = self.query_one("#notifications-content", Static)
+        visible_events = history[-self.MAX_VISIBLE_NOTIFICATIONS :]
+
+        if visible_events:
+            title.update(
+                f"[b][#b8bb26]Notifications[/][/b] [#928374]({len(history)})[/]"
+            )
+        else:
+            title.update("[b][#b8bb26]Notifications[/][/b]")
+
+        if not visible_events:
+            content.update(
+                "[#928374]No notifications yet. Task launches, warnings, and errors will appear here.[/]"
+            )
+            return
+
+        lines: list[str] = []
+        for event in reversed(visible_events):
+            icon, color, label = NOTIFICATION_LEVEL_STYLES[event.level]
+            title_markup = f" [#928374]·[/] [#d3869b]{event.title}[/]" if event.title else ""
+            lines.append(
+                f"[{color}]{icon}[/] [b][{color}]{label.upper()}[/][/b]{title_markup}\n"
+                f"  [#ebdbb2]{event.message}[/]"
+            )
+        content.update("\n\n".join(lines))
+
+
 class HelpBar(Static):
     pass
 
@@ -385,6 +387,7 @@ class MainLayout(Widget):
             with Vertical(id="detail-pane"):
                 yield TaskHeader(id="task-header")
                 yield OutputPane(id="output-pane")
+                yield NotificationPane(id="notifications-pane")
         yield HelpBar(
             "[#504945]│[/] [#fabd2f]n[/] [#ebdbb2]new[/] "
             "[#504945]│[/] [#fabd2f]↑/↓[/] [#ebdbb2]move[/] "
