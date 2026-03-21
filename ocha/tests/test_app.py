@@ -262,7 +262,7 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
         self.assertIn("ACTIVE", text)
         self.assertNotIn(" running ", text)
 
-    def test_format_task_selected_uses_task_id_chip(self) -> None:
+    def test_format_task_selected_does_not_use_task_id_box(self) -> None:
         from app.widgets import WorkerListItem
 
         task = self._task("T-001")
@@ -270,6 +270,7 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
         text = WorkerListItem._format_task(task, selected=True)
 
         self.assertIn("[b][#d5c4a1]T-001[/][/b]", text)
+        self.assertNotIn("[on #3c3836] T-001 [/]", text)
 
     def test_format_task_selected_bolds_branch_label(self) -> None:
         from app.widgets import WorkerListItem
@@ -329,7 +330,7 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
         self.assertIn("2/5", selected_text)
         self.assertIn("2/5", unselected_text)
 
-    def test_format_task_selected_uses_position_chip(self) -> None:
+    def test_format_task_selected_uses_plain_position_label(self) -> None:
         from app.widgets import WorkerListItem
 
         task = self._task("T-001")
@@ -337,6 +338,17 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
         text = WorkerListItem._format_task(task, selected=True, index=1, total=5)
 
         self.assertIn("[#d5c4a1]2/5[/]", text)
+        self.assertNotIn("[on #3c3836] 2/5 [/]", text)
+
+    def test_format_task_selected_active_label_has_no_background_box(self) -> None:
+        from app.widgets import WorkerListItem
+
+        task = self._task("T-001")
+
+        text = WorkerListItem._format_task(task, selected=True)
+
+        self.assertIn("[b][#83a598]ACTIVE[/][/b]", text)
+        self.assertNotIn("[on #458588] ACTIVE [/]", text)
 
     def test_task_header_highlights_banner_and_pipeline(self) -> None:
         builder = self._worker("T-001", role=WorkerRole.BUILDER, status=WorkerStatus.RUNNING, summary="builder")
