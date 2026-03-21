@@ -7,19 +7,29 @@ This document describes the internal architecture of the ocha Python/Textual app
 ```
 cli.py
   ├── orchestrator.py  (build_launch_specs, create_task_from_prompt)
-  └── install.py       (clone_repo, update_repo, ensure_bootstrap)
+  ├── install.py       (clone_repo, update_repo, ensure_bootstrap)
+  └── update_log.py    (format_update_log)
 
 app.py (OchaApp)
+  ├── concurrency.py   (compute_execution_plan, ConcurrencyPolicy)
+  ├── file_lock.py     (release_all_for_task, release_inactive_locks)
   ├── orchestrator.py  (build_role_prompt, launch_task, load_role_definitions)
   ├── git_utils.py     (commit_worktree_changes, merge_worktree_commits, ensure_pr_title)
+  ├── notifications.py (NotificationCenter, NotificationEvent)
   ├── state.py         (AppState, OchaTask, WorkerSession, enums)
+  ├── task_files.py    (write_session_manifest, write_session_prompt)
   ├── widgets.py       (AgentsPane, TaskHeader, OutputPane, StatusBar, MainLayout)
   └── workflow_logger.py (WorkflowLogger, make_logger, LogLevel, EventCategory)
 
 orchestrator.py
   ├── file_lock.py     (acquire_lock, release_lock, validate_commit_scope)
   ├── state.py         (AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession)
+  ├── task_files.py    (ensure_task_artifacts, write_task_prompt, write_session_manifest)
   └── workflow_logger.py (make_logger, LogLevel, EventCategory)
+
+concurrency.py
+  ├── file_lock.py     (_patterns_overlap)
+  └── state.py         (WorkerSession, WorkerStatus)
 
 state.py
   └── workflow_logger.py (WorkflowLogger — type hint only)
@@ -84,6 +94,13 @@ WorkerSession
 | `LogLevel` | `debug`, `info`, `success`, `warning`, `error` |
 | `EventCategory` | `lifecycle`, `pipeline`, `git`, `junie`, `prompt`, `system` |
 
+### Scheduling types (`concurrency.py`)
+
+| Type | Shape | Notes |
+|------|-------|-------|
+| `ConcurrencyPolicy` | `sequential`, `auto`, `parallel` | `AUTO` is the current runtime policy used by `OchaApp._advance_pipeline()` |
+| `ExecutionGroup` | `workers: tuple[WorkerSession, ...]` | Represents one conflict-free batch that can run concurrently |
+
 ## Request flow
 
 ### TUI task submission
@@ -128,10 +145,12 @@ Worker completes (exit code 0)
   → commit_worktree_changes(worktree_path)  # git add + commit inside worktree
   → OchaApp._advance_pipeline(task)
     → collect upstream output (capped 20 lines / 4 KB)
-    → find next QUEUED worker
-    → _rebuild_prompt_with_upstream()        # inject prior phase output
-    → set worker to RUNNING
-    → _run_junie_for_worker(next_worker)
+    → gather all QUEUED workers
+    → compute_execution_plan(..., AUTO)
+    → pick first conflict-free execution group
+    → _rebuild_prompt_with_upstream()        # inject prior phase output into each worker in the group
+    → set each worker to RUNNING
+    → _run_junie_for_worker(worker)          # launched once per worker in the group
 
 All workers done
   → _post_pipeline_git_flow(task)            # async, runs in background thread
@@ -145,13 +164,15 @@ All workers done
 ## Junie process lifecycle
 
 1. **Worktree creation** — `git worktree add <path> agent` (falls back to `--detach`)
-2. **Prompt file** — written to `.ocha/tasks/<task_id>/<session_id>-prompt.md`
+2. **Prompt persistence** — session prompts are written under `.ocha/tasks/<task_id>/sessions/<session_id>/prompt.md`
 3. **Truncation** — prompts > 32 KB are trimmed at a line boundary
 4. **Spawn** — `asyncio.create_subprocess_exec` with `start_new_session=True`
-5. **Stdin feed** — prompt text piped via stdin (avoids arg-length limits)
-6. **Streaming** — stdout read line-by-line into `raw_log` and `workflow_log`
-7. **Completion** — exit code checked; changes committed inside worktree
-8. **Kill** — `os.killpg(pgid, SIGKILL)` kills entire process tree (including Java)
+5. **Command shape** — runtime launches `junie --auth=<key> --project <worktree_path> --output-format text`
+6. **Stdin feed** — prompt text is piped via stdin to avoid CLI arg-length and markdown parsing issues
+7. **Streaming** — stdout read line-by-line into `raw_log` and `workflow_log`
+8. **Manifest persistence** — per-session metadata is written to `.ocha/tasks/<task_id>/sessions/<session_id>/session.json`
+9. **Completion** — exit code checked; changes committed inside worktree
+10. **Kill** — `os.killpg(pgid, SIGKILL)` kills entire process tree (including Java)
 
 ## Widget hierarchy
 
@@ -182,8 +203,8 @@ OchaApp
 |------|----------------|---------|
 | Coordinator | `docs/` | Documentation, execution briefs |
 | Lead | `planning/` | Task decomposition, work allocation |
-| Builder | `app/` | Code, tests, implementation |
-| Reviewer | `app/` | Review, validation |
+| Builder | `app/` | Production implementation work |
+| Reviewer | `app/` | Review and validation in the same app-scoped worktree |
 
 ## Git operations (git_utils.py)
 

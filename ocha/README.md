@@ -226,17 +226,18 @@ Each task moves through a fixed four-phase pipeline:
 - Each phase runs as a headless Junie session with a role-specific markdown prompt
 - When a phase completes, the orchestrator captures its output summary and injects it into the next phase's prompt as `upstream_output`
 - Upstream output is capped at 20 lines / 4 KB to stay within Junie's parser limits
+- Queued workers are grouped by owned-directory overlap so non-conflicting phases can run in parallel when safe
 - Prompts exceeding 32 KB are truncated before being sent to Junie
 
 ### Junie invocation
 
-The task prompt is fed via stdin to avoid shell arg-length limits:
+Runtime worker execution uses stdin to avoid shell arg-length limits and markdown parsing issues:
 
 ```bash
-junie --auth=<key> --project <worktree_path> --output-format text < prompt.md
+junie --auth=<key> --project <worktree_path> --output-format text < .ocha/tasks/T-001/sessions/S-001-01/prompt.md
 ```
 
-Preview what ocha will launch without starting the TUI:
+The `ocha launch` command is a dry-run preview. It prints the role-based launch spec (including `--session-id`) without spawning Junie:
 
 ```bash
 ocha launch "finish building the app with role markdown prompts"

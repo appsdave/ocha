@@ -165,11 +165,11 @@ ListView {
         }
         /* Active / selected task — subtle bg bump + status border */
         &.--selected {
-            background: #3c3836;
+            background: transparent;
             color: #fbf1c7;
         }
         &.--selected.-highlight {
-            background: #3c3836;
+            background: transparent;
             color: #fbf1c7;
         }
         &.--status-running.--selected {
@@ -199,11 +199,11 @@ ListView {
         }
         /* Focused + selected — slightly brighter bg */
         & > ListItem.--selected {
-            background: #3c3836;
+            background: transparent;
             color: #fbf1c7;
         }
         & > ListItem.--selected.-highlight {
-            background: #504945;
+            background: #32302f;
             color: #fbf1c7;
             text-style: none;
             background-tint: transparent;

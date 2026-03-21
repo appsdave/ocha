@@ -30,7 +30,7 @@ All lock registry operations (`acquire_lock`, `release_lock`, `release_all_for_t
 
 ### Layer 3: Smart Execution Groups (ConcurrencyPolicy)
 
-The orchestrator can now compute an **execution plan** that groups workers by ownership overlap:
+The runtime computes an **execution plan** that groups queued workers by ownership overlap before launching the next pipeline batch:
 
 ```
 ConcurrencyPolicy.AUTO (default):
@@ -43,11 +43,11 @@ ConcurrencyPolicy.SEQUENTIAL:
   Group 2: [builder]
   Group 3: [reviewer]
 
-ConcurrencyPolicy.PARALLEL:
+ConcurrencyPolicy.FORCE_PARALLEL:
   Group 0: [coordinator, lead, builder, reviewer]  ← all at once (risky)
 ```
 
-The `can_run_parallel()` function uses graph-colouring to find the optimal grouping: it builds a conflict adjacency graph from ownership patterns and greedily assigns workers to the earliest non-conflicting group.
+`compute_execution_plan()` in `ocha/app/concurrency.py` uses a greedy first-fit grouping strategy: workers stay in pipeline order, and each queued worker joins the earliest group whose ownership patterns do not overlap.
 
 ### Layer 4: Commit-Scope Validation
 
@@ -64,8 +64,8 @@ Before merging a worktree commit, `scope_validated_merge()` checks whether the a
 | **Advisory, not blocking** | A misbehaving agent shouldn't deadlock the entire pipeline. Warnings are logged; the orchestrator decides policy. |
 | **Directory-level granularity** | Matches the existing `ROLE_DIRECTORIES` mapping. Fine-grained file locks would add complexity without proportional benefit. |
 | **JSON on disk + fcntl** | Simple, human-readable, works across worktrees. OS-level locking prevents concurrent corruption. No external dependencies. |
-| **Graph-colouring for groups** | Greedy colouring is O(n²) but n ≤ 4 workers, so it's instant. Optimal grouping maximises parallelism. |
-| **Centralised worktree manager** | Single module (`worktree_manager.py`) for create/remove/cleanup/list — replaces ad-hoc worktree code in `app.py`. |
+| **Greedy first-fit grouping** | O(n²) is effectively free for four workers, preserves pipeline order, and still exploits safe parallelism. |
+| **Conflict-aware pipeline advancement** | `app.py` launches only the first safe execution group, then advances again when that group completes. |
 
 ### API reference
 
@@ -79,30 +79,24 @@ Before merging a worktree commit, `scope_validated_merge()` checks whether the a
 | `detect_conflicts(requester, role, patterns, locks)` | Check for overlapping ownership |
 | `validate_commit_scope(changed_files, owned_patterns)` | Verify a commit stayed in scope |
 | `cleanup_stale_locks(project_path, max_age)` | Remove expired locks (atomic) |
-| `can_run_parallel(workers)` | Compute parallel execution groups via graph-colouring |
+| `can_run_parallel(workers)` | Fast boolean overlap check for a candidate worker set |
 | `scope_validated_merge(shas, branch, patterns_by_sha)` | Merge with pre-merge scope check |
 
-#### orchestrator.py
+#### Scheduler implementations
 
 | Function | Purpose |
 |----------|---------|
-| `compute_execution_plan(workers, policy)` | Partition workers into sequential execution groups |
+| `app/concurrency.py:compute_execution_plan(workers, policy)` | Runtime scheduler used by `app.py` to build conflict-free execution batches |
+| `app/orchestrator.py:compute_execution_plan(workers, policy)` | Legacy/alternate grouping helper that still mirrors the same policy concepts |
 
-#### worktree_manager.py
-
-| Function | Purpose |
-|----------|---------|
-| `ensure_worktree(path, branch)` | Idempotent worktree creation |
-| `remove_worktree(path)` | Safe single worktree removal |
-| `cleanup_worktrees(paths)` | Batch removal + prune |
-| `list_worktrees()` | Inventory of active worktrees |
-
-#### state.py
+#### Shared scheduler types
 
 | Type | Purpose |
 |------|---------|
-| `ConcurrencyPolicy` | Enum: `sequential`, `parallel`, `auto` |
-| `ExecutionGroup` | Dataclass: `group_index` + `worker_indices` |
+| `app/concurrency.py:ConcurrencyPolicy` | Runtime enum: `sequential`, `auto`, `parallel` |
+| `app/concurrency.py:ExecutionGroup` | Runtime batch wrapper containing `workers` |
+| `app/state.py:ConcurrencyPolicy` | Duplicate policy enum still referenced by older orchestration helpers |
+| `app/state.py:ExecutionGroup` | Duplicate index-based execution-group type still referenced by older orchestration helpers |
 
 ### Current role → directory mapping
 
@@ -115,19 +109,14 @@ Before merging a worktree commit, `scope_validated_merge()` checks whether the a
 
 The builder ↔ reviewer overlap is the primary conflict vector. Under `AUTO` policy, coordinator + lead + builder run in parallel (group 0), then reviewer runs alone (group 1).
 
-## Files changed
+## Current status
 
-- **`ocha/app/file_lock.py`** — Atomic fcntl locking, `can_run_parallel()` graph-colouring
-- **`ocha/app/state.py`** — `ConcurrencyPolicy` enum, `ExecutionGroup` dataclass
-- **`ocha/app/orchestrator.py`** — `compute_execution_plan()` function
-- **`ocha/app/worktree_manager.py`** — New module: centralised worktree lifecycle
-- **`ocha/tests/test_concurrency.py`** — 17 tests covering all new functionality
-- **`docs/architecture.md`** — Fixed merge conflicts from prior runs
+- `app.py` already calls `compute_execution_plan(..., ConcurrencyPolicy.AUTO)` inside `_advance_pipeline()`.
+- The scheduler launches the first conflict-free batch, waits for it to finish, then advances to the next batch.
+- Upstream output from the most recently completed worker is injected into every worker in the next batch before launch.
 
-## Next steps
+## Open follow-ups
 
-- **Wire `compute_execution_plan` into `_advance_pipeline`** — the builder should update `app.py` to launch groups in parallel using `asyncio.gather` instead of one-at-a-time sequential advancement.
-- **Add `--concurrency` CLI flag** — expose `ConcurrencyPolicy` via `ocha task --concurrency=auto`.
-- **Lock release on completion** — wire `release_lock()` into the worker completion callback in `app.py`.
-- **Use `worktree_manager`** — replace the inline worktree code in `app.py._ensure_worktree` with calls to `worktree_manager.ensure_worktree`.
-- **CLI command**: Add `ocha locks` subcommand to inspect/clear locks manually.
+- Add a user-facing `--concurrency` control if operators need to override the default `AUTO` scheduler.
+- Tighten the type ownership story: the runtime scheduler lives in `app/concurrency.py`, while related names are still duplicated in `app/state.py`.
+- Consider documenting or exposing lock-inspection workflows for operators who need to debug stuck pipelines.
