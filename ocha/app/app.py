@@ -459,6 +459,16 @@ class OchaApp(App[None]):
         self.set_interval(1.0, self._tick)
 
     def _project_root(self) -> Path:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if top.returncode == 0:
+            resolved = top.stdout.strip()
+            if resolved:
+                return Path(resolved).resolve()
         return Path.cwd().resolve()
 
     def _active_session_ids(self) -> set[str]:
@@ -548,7 +558,11 @@ class OchaApp(App[None]):
             if current.returncode == 0 and current.stdout.strip() == OCHA_BRANCH:
                 return  # already on ocha branch, silently continue
 
-            clean_state = ensure_clean_git_state(require_clean_worktree=True)
+            clean_state = ensure_clean_git_state(
+                repo_dir=self._project_root(),
+                require_clean_worktree=True,
+                auto_stash_tracked_changes=True,
+            )
             for message in clean_state.messages:
                 self._notify(message, level=NotificationLevel.WARNING)
             if not clean_state.ok:
@@ -713,7 +727,11 @@ class OchaApp(App[None]):
         if task is None:
             self._notify("New task cancelled.")
             return
-        clean_state = ensure_clean_git_state(require_clean_worktree=True)
+        clean_state = ensure_clean_git_state(
+            repo_dir=self._project_root(),
+            require_clean_worktree=True,
+            auto_stash_tracked_changes=True,
+        )
         for message in clean_state.messages:
             self._notify(message, level=NotificationLevel.WARNING)
         if not clean_state.ok:
@@ -1053,6 +1071,33 @@ class OchaApp(App[None]):
             if not clean_state.ok:
                 messages.append((LogLevel.ERROR, f"Git preflight failed: {clean_state.blocking_reason}"))
                 return messages
+
+            current = _run_git("git", "rev-parse", "--abbrev-ref", "HEAD", timeout=5)
+            if current.returncode == 0 and current.stdout.strip() != branch_name:
+                checkout_result = _run_git("git", "checkout", branch_name, timeout=10)
+                if checkout_result.returncode != 0:
+                    detail = checkout_result.stderr.strip() or f"Failed to checkout {branch_name}."
+                    messages.append((LogLevel.ERROR, detail))
+                    return messages
+
+            fetch_result = _run_git("git", "fetch", "origin", branch_name, timeout=30)
+            if fetch_result.returncode != 0:
+                detail = fetch_result.stderr.strip() or fetch_result.stdout.strip() or "unknown git fetch error"
+                messages.append((LogLevel.ERROR, f"Fetch failed: {detail}"))
+                return messages
+
+            rebase_result = _run_git("git", "rebase", f"origin/{branch_name}", timeout=30)
+            if rebase_result.returncode == 0:
+                messages.append((LogLevel.SUCCESS, f"Rebased on origin/{branch_name}."))
+            else:
+                cleanup = ensure_clean_git_state(timeout=30)
+                messages.extend((LogLevel.WARNING, message) for message in cleanup.messages)
+                detail = rebase_result.stderr.strip() or rebase_result.stdout.strip() or "unknown git rebase error"
+                if not cleanup.ok:
+                    detail = f"{detail} Cleanup failed: {cleanup.blocking_reason}"
+                messages.append((LogLevel.ERROR, f"Rebase failed: {detail}"))
+                return messages
+
             worktree_shas = [
                 w.worktree_commit_sha
                 for w in task_obj.workers
@@ -1063,9 +1108,6 @@ class OchaApp(App[None]):
                 merge_logs = merge_worktree_commits(worktree_shas, branch_name)
                 messages.extend((LogLevel.INFO, m) for m in merge_logs)
             else:
-                current = _run_git("git", "rev-parse", "--abbrev-ref", "HEAD", timeout=5)
-                if current.returncode == 0 and current.stdout.strip() != branch_name:
-                    _run_git("git", "checkout", branch_name, timeout=10)
                 messages.append((LogLevel.INFO, f"On branch {branch_name} (no worktree commits)."))
 
                 _run_git("git", "add", "-A", "--", ".", ":!.worktrees", ":!.env", timeout=10)
@@ -1083,19 +1125,6 @@ class OchaApp(App[None]):
                         ))
                 else:
                     messages.append((LogLevel.DEBUG, "No changes to commit."))
-
-            _run_git("git", "fetch", "origin", branch_name, timeout=30)
-            rebase_result = _run_git("git", "rebase", f"origin/{branch_name}", timeout=30)
-            if rebase_result.returncode == 0:
-                messages.append((LogLevel.SUCCESS, f"Rebased on origin/{branch_name}."))
-            else:
-                cleanup = ensure_clean_git_state(timeout=30)
-                messages.extend((LogLevel.WARNING, message) for message in cleanup.messages)
-                detail = rebase_result.stderr.strip() or rebase_result.stdout.strip() or "unknown git rebase error"
-                if not cleanup.ok:
-                    detail = f"{detail} Cleanup failed: {cleanup.blocking_reason}"
-                messages.append((LogLevel.ERROR, f"Rebase failed: {detail}"))
-                return messages
 
             push_result = _run_git("git", "push", "-u", "origin", branch_name, timeout=30)
             if push_result.returncode == 0:

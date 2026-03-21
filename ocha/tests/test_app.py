@@ -815,11 +815,52 @@ class AppGitPreflightTests(unittest.IsolatedAsyncioTestCase):
         notices: list[tuple[str, NotificationLevel | None]] = []
         app._notify = lambda message, level=None, **kwargs: notices.append((message, level)) or True
 
-        app._launch_task_from_prompt("Implement guardrails")
+        with patch.object(app, "_project_root", return_value=Path("/tmp/repo")):
+            app._launch_task_from_prompt("Implement guardrails")
 
+            mock_clean_state.assert_called_once_with(
+                repo_dir=Path("/tmp/repo"),
+                require_clean_worktree=True,
+                auto_stash_tracked_changes=True,
+            )
         mock_launch_task.assert_not_called()
         self.assertTrue(any("Aborted unfinished rebase operation." in message for message, _ in notices))
         self.assertTrue(any("Cannot start task:" in message for message, _ in notices))
+
+    @patch("app.app.ensure_clean_git_state")
+    @patch("app.app.subprocess.run")
+    def test_ensure_ocha_branch_auto_stashes_tracked_changes_before_switching(
+        self,
+        mock_run,
+        mock_clean_state,
+    ) -> None:
+        mock_clean_state.return_value = type(
+            "Result",
+            (),
+            {"ok": True, "messages": ["Stashed tracked local changes before continuing."], "blocking_reason": None},
+        )()
+        mock_run.side_effect = [
+            type("Run", (), {"returncode": 0, "stdout": "/tmp/repo\n", "stderr": ""})(),
+            type("Run", (), {"returncode": 0, "stdout": "main\n", "stderr": ""})(),
+            type("Run", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+            type("Run", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+            type("Run", (), {"returncode": 0, "stdout": "agent\n", "stderr": ""})(),
+        ]
+        app = OchaApp()
+        notices: list[tuple[str, NotificationLevel | None]] = []
+        app._notify = lambda message, level=None, **kwargs: notices.append((message, level)) or True
+
+        with patch.object(app, "_project_root", return_value=Path("/tmp/repo")):
+            app._ensure_ocha_branch()
+
+            mock_clean_state.assert_called_once_with(
+                repo_dir=Path("/tmp/repo"),
+                require_clean_worktree=True,
+                auto_stash_tracked_changes=True,
+            )
+        commands = [tuple(call.args[0]) for call in mock_run.call_args_list]
+        self.assertIn(("git", "checkout", "agent"), commands)
+        self.assertTrue(any("Stashed tracked local changes before continuing." in message for message, _ in notices))
 
     @patch("app.app.cleanup_worktrees", return_value=[])
     @patch("app.app.release_all_for_task", return_value=0)
@@ -845,6 +886,7 @@ class AppGitPreflightTests(unittest.IsolatedAsyncioTestCase):
             type("Result", (), {"ok": True, "messages": ["Aborted unfinished rebase operation."], "blocking_reason": None})(),
         ]
         mock_run.side_effect = [
+            type("Run", (), {"returncode": 0, "stdout": "agent\n", "stderr": ""})(),  # current branch
             type("Run", (), {"returncode": 0, "stdout": "", "stderr": ""})(),  # fetch
             type("Run", (), {"returncode": 1, "stdout": "", "stderr": "conflict"})(),  # rebase
         ]
@@ -858,6 +900,47 @@ class AppGitPreflightTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(("git", "rebase", "origin/agent"), commands)
         self.assertNotIn(("git", "push", "-u", "origin", "agent"), commands)
         self.assertTrue(any("Rebase failed:" in call.args[0] for call in logger.git.call_args_list))
+
+    @patch("app.app.cleanup_worktrees", return_value=[])
+    @patch("app.app.release_all_for_task", return_value=0)
+    @patch("app.app.ensure_pr_title", return_value="PR skipped")
+    @patch("app.app.merge_worktree_commits", return_value=["Cherry-picked abc12345."])
+    @patch("app.app.ensure_clean_git_state")
+    @patch("app.app.subprocess.run")
+    async def test_post_pipeline_git_flow_rebases_before_merging_worktree_commits(
+        self,
+        mock_run,
+        mock_clean_state,
+        mock_merge,
+        _mock_pr_title,
+        _mock_release_locks,
+        _mock_cleanup,
+    ) -> None:
+        task = self._task()
+        task.workers[0].worktree_commit_sha = "abc12345"
+        app = OchaApp()
+
+        mock_clean_state.return_value = type("Result", (), {"ok": True, "messages": [], "blocking_reason": None})()
+        mock_run.side_effect = [
+            type("Run", (), {"returncode": 0, "stdout": "agent\n", "stderr": ""})(),  # current branch
+            type("Run", (), {"returncode": 0, "stdout": "", "stderr": ""})(),  # fetch
+            type("Run", (), {"returncode": 0, "stdout": "", "stderr": ""})(),  # rebase
+            type("Run", (), {"returncode": 0, "stdout": "", "stderr": ""})(),  # push
+        ]
+        logger = MagicMock()
+        task.workers[0].wlog = logger
+
+        await app._post_pipeline_git_flow(task)
+
+        commands = [tuple(call.args[0]) for call in mock_run.call_args_list]
+        self.assertEqual(commands[:3], [
+            ("git", "rev-parse", "--abbrev-ref", "HEAD"),
+            ("git", "fetch", "origin", "agent"),
+            ("git", "rebase", "origin/agent"),
+        ])
+        mock_merge.assert_called_once_with(["abc12345"], "agent")
+        self.assertIn(("git", "push", "-u", "origin", "agent"), commands)
+        self.assertTrue(any("Rebased on origin/agent." in call.args[0] for call in logger.git.call_args_list))
 
 
 class AppArtifactPersistenceTests(unittest.TestCase):

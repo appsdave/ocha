@@ -92,6 +92,7 @@ def ensure_clean_git_state(
     *,
     repo_dir: str | Path | None = None,
     require_clean_worktree: bool = False,
+    auto_stash_tracked_changes: bool = False,
     timeout: int = 30,
 ) -> GitStateCheckResult:
     """Abort unfinished git operations and verify the repo is safe to use."""
@@ -132,6 +133,38 @@ def ensure_clean_git_state(
             return GitStateCheckResult(False, messages, detail)
         dirty = [line for line in status.stdout.splitlines() if line.strip()]
         if dirty:
+            if auto_stash_tracked_changes:
+                stash = _run_git(
+                    "git",
+                    "stash",
+                    "push",
+                    "--message",
+                    "ocha:auto-preflight",
+                    cwd=repo_dir,
+                    timeout=timeout,
+                )
+                detail = stash.stderr.strip() or stash.stdout.strip()
+                if stash.returncode != 0:
+                    reason = detail or "Failed to stash tracked local changes."
+                    return GitStateCheckResult(False, messages, reason)
+
+                verify = _run_git(
+                    "git",
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=no",
+                    cwd=repo_dir,
+                    timeout=min(timeout, 10),
+                )
+                if verify.returncode != 0:
+                    detail = verify.stderr.strip() or verify.stdout.strip() or "Failed to verify git status after stashing changes."
+                    return GitStateCheckResult(False, messages, detail)
+
+                remaining_dirty = [line for line in verify.stdout.splitlines() if line.strip()]
+                if not remaining_dirty:
+                    messages.append("Stashed tracked local changes before continuing.")
+                    return GitStateCheckResult(True, messages)
+
             return GitStateCheckResult(
                 False,
                 messages,

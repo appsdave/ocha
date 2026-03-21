@@ -258,6 +258,49 @@ class TestEnsureCleanGitState(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertIn("Tracked local changes", result.blocking_reason)
 
+    def test_auto_stashes_dirty_tracked_changes_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _init_repo(Path(tmp))
+            original = (repo / "README.md").read_text()
+            updated = "# dirty\n"
+            (repo / "README.md").write_text(updated)
+
+            result = ensure_clean_git_state(
+                repo_dir=repo,
+                require_clean_worktree=True,
+                auto_stash_tracked_changes=True,
+            )
+
+            self.assertTrue(result.ok)
+            self.assertIn("Stashed tracked local changes before continuing.", result.messages)
+            status = subprocess.run(
+                ["git", "status", "--porcelain", "--untracked-files=no"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertEqual(status.stdout.strip(), "")
+            head_contents = (repo / "README.md").read_text()
+            self.assertEqual(head_contents, original)
+            stash_list = subprocess.run(
+                ["git", "stash", "list"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("ocha:auto-preflight", stash_list.stdout)
+
+            show = subprocess.run(
+                ["git", "stash", "show", "-p", "stash@{0}"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn(updated.strip(), show.stdout)
+
     def test_aborts_in_progress_cherry_pick_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = _init_repo(Path(tmp))
