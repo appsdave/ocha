@@ -55,10 +55,8 @@ class TaskRowHighlight:
     pointer: str
     id_label: str
     position_label: str
-    title_color: str
-    meta_color: str
-    branch_color: str
-    status_label: str
+    title_label: str
+    meta_label: str
 
     @classmethod
     def build(cls, task: OchaTask, *, selected: bool, position: str) -> TaskRowHighlight:
@@ -66,21 +64,24 @@ class TaskRowHighlight:
         if selected:
             return cls(
                 pointer=f"[{color}]▶[/] ",
-                id_label=f"[b][{color}]{task.task_id}[/][/b]",
-                position_label=f" [#bdae93]•[/] [{color}]{position}[/]" if position else "",
-                title_color="#fbf1c7",
-                meta_color="#d5c4a1",
-                branch_color="#d3869b",
-                status_label=f"[b][on #3c3836][{color}] {task.status.value.upper()} [/][/b]",
+                id_label=f"[b][{color}][on #3c3836] {task.task_id} [/][/b]",
+                position_label=f" [#bdae93]•[/] [b][#d5c4a1][on #3c3836] {position} [/][/b]" if position else "",
+                title_label=f"[b][#fbf1c7]{_truncate_task_title(task.title)}[/][/b]",
+                meta_label=(
+                    f"[b][#d3869b]{task.branch}[/][/b] {TASK_POSITION_BULLET} "
+                    f"[b][#fbf1c7][on #458588] ACTIVE [/][/b] {TASK_POSITION_BULLET} "
+                    f"[#d5c4a1]{task.elapsed}[/]"
+                ),
             )
         return cls(
             pointer="  ",
             id_label=f"[#928374]{task.task_id}[/]",
             position_label=f" [#665c54]• {position}[/]" if position else "",
-            title_color="#bdae93",
-            meta_color="#7c6f64",
-            branch_color="#928374",
-            status_label=f"[#7c6f64]{task.status.value}[/]",
+            title_label=f"[#bdae93]{_truncate_task_title(task.title)}[/]",
+            meta_label=(
+                f"[#928374]{task.branch}[/] {TASK_POSITION_BULLET} "
+                f"[#7c6f64]{task.status.value}[/] {TASK_POSITION_BULLET} [#7c6f64]{task.elapsed}[/]"
+            ),
         )
 
 
@@ -137,9 +138,8 @@ class WorkerListItem(ListItem):
         highlight = TaskRowHighlight.build(task, selected=selected, position=position)
         return (
             f"{highlight.pointer}{icon} {highlight.id_label}{highlight.position_label}\n"
-            f"    [{highlight.title_color}]{_truncate_task_title(task.title)}[/]\n"
-            f"    [{highlight.branch_color}]{task.branch}[/] {TASK_POSITION_BULLET} "
-            f"{highlight.status_label} {TASK_POSITION_BULLET} [{highlight.meta_color}]{task.elapsed}[/]"
+            f"    {highlight.title_label}\n"
+            f"    {highlight.meta_label}"
         )
 
 
