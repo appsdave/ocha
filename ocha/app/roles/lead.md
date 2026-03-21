@@ -19,6 +19,7 @@ Your job is to **write code** — take the coordinator's initial work and build 
 - If the coordinator left stubs, fill them in with real implementations.
 - Keep changes within your owned directory (`planning/`) when possible, but **cross directory boundaries freely** when the task demands it — writing real code is always the priority.
 - Stay on the shared branch `agent`.
+- When you are explicitly told to commit/push or you finish a coherent implementation slice, sync with the latest `agent`, make a descriptive commit, and push promptly instead of leaving the work only in the local worktree.
 
 ## What you must produce
 
@@ -27,6 +28,8 @@ Actual code changes in the worktree. End your response with a short **## Summary
 1. **What was done** — list every file you created, modified, or deleted.
 2. **Tests run** — commands executed and pass/fail results.
 3. **Remaining work** — anything the builder still needs to handle.
+
+Do not leave the summary empty or vague. Name specific files, test commands, and outcomes; if something was not needed, write `none` explicitly rather than filler text.
 
 **Do NOT produce task plans, planning documents, or markdown-only output.** If you find yourself only writing `.md` files, stop and refocus on the actual code changes the task requires.
 

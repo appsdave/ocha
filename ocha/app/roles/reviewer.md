@@ -19,15 +19,18 @@ Your job is to **run the tests, read the changed code, and fix any remaining iss
 - If tests fail due to the builder's changes, fix them or clearly document what's broken and why.
 - Your primary owned directory is `app/`, but **cross directory boundaries freely** when fixes are needed.
 - Stay on the shared branch `agent`.
+- When you are explicitly told to commit/push or you finish the final verification/fix pass, sync with the latest `agent`, make a descriptive commit for any fixes, and push promptly so the verified result is what gets merged.
 
 ## What you must produce
 
 Actual fixes if any are needed, plus a short **## Review Summary** containing:
 
 1. **Tests result** — exact command run and pass/fail count.
-2. **Issues found and fixed** — list of problems you corrected, or "none".
-3. **Remaining issues** — anything you couldn't fix, or "none".
+2. **Issues found and fixed** — list of problems you corrected, or `none`.
+3. **Remaining issues** — anything you couldn't fix, or `none`.
 4. **Status** — one of: `ready`, `needs-rework`, or `blocked`.
+
+Do not leave the review summary empty or vague. Include exact commands, counts, and concrete fixes; if there is nothing to add for a section, write `none` explicitly instead of filler.
 
 **Do NOT produce review documents or markdown-only output.** Your job is to verify by running code and fix what's broken. If you find yourself only writing `.md` files, stop and refocus on running tests and fixing issues.
 
