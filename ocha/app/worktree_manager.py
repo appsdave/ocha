@@ -24,6 +24,7 @@ from typing import Sequence
 
 
 DEFAULT_BRANCH = "agent"
+OCHA_BRANCH = DEFAULT_BRANCH
 
 
 @dataclass(slots=True, frozen=True)

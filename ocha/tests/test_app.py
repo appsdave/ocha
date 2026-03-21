@@ -3,10 +3,11 @@ from __future__ import annotations
 import unittest
 
 from app.app import OchaApp
+from app.notifications import NotificationLevel
 from app.state import AppState, OchaTask, WorkerRole, WorkerSession, WorkerStatus
-from textual.widgets import ListView, TextArea
+from textual.widgets import ListView, Static, TextArea
 
-from app.widgets import TaskHeader
+from app.widgets import NotificationPane, TaskHeader
 
 
 class OchaAppTests(unittest.IsolatedAsyncioTestCase):
@@ -581,4 +582,70 @@ class AdvancePipelineTests(unittest.TestCase):
                 break
 
         self.assertEqual(upstream, "")
+
+
+class AppNotificationIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_notification_window_shows_recent_history(self) -> None:
+        app = OchaApp()
+
+        async with app.run_test() as pilot:
+            app._notify("Task launched", level=NotificationLevel.SUCCESS, title="launch")
+            app._notify("JUNIE_API_KEY missing", level=NotificationLevel.WARNING, title="config")
+            await pilot.pause()
+
+            self.assertIsNotNone(app.query_one("#notifications-pane"))
+            content = str(app.query_one("#notifications-content", Static).render())
+
+            self.assertIn("Task launched", content)
+            self.assertIn("JUNIE_API_KEY missing", content)
+            self.assertIn("launch", content)
+            self.assertIn("config", content)
+            self.assertLess(content.index("JUNIE_API_KEY missing"), content.index("Task launched"))
+
+    async def test_notification_window_limits_visible_history(self) -> None:
+        app = OchaApp()
+
+        async with app.run_test() as pilot:
+            for index in range(NotificationPane.MAX_VISIBLE_NOTIFICATIONS + 2):
+                app._notify(f"event {index}", level=NotificationLevel.INFO)
+            await pilot.pause()
+
+            content = str(app.query_one("#notifications-content", Static).render())
+            self.assertNotIn("event 0", content)
+            self.assertNotIn("event 1", content)
+            self.assertIn(
+                f"event {NotificationPane.MAX_VISIBLE_NOTIFICATIONS + 1}",
+                content,
+            )
+
+    def test_notify_routes_through_notification_center(self) -> None:
+        app = OchaApp()
+        dispatched: list[tuple[str, str, str, float | None]] = []
+
+        app.notify = lambda message, **kwargs: dispatched.append(
+            (message, kwargs.get("title", ""), kwargs.get("severity", "information"), kwargs.get("timeout")),
+        )
+
+        sent = app._notify("Task launched", level=NotificationLevel.SUCCESS, title="launch")
+
+        self.assertTrue(sent)
+        self.assertEqual(len(dispatched), 1)
+        message, title, severity, timeout = dispatched[0]
+        self.assertIn("Task launched", message)
+        self.assertIn("✓", message)
+        self.assertEqual(title, "launch")
+        self.assertEqual(severity, "information")
+        self.assertEqual(timeout, app.notification_center.default_timeout)
+
+    def test_notify_deduplicates_when_key_reused(self) -> None:
+        app = OchaApp()
+        dispatched: list[str] = []
+        app.notify = lambda message, **kwargs: dispatched.append(message)
+
+        first = app._notify("Missing key", level=NotificationLevel.ERROR, dedupe_key="missing-key")
+        second = app._notify("Missing key", level=NotificationLevel.ERROR, dedupe_key="missing-key")
+
+        self.assertTrue(first)
+        self.assertFalse(second)
+        self.assertEqual(len(dispatched), 1)
 

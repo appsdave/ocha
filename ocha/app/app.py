@@ -16,10 +16,11 @@ from textual.widgets import Button, Input, ListView, Static, TextArea
 
 from .concurrency import ConcurrencyPolicy, compute_execution_plan
 from .git_utils import commit_worktree_changes, ensure_pr_title, format_pr_title, merge_worktree_commits
+from .notifications import NotificationCenter, NotificationEvent, NotificationLevel
 from .orchestrator import build_role_prompt, launch_task, load_role_definitions
 from .state import AppState, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
 from .worktree_manager import cleanup_worktrees, ensure_worktree as wt_ensure
-from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
+from .widgets import AgentsPane, MainLayout, NotificationPane, OutputPane, StatusBar, TaskHeader
 from .workflow_logger import EventCategory, LogLevel, WorkflowLogger, make_logger
 
 OCHA_BRANCH = "agent"
@@ -88,6 +89,20 @@ Screen {
 }
 
 #output-content {
+    width: 1fr;
+    height: auto;
+    background: #282828;
+}
+
+#notifications-pane {
+    height: 10;
+    min-height: 7;
+    border: solid #504945;
+    padding: 0 1;
+    background: #282828;
+}
+
+#notifications-content {
     width: 1fr;
     height: auto;
     background: #282828;
@@ -407,6 +422,7 @@ class OchaApp(App[None]):
         self.state: AppState = sample_state()
         self._tick_fingerprint: tuple = ()
         self._running_procs: dict[str, asyncio.subprocess.Process] = {}
+        self.notification_center = NotificationCenter(self._dispatch_notification)
 
     def compose(self) -> ComposeResult:
         yield MainLayout()
@@ -430,6 +446,32 @@ class OchaApp(App[None]):
         self.refresh_from_state()
         self.action_focus_agents()
         self.set_interval(1.0, self._tick)
+
+    def _dispatch_notification(self, event: NotificationEvent) -> None:
+        self._refresh_notifications()
+        self.notify(
+            event.rich_message(),
+            title=event.title,
+            severity=event.severity,
+            timeout=event.timeout,
+        )
+
+    def _notify(
+        self,
+        message: str,
+        *,
+        level: NotificationLevel = NotificationLevel.INFO,
+        title: str = "",
+        timeout: float | None = None,
+        dedupe_key: str | None = None,
+    ) -> bool:
+        return self.notification_center.emit(
+            message,
+            level=level,
+            title=title,
+            timeout=timeout,
+            dedupe_key=dedupe_key,
+        )
 
     def _tick(self) -> None:
         """Periodic UI refresh for elapsed timers and async state changes."""
@@ -468,7 +510,7 @@ class OchaApp(App[None]):
                 capture_output=True, text=True, timeout=5,
             )
             if top.returncode != 0:
-                self.notify("[#fb4934]Not a git repo — skipping branch setup[/]", severity="warning")
+                self._notify("Not a git repo — skipping branch setup", level=NotificationLevel.WARNING)
                 return
 
             current = subprocess.run(
@@ -495,9 +537,9 @@ class OchaApp(App[None]):
                 )
 
             if result.returncode != 0:
-                self.notify(
-                    f"[#fb4934]Failed to switch to {OCHA_BRANCH}: {result.stderr.strip()}[/]",
-                    severity="error",
+                self._notify(
+                    f"Failed to switch to {OCHA_BRANCH}: {result.stderr.strip()}",
+                    level=NotificationLevel.ERROR,
                 )
                 return
 
@@ -509,12 +551,12 @@ class OchaApp(App[None]):
             if verify.returncode == 0 and verify.stdout.strip() == OCHA_BRANCH:
                 pass  # silently on branch
             else:
-                self.notify(
-                    f"[#fb4934]Branch switch failed — on {verify.stdout.strip()}[/]",
-                    severity="error",
+                self._notify(
+                    f"Branch switch failed — on {verify.stdout.strip()}",
+                    level=NotificationLevel.ERROR,
                 )
         except Exception as exc:
-            self.notify(f"[#fb4934]Branch setup error: {exc}[/]", severity="error")
+            self._notify(f"Branch setup error: {exc}", level=NotificationLevel.ERROR)
 
     def refresh_from_state(self) -> None:
         try:
@@ -524,9 +566,16 @@ class OchaApp(App[None]):
             position = f"{self.state.selected_index + 1}/{total}" if total > 0 else ""
             self.query_one(TaskHeader).update_task(selected, position=position)
             self.query_one(OutputPane).update_task(selected, self.state.output_mode)
+            self._refresh_notifications()
             self.query_one(StatusBar).update_state(self.state)
         except Exception:
             pass  # widgets not yet mounted
+
+    def _refresh_notifications(self) -> None:
+        try:
+            self.query_one(NotificationPane).load(self.notification_center.history)
+        except Exception:
+            pass  # widget not yet mounted
 
     def action_move_up(self) -> None:
         if self.state.selected_index > 0:
@@ -576,15 +625,18 @@ class OchaApp(App[None]):
         self.state = clear_finished_tasks(self.state)
         cleared_count = original_count - len(self.state.tasks)
         if not cleared_count:
-            self.notify("No finished tasks to clear.")
+            self._notify("No finished tasks to clear.")
             return
         self.refresh_from_state()
-        self.notify(f"Cleared {cleared_count} finished task{'s' if cleared_count != 1 else ''}.")
+        self._notify(
+            f"Cleared {cleared_count} finished task{'s' if cleared_count != 1 else ''}.",
+            level=NotificationLevel.SUCCESS,
+        )
 
     def action_kill_selected(self) -> None:
         task = self.state.selected_task
         if task is None:
-            self.notify("No task selected to kill.")
+            self._notify("No task selected to kill.", level=NotificationLevel.WARNING)
             return
         self.push_screen(KillConfirmOverlay(task.task_id, task.title), self._handle_kill)
 
@@ -611,15 +663,14 @@ class OchaApp(App[None]):
                 worker.summary = "Killed by operator."
                 killed_count += 1
         self.refresh_from_state()
-        self.notify(
-            f"[#fb4934]✕[/] Killed task [b]{task.task_id}[/b] — "
-            f"{killed_count} worker{'s' if killed_count != 1 else ''} stopped.",
-            severity="warning",
+        self._notify(
+            f"Killed task {task.task_id} — {killed_count} worker{'s' if killed_count != 1 else ''} stopped.",
+            level=NotificationLevel.WARNING,
         )
 
     def _launch_task_from_prompt(self, task: str | None) -> None:
         if task is None:
-            self.notify("New task cancelled.")
+            self._notify("New task cancelled.")
             return
         self.state = launch_task(self.state, task)
         self.refresh_from_state()
@@ -627,15 +678,14 @@ class OchaApp(App[None]):
         if task_obj:
             running = sum(1 for w in task_obj.workers if w.status == WorkerStatus.RUNNING)
             queued = sum(1 for w in task_obj.workers if w.status == WorkerStatus.QUEUED)
-            self.notify(
-                f"[#b8bb26]●[/] Task {task_obj.task_id} launched — "
-                f"{running} running, {queued} queued",
-                severity="information",
+            self._notify(
+                f"Task {task_obj.task_id} launched — {running} running, {queued} queued",
+                level=NotificationLevel.SUCCESS,
             )
             # Actually spawn Junie headless for the running worker
             self._spawn_junie_workers(task_obj)
         else:
-            self.notify("Task launched.")
+            self._notify("Task launched.")
 
     def _load_junie_api_key(self) -> str | None:
         """Load JUNIE_API_KEY from environment or .env file."""
@@ -676,13 +726,18 @@ class OchaApp(App[None]):
         """Spawn Junie CLI headless for each RUNNING worker in the task."""
         junie_bin = shutil.which("junie")
         if not junie_bin:
-            self.notify("[#fb4934]junie CLI not found on PATH[/]", severity="error")
+            self._notify(
+                "junie CLI not found on PATH",
+                level=NotificationLevel.ERROR,
+                dedupe_key="junie-cli-missing",
+            )
             return
         api_key = self._load_junie_api_key()
         if not api_key:
-            self.notify(
-                "[#fb4934]JUNIE_API_KEY not set — add it to .env or run install.sh[/]",
-                severity="error",
+            self._notify(
+                "JUNIE_API_KEY not set — add it to .env or run install.sh",
+                level=NotificationLevel.ERROR,
+                dedupe_key="junie-api-key-missing",
             )
             return
         for worker in task_obj.workers:
