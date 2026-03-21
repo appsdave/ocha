@@ -67,7 +67,7 @@ class CliTests(unittest.TestCase):
                 exit_code = main(["update", "/tmp/.ocha"])
 
         self.assertEqual(exit_code, 0)
-        self.assertIn("up to date", output.getvalue())
+        self.assertIn("Already up to date", output.getvalue())
 
     def test_task_parser_accepts_prompt_argument(self) -> None:
         args = build_parser().parse_args(["task", "Build the login page"])
@@ -129,6 +129,19 @@ class CliTests(unittest.TestCase):
             self.assertIn("Piped task prompt", rendered)
 
     def test_update_main_prints_change_summary(self) -> None:
+        from app.install import FileChangeStat, UpdateChangelog
+        changelog = UpdateChangelog(
+            branch="main",
+            previous_revision="abc123",
+            revision="def456",
+            commits=["def456 Add task model", "987abc Show update summary"],
+            file_stats=[FileChangeStat(path="app/cli.py", insertions=10, deletions=3, status="modified")],
+            total_insertions=10,
+            total_deletions=3,
+            files_added=0,
+            files_modified=1,
+            files_deleted=0,
+        )
         output = io.StringIO()
         with patch(
             "app.cli.update_repo",
@@ -141,6 +154,7 @@ class CliTests(unittest.TestCase):
                 previous_revision="abc123",
                 changed=True,
                 change_summary=["def456 Add task model", "987abc Show update summary"],
+                changelog=changelog,
             ),
         ):
             with redirect_stdout(output):
@@ -148,10 +162,10 @@ class CliTests(unittest.TestCase):
 
         rendered = output.getvalue()
         self.assertEqual(exit_code, 0)
-        self.assertIn("updated successfully", rendered)
-        self.assertIn("abc123", rendered)
-        self.assertIn("def456", rendered)
-        self.assertIn("Add task model", rendered)
+        self.assertIn("ocha updated successfully", rendered)
+        self.assertIn("def456 Add task model", rendered)
+        self.assertIn("987abc Show update summary", rendered)
+        self.assertIn("app/cli.py", rendered)
 
 
 class TaskCliTests(unittest.TestCase):

@@ -89,7 +89,20 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if command == "update":
             result = update_repo(resolve_target(args.target), branch=args.branch)
-            print(format_update_log(result))
+            if result.changelog is not None:
+                print(format_update_log(
+                    result.changelog,
+                    repo_url=result.repo_url,
+                    target=str(result.target),
+                ))
+            elif result.changed:
+                # Fallback when changelog could not be built
+                print(f"Updated {result.target} on {result.branch} @ {result.revision}")
+                if result.change_summary:
+                    for line in result.change_summary:
+                        print(f"  • {line}")
+            else:
+                print(format_update_log(None))
             return 0
         if command == "launch":
             specs = build_launch_specs(args.task, project_path=Path(args.project).expanduser())
