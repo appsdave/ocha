@@ -16,7 +16,13 @@ from textual.widgets import Button, Input, ListView, Static, TextArea
 
 from .concurrency import ConcurrencyPolicy, compute_execution_plan
 from .file_lock import release_all_for_task, release_inactive_locks
-from .git_utils import commit_worktree_changes, ensure_pr_title, format_pr_title, merge_worktree_commits
+from .git_utils import (
+    commit_worktree_changes,
+    ensure_clean_git_state,
+    ensure_pr_title,
+    format_pr_title,
+    merge_worktree_commits,
+)
 from .notifications import NotificationCenter, NotificationEvent, NotificationLevel
 from .orchestrator import build_role_prompt, launch_task, load_role_definitions
 from .state import AppState, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
@@ -542,6 +548,16 @@ class OchaApp(App[None]):
             if current.returncode == 0 and current.stdout.strip() == OCHA_BRANCH:
                 return  # already on ocha branch, silently continue
 
+            clean_state = ensure_clean_git_state(require_clean_worktree=True)
+            for message in clean_state.messages:
+                self._notify(message, level=NotificationLevel.WARNING)
+            if not clean_state.ok:
+                self._notify(
+                    f"Cannot switch to {OCHA_BRANCH}: {clean_state.blocking_reason}",
+                    level=NotificationLevel.ERROR,
+                )
+                return
+
             # Check if branch exists
             check = subprocess.run(
                 ["git", "rev-parse", "--verify", OCHA_BRANCH],
@@ -696,6 +712,15 @@ class OchaApp(App[None]):
     def _launch_task_from_prompt(self, task: str | None) -> None:
         if task is None:
             self._notify("New task cancelled.")
+            return
+        clean_state = ensure_clean_git_state(require_clean_worktree=True)
+        for message in clean_state.messages:
+            self._notify(message, level=NotificationLevel.WARNING)
+        if not clean_state.ok:
+            self._notify(
+                f"Cannot start task: {clean_state.blocking_reason}",
+                level=NotificationLevel.ERROR,
+            )
             return
         self.state = launch_task(self.state, task)
         self.refresh_from_state()
@@ -1023,6 +1048,11 @@ class OchaApp(App[None]):
         def _git_flow_sync() -> list[GitMsg]:
             """Execute git flow in a sync context (called via to_thread)."""
             messages: list[GitMsg] = []
+            clean_state = ensure_clean_git_state(timeout=30)
+            messages.extend((LogLevel.WARNING, message) for message in clean_state.messages)
+            if not clean_state.ok:
+                messages.append((LogLevel.ERROR, f"Git preflight failed: {clean_state.blocking_reason}"))
+                return messages
             worktree_shas = [
                 w.worktree_commit_sha
                 for w in task_obj.workers
@@ -1059,7 +1089,13 @@ class OchaApp(App[None]):
             if rebase_result.returncode == 0:
                 messages.append((LogLevel.SUCCESS, f"Rebased on origin/{branch_name}."))
             else:
-                messages.append((LogLevel.WARNING, f"Rebase skipped: {rebase_result.stderr.strip()}"))
+                cleanup = ensure_clean_git_state(timeout=30)
+                messages.extend((LogLevel.WARNING, message) for message in cleanup.messages)
+                detail = rebase_result.stderr.strip() or rebase_result.stdout.strip() or "unknown git rebase error"
+                if not cleanup.ok:
+                    detail = f"{detail} Cleanup failed: {cleanup.blocking_reason}"
+                messages.append((LogLevel.ERROR, f"Rebase failed: {detail}"))
+                return messages
 
             push_result = _run_git("git", "push", "-u", "origin", branch_name, timeout=30)
             if push_result.returncode == 0:

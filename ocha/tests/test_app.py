@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.app import OchaApp
 from app.file_lock import acquire_lock, load_locks
@@ -16,7 +16,11 @@ from app.widgets import NotificationPane, TaskHeader
 
 
 class OchaAppTests(unittest.IsolatedAsyncioTestCase):
-    async def test_new_task_uses_prompt_input(self) -> None:
+    @patch("app.app.ensure_clean_git_state")
+    async def test_new_task_uses_prompt_input(self, mock_clean_state) -> None:
+        mock_clean_state.return_value.ok = True
+        mock_clean_state.return_value.messages = []
+        mock_clean_state.return_value.blocking_reason = None
         app = OchaApp()
 
         async with app.run_test() as pilot:
@@ -60,7 +64,11 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
             # Task should not be created
             self.assertEqual(len(app.state.tasks), original_count)
 
-    async def test_new_task_multiline_prompt(self) -> None:
+    @patch("app.app.ensure_clean_git_state")
+    async def test_new_task_multiline_prompt(self, mock_clean_state) -> None:
+        mock_clean_state.return_value.ok = True
+        mock_clean_state.return_value.messages = []
+        mock_clean_state.return_value.blocking_reason = None
         app = OchaApp()
 
         async with app.run_test() as pilot:
@@ -767,6 +775,85 @@ class AppLockLifecycleTests(unittest.TestCase):
             self.assertEqual(len(locks), 1)
             self.assertTrue(locks[0].released)
             self.assertEqual(worker.status, WorkerStatus.STOPPED)
+
+
+class AppGitPreflightTests(unittest.IsolatedAsyncioTestCase):
+    def _task(self, task_id: str = "T-001") -> OchaTask:
+        worker = WorkerSession(
+            session_id=f"S-{task_id[2:]}-01",
+            task_id=task_id,
+            title=f"Worker for {task_id}",
+            role=WorkerRole.COORDINATOR,
+            status=WorkerStatus.COMPLETED,
+            branch="agent",
+            worktree_path=f"/tmp/{task_id.lower()}",
+            owned_directory="docs/",
+            summary="summary",
+            task_prompt="prompt",
+            role_prompt_path="app/roles/coordinator.md",
+            latest_event="done",
+        )
+        return OchaTask(
+            task_id=task_id,
+            title=f"Task {task_id}",
+            user_task=f"Task {task_id}",
+            branch="agent",
+            workers=[worker],
+        )
+
+    @patch("app.app.launch_task")
+    @patch("app.app.ensure_clean_git_state")
+    def test_launch_task_is_blocked_when_git_state_is_unsafe(self, mock_clean_state, mock_launch_task) -> None:
+        mock_clean_state.return_value.ok = False
+        mock_clean_state.return_value.messages = ["Aborted unfinished rebase operation."]
+        mock_clean_state.return_value.blocking_reason = "Git index still has unresolved merge conflicts."
+        app = OchaApp()
+        notices: list[tuple[str, NotificationLevel | None]] = []
+        app._notify = lambda message, level=None, **kwargs: notices.append((message, level)) or True
+
+        app._launch_task_from_prompt("Implement guardrails")
+
+        mock_launch_task.assert_not_called()
+        self.assertTrue(any("Aborted unfinished rebase operation." in message for message, _ in notices))
+        self.assertTrue(any("Cannot start task:" in message for message, _ in notices))
+
+    @patch("app.app.cleanup_worktrees", return_value=[])
+    @patch("app.app.release_all_for_task", return_value=0)
+    @patch("app.app.ensure_pr_title", return_value="PR skipped")
+    @patch("app.app.merge_worktree_commits", return_value=[])
+    @patch("app.app.ensure_clean_git_state")
+    @patch("app.app.subprocess.run")
+    async def test_post_pipeline_git_flow_stops_after_failed_rebase(
+        self,
+        mock_run,
+        mock_clean_state,
+        _mock_merge,
+        _mock_pr_title,
+        _mock_release_locks,
+        _mock_cleanup,
+    ) -> None:
+        task = self._task()
+        task.workers[0].worktree_commit_sha = "abc12345"
+        app = OchaApp()
+
+        mock_clean_state.side_effect = [
+            type("Result", (), {"ok": True, "messages": [], "blocking_reason": None})(),
+            type("Result", (), {"ok": True, "messages": ["Aborted unfinished rebase operation."], "blocking_reason": None})(),
+        ]
+        mock_run.side_effect = [
+            type("Run", (), {"returncode": 0, "stdout": "", "stderr": ""})(),  # fetch
+            type("Run", (), {"returncode": 1, "stdout": "", "stderr": "conflict"})(),  # rebase
+        ]
+        logger = MagicMock()
+        task.workers[0].wlog = logger
+
+        await app._post_pipeline_git_flow(task)
+
+        commands = [tuple(call.args[0]) for call in mock_run.call_args_list]
+        self.assertIn(("git", "fetch", "origin", "agent"), commands)
+        self.assertIn(("git", "rebase", "origin/agent"), commands)
+        self.assertNotIn(("git", "push", "-u", "origin", "agent"), commands)
+        self.assertTrue(any("Rebase failed:" in call.args[0] for call in logger.git.call_args_list))
 
 
 class AppArtifactPersistenceTests(unittest.TestCase):
