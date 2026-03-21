@@ -191,11 +191,17 @@ class TaskCliTests(unittest.TestCase):
             rendered = output.getvalue()
             self.assertIn("T-001", rendered)
             self.assertIn("Build the login page", rendered)
+            self.assertIn("artifacts:", rendered)
             self.assertIn("[coordinator]", rendered)
 
             # Verify task files were actually written
-            prompt_file = Path(tmpdir) / ".ocha" / "tasks" / "T-001" / "prompt.md"
+            task_dir = Path(tmpdir) / ".ocha" / "tasks" / "T-001"
+            prompt_file = task_dir / "prompt.md"
+            status_file = task_dir / "status.json"
+            session_prompt = task_dir / "sessions" / "S-001-01" / "prompt.md"
             self.assertTrue(prompt_file.exists())
+            self.assertTrue(status_file.exists())
+            self.assertTrue(session_prompt.exists())
             self.assertEqual(prompt_file.read_text(encoding="utf-8"), "Build the login page")
 
     def test_task_main_json_output(self) -> None:

@@ -64,8 +64,26 @@ This will:
 1. Persist the prompt to `.ocha/tasks/T-NNN/prompt.md`
 2. Write a `status.json` marker (initially `pending`)
 3. Build launch specs for all four roles (coordinator, lead, builder, reviewer)
-4. Write per-session prompt files for each worker
-5. Print a summary with the task ID, title, and worker session targets
+4. Create `.ocha/tasks/T-NNN/sessions/S-NNN-XX/` directories for every worker session
+5. Write both `prompt.md` and `session.json` in each session directory so prompts and runtime metadata stay together
+6. Print a summary with the task ID, title, artifact directory, status file, and worker session targets
+
+Each task now keeps its generated artifacts in a predictable structure:
+
+```text
+.ocha/tasks/T-001/
+├── prompt.md
+├── status.json
+└── sessions/
+    ├── S-001-01/
+    │   ├── prompt.md
+    │   └── session.json
+    └── S-001-02/
+        ├── prompt.md
+        └── session.json
+```
+
+The `session.json` file records the role, owned directory, worktree path, and source role prompt path for that worker. This makes it easier to inspect, archive, or hand off task artifacts without guessing which flat file belongs to which session.
 
 ## What ocha does
 
@@ -109,6 +127,7 @@ ocha/
 │   ├── git_utils.py            # Worktree commit, cherry-pick/merge, PR title formatting
 │   ├── install.py              # Clone, update, bootstrap, and venv management
 │   ├── orchestrator.py         # Role prompt loading, launch spec building, task creation
+│   ├── task_files.py           # Structured task/session artifact paths and writers
 │   ├── state.py                # Data models: AppState, OchaTask, WorkerSession, enums
 │   ├── widgets.py              # TUI widgets: AgentsPane, TaskHeader, OutputPane,
 │   │                           #   StatusBar, HelpBar, MainLayout

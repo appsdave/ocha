@@ -20,6 +20,7 @@ from .git_utils import commit_worktree_changes, ensure_pr_title, format_pr_title
 from .notifications import NotificationCenter, NotificationEvent, NotificationLevel
 from .orchestrator import build_role_prompt, launch_task, load_role_definitions
 from .state import AppState, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
+from .task_files import write_session_manifest, write_session_prompt
 from .worktree_manager import cleanup_worktrees, ensure_worktree as wt_ensure
 from .widgets import AgentsPane, MainLayout, NotificationPane, OutputPane, StatusBar, TaskHeader
 from .workflow_logger import EventCategory, LogLevel, WorkflowLogger, make_logger
@@ -740,10 +741,21 @@ class OchaApp(App[None]):
 
     def _write_prompt_file(self, worker) -> Path:
         """Write the worker's prompt to a file and return the path."""
-        task_dir = Path.cwd().resolve() / ".ocha" / "tasks" / worker.task_id
-        task_dir.mkdir(parents=True, exist_ok=True)
-        prompt_file = task_dir / f"{worker.session_id}-prompt.md"
-        prompt_file.write_text(worker.task_prompt, encoding="utf-8")
+        repo_root = Path.cwd().resolve()
+        prompt_file = write_session_prompt(worker.task_id, worker.session_id, worker.task_prompt, repo_root)
+        write_session_manifest(
+            worker.task_id,
+            worker.session_id,
+            {
+                "task_id": worker.task_id,
+                "session_id": worker.session_id,
+                "role": worker.role.value,
+                "owned_directory": worker.owned_directory,
+                "worktree_path": str(worker.worktree_path),
+                "role_prompt_path": worker.role_prompt_path,
+            },
+            repo_root,
+        )
         return prompt_file
 
     def _spawn_junie_workers(self, task_obj) -> None:

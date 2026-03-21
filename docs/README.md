@@ -8,6 +8,7 @@ This directory contains design documentation and execution briefs for the ocha p
 |----------|-------------|
 | [architecture.md](architecture.md) | Internal architecture: module graph, data model, request flows, widget hierarchy, git operations, CLI surface, and structured logging |
 | [merge-conflict-prevention.md](merge-conflict-prevention.md) | File-ownership lock system that prevents merge conflicts between concurrent workers |
+| [`../ocha/README.md#task-creation-examples`](../ocha/README.md#task-creation-examples) | Current task artifact layout, including `.ocha/tasks/T-*/sessions/S-*/prompt.md` and `session.json` |
 
 ## Task briefs
 

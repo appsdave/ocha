@@ -126,7 +126,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(result.to_json(indent=2))
             else:
                 print(f"{result.task_id}: {result.title}")
+                print(f"  artifacts: {result.task_dir}")
                 print(f"  prompt: {result.prompt_path}")
+                print(f"  status: {result.status_path}")
                 for spec in result.specs:
                     print(f"  [{spec.role}] {spec.session_id} -> {spec.worktree_path}")
             return 0

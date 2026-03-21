@@ -18,6 +18,7 @@ from .file_lock import (
     validate_commit_scope,
 )
 from .state import AppState, ConcurrencyPolicy, ExecutionGroup, OchaTask, TaskStatus, WorkerRole, WorkerSession, WorkerStatus
+from .task_files import ensure_task_artifacts, write_session_manifest, write_session_prompt, write_task_prompt
 from .workflow_logger import EventCategory, LogLevel, make_logger
 
 
@@ -202,11 +203,7 @@ def persist_task_prompt(task_id: str, user_task: str, project_path: Path) -> Pat
     Provides crash recovery and an audit trail per task.
     Returns the path to the written file.
     """
-    task_dir = project_path / ".ocha" / "tasks" / task_id
-    task_dir.mkdir(parents=True, exist_ok=True)
-    prompt_path = task_dir / "prompt.md"
-    prompt_path.write_text(user_task, encoding="utf-8")
-    return prompt_path
+    return write_task_prompt(task_id, user_task, project_path)
 
 
 def launch_task(state: AppState, user_task: str, *, project_path: Path | None = None) -> AppState:
@@ -355,7 +352,9 @@ class TaskCreationResult:
 
     task_id: str
     title: str
+    task_dir: Path
     prompt_path: Path
+    status_path: Path
     specs: list[JunieLaunchSpec]
     status: TaskStatus
 
@@ -367,6 +366,9 @@ class TaskCreationResult:
                 "session_id": spec.session_id,
                 "worktree_path": str(spec.worktree_path),
                 "owned_directory": spec.owned_directory,
+                "artifact_dir": str(self.task_dir / "sessions" / spec.session_id),
+                "prompt_path": str(self.task_dir / "sessions" / spec.session_id / "prompt.md"),
+                "manifest_path": str(self.task_dir / "sessions" / spec.session_id / "session.json"),
             }
             for spec in self.specs
         ]
@@ -375,7 +377,9 @@ class TaskCreationResult:
         return {
             "task_id": self.task_id,
             "title": self.title,
+            "task_dir": str(self.task_dir),
             "prompt_path": str(self.prompt_path),
+            "status_path": str(self.status_path),
             "status": self.status.value,
             "workers": self.workers,
         }
@@ -426,19 +430,33 @@ def create_task_from_prompt(
     task_id = f"T-{task_number:03d}"
     prompt_path = persist_task_prompt(task_id, prompt, repo_root)
     specs = build_launch_specs(prompt, title=title, project_path=repo_root, task_number=task_number)
+    artifacts = ensure_task_artifacts(repo_root, task_id)
 
     # Persist per-worker session prompts so each Junie invocation has its file
-    task_dir = repo_root / ".ocha" / "tasks" / task_id
     for spec in specs:
-        session_file = task_dir / f"{spec.session_id}-prompt.md"
-        session_file.write_text(spec.prompt, encoding="utf-8")
+        write_session_prompt(task_id, spec.session_id, spec.prompt, repo_root)
+        write_session_manifest(
+            task_id,
+            spec.session_id,
+            {
+                "task_id": task_id,
+                "session_id": spec.session_id,
+                "role": spec.role.value,
+                "owned_directory": spec.owned_directory,
+                "worktree_path": str(spec.worktree_path),
+                "role_prompt_path": spec.prompt_path,
+            },
+            repo_root,
+        )
 
-    status_path = task_dir / "status.json"
+    status_path = artifacts.status_path
     _write_task_status(status_path, task_id, title, TaskStatus.PENDING)
     return TaskCreationResult(
         task_id=task_id,
         title=title,
+        task_dir=artifacts.directory,
         prompt_path=prompt_path,
+        status_path=status_path,
         specs=specs,
         status=TaskStatus.PENDING,
     )

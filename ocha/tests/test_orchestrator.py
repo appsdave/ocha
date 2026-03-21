@@ -175,11 +175,12 @@ class CreateTaskFromPromptTests(unittest.TestCase):
             self.assertEqual(result.task_id, "T-001")
             self.assertEqual(result.title, "Build the login page")
             self.assertEqual(result.status, TaskStatus.PENDING)
+            self.assertEqual(result.task_dir, Path(tmpdir) / ".ocha" / "tasks" / "T-001")
             self.assertTrue(result.prompt_path.exists())
             self.assertEqual(result.prompt_path.read_text(encoding="utf-8"), "Build the login page")
             # status.json written
             import json
-            status_file = Path(tmpdir) / ".ocha" / "tasks" / "T-001" / "status.json"
+            status_file = result.status_path
             self.assertTrue(status_file.exists())
             status = json.loads(status_file.read_text(encoding="utf-8"))
             self.assertEqual(status["status"], "pending")
@@ -203,16 +204,24 @@ class CreateTaskFromPromptTests(unittest.TestCase):
             self.assertEqual(r1.task_id, "T-001")
             self.assertEqual(r2.task_id, "T-002")
 
-    def test_persists_per_worker_session_prompts(self) -> None:
+    def test_persists_per_worker_session_artifacts(self) -> None:
+        import json
+
         with tempfile.TemporaryDirectory() as tmpdir:
             result = create_task_from_prompt("Session prompt test", project_path=Path(tmpdir))
-            task_dir = Path(tmpdir) / ".ocha" / "tasks" / result.task_id
             for spec in result.specs:
-                session_file = task_dir / f"{spec.session_id}-prompt.md"
+                session_dir = result.task_dir / "sessions" / spec.session_id
+                session_file = session_dir / "prompt.md"
+                manifest_file = session_dir / "session.json"
                 self.assertTrue(session_file.exists(), f"Missing {session_file}")
                 content = session_file.read_text(encoding="utf-8")
                 self.assertIn("## Runtime context", content)
                 self.assertIn("Session prompt test", content)
+                self.assertTrue(manifest_file.exists(), f"Missing {manifest_file}")
+                manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+                self.assertEqual(manifest["session_id"], spec.session_id)
+                self.assertEqual(manifest["role"], spec.role.value)
+                self.assertEqual(manifest["owned_directory"], spec.owned_directory)
 
     def test_to_json_round_trips(self) -> None:
         import json
@@ -222,7 +231,11 @@ class CreateTaskFromPromptTests(unittest.TestCase):
             self.assertEqual(data["task_id"], "T-001")
             self.assertEqual(data["status"], "pending")
             self.assertEqual(len(data["workers"]), 4)
+            self.assertIn("task_dir", data)
             self.assertIn("prompt_path", data)
+            self.assertIn("status_path", data)
+            self.assertTrue(data["workers"][0]["prompt_path"].endswith("/prompt.md"))
+            self.assertTrue(data["workers"][0]["manifest_path"].endswith("/session.json"))
 
 
 class RolePromptContractTests(unittest.TestCase):
