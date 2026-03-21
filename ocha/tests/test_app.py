@@ -261,6 +261,7 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
 
         self.assertIn("ACTIVE", text)
         self.assertNotIn(" running ", text)
+        self.assertNotIn("[on #458588] ACTIVE [/]", text)
 
     def test_format_task_selected_does_not_use_task_id_box(self) -> None:
         from app.widgets import WorkerListItem
