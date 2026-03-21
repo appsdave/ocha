@@ -230,7 +230,7 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
 
     def test_css_selected_has_highlight_background(self) -> None:
         from app.app import CSS
-        self.assertIn("&.--selected {\n            background: #3c3836;", CSS)
+        self.assertIn("&.--selected {\n            background: transparent;", CSS)
 
     def test_format_task_selected_uses_status_color_for_pointer(self) -> None:
         from app.widgets import WorkerListItem, STATUS_LABEL_COLOR
@@ -269,7 +269,7 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
 
         text = WorkerListItem._format_task(task, selected=True)
 
-        self.assertIn("[on #3c3836] T-001 [/]", text)
+        self.assertIn("[b][#d5c4a1]T-001[/][/b]", text)
 
     def test_format_task_selected_bolds_branch_label(self) -> None:
         from app.widgets import WorkerListItem
@@ -299,7 +299,7 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
     def test_css_focused_selected_has_brighter_background(self) -> None:
         from app.app import CSS
         self.assertIn(
-            "& > ListItem.--selected.-highlight {\n            background: #504945;",
+            "& > ListItem.--selected.-highlight {\n            background: #32302f;",
             CSS,
             "Focused selected items should use brighter background",
         )
@@ -336,7 +336,7 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
 
         text = WorkerListItem._format_task(task, selected=True, index=1, total=5)
 
-        self.assertIn("[on #3c3836] 2/5 [/]", text)
+        self.assertIn("[#d5c4a1]2/5[/]", text)
 
     def test_task_header_highlights_banner_and_pipeline(self) -> None:
         builder = self._worker("T-001", role=WorkerRole.BUILDER, status=WorkerStatus.RUNNING, summary="builder")

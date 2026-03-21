@@ -64,12 +64,12 @@ class TaskRowHighlight:
         if selected:
             return cls(
                 pointer=f"[{color}]▶[/] ",
-                id_label=f"[b][{color}][on #3c3836] {task.task_id} [/][/b]",
-                position_label=f" [#bdae93]•[/] [b][#d5c4a1][on #3c3836] {position} [/][/b]" if position else "",
+                id_label=f"[b][#d5c4a1]{task.task_id}[/][/b]",
+                position_label=f" [#bdae93]•[/] [#d5c4a1]{position}[/]" if position else "",
                 title_label=f"[b][#fbf1c7]{_truncate_task_title(task.title)}[/][/b]",
                 meta_label=(
                     f"[b][#d3869b]{task.branch}[/][/b] {TASK_POSITION_BULLET} "
-                    f"[b][#fbf1c7][on #458588] ACTIVE [/][/b] {TASK_POSITION_BULLET} "
+                    f"[b][#83a598]ACTIVE[/][/b] {TASK_POSITION_BULLET} "
                     f"[#d5c4a1]{task.elapsed}[/]"
                 ),
             )

@@ -163,13 +163,13 @@ ListView {
         &:hover {
             background: #32302f;
         }
-        /* Active / selected task — subtle bg bump + status border */
+        /* Active / selected task — border/pointer emphasis without a solid box */
         &.--selected {
-            background: #3c3836;
+            background: transparent;
             color: #fbf1c7;
         }
         &.--selected.-highlight {
-            background: #3c3836;
+            background: transparent;
             color: #fbf1c7;
         }
         &.--status-running.--selected {
@@ -197,13 +197,13 @@ ListView {
             text-style: none;
             background-tint: transparent;
         }
-        /* Focused + selected — slightly brighter bg */
+        /* Focused + selected — keep a subtle cursor without a heavy grey box */
         & > ListItem.--selected {
-            background: #3c3836;
+            background: transparent;
             color: #fbf1c7;
         }
         & > ListItem.--selected.-highlight {
-            background: #504945;
+            background: #32302f;
             color: #fbf1c7;
             text-style: none;
             background-tint: transparent;
