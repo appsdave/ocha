@@ -133,7 +133,7 @@ Screen {
 }
 
 .worker-row {
-    padding: 0 0 1 0;
+    padding: 0 1 1 0;
 }
 
 VerticalScroll {
@@ -159,12 +159,12 @@ ListView {
         }
         /* Active / selected task — subtle bg bump + status border */
         &.--selected {
-            background: #32302f;
-            color: #ebdbb2;
+            background: #3c3836;
+            color: #fbf1c7;
         }
         &.--selected.-highlight {
-            background: #32302f;
-            color: #ebdbb2;
+            background: #3c3836;
+            color: #fbf1c7;
         }
         &.--status-running.--selected {
             border-left: tall #b8bb26;
@@ -193,11 +193,11 @@ ListView {
         }
         /* Focused + selected — slightly brighter bg */
         & > ListItem.--selected {
-            background: #282828;
+            background: #3c3836;
             color: #fbf1c7;
         }
         & > ListItem.--selected.-highlight {
-            background: #3c3836;
+            background: #504945;
             color: #fbf1c7;
             text-style: none;
             background-tint: transparent;
