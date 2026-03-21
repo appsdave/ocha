@@ -105,6 +105,12 @@ def _format_active_task_banner(task: OchaTask, *, position: str) -> str:
         f"[b][#fbf1c7]{task.title}[/][/b]{position_label}  {status_chip}"
     )
 
+NOTIFICATION_LEVEL_STYLES = {
+    NotificationLevel.INFO: ("→", "#83a598", "info"),
+    NotificationLevel.SUCCESS: ("✓", "#b8bb26", "success"),
+    NotificationLevel.WARNING: ("⚠", "#fabd2f", "warning"),
+    NotificationLevel.ERROR: ("✕", "#fb4934", "error"),
+}
 
 NOTIFICATION_LEVEL_STYLES = {
     NotificationLevel.INFO: ("→", "#83a598", "info"),
