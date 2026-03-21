@@ -10,8 +10,12 @@ cli.py
   └── install.py       (clone_repo, update_repo, ensure_bootstrap)
 
 app.py (OchaApp)
+  ├── concurrency.py   (ConcurrencyPolicy, compute_execution_plan)
+  ├── file_lock.py     (release_all_for_task, release_inactive_locks)
   ├── orchestrator.py  (build_role_prompt, launch_task, load_role_definitions)
   ├── git_utils.py     (commit_worktree_changes, merge_worktree_commits, ensure_pr_title)
+  ├── task_files.py    (write_session_manifest, write_session_prompt)
+  ├── worktree_manager.py (ensure_worktree, cleanup_worktrees)
   ├── state.py         (AppState, OchaTask, WorkerSession, enums)
   ├── widgets.py       (AgentsPane, TaskHeader, OutputPane, StatusBar, MainLayout)
   └── workflow_logger.py (WorkflowLogger, make_logger, LogLevel, EventCategory)
@@ -19,7 +23,12 @@ app.py (OchaApp)
 orchestrator.py
   ├── file_lock.py     (acquire_lock, release_lock, validate_commit_scope)
   ├── state.py         (AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession)
+  ├── task_files.py    (ensure_task_artifacts, write_session_manifest, write_session_prompt, write_task_prompt)
   └── workflow_logger.py (make_logger, LogLevel, EventCategory)
+
+concurrency.py
+  ├── file_lock.py     (_patterns_overlap)
+  └── state.py         (WorkerSession, WorkerStatus)
 
 state.py
   └── workflow_logger.py (WorkflowLogger — type hint only)
@@ -81,8 +90,21 @@ WorkerSession
 | `WorkerStatus` | `running`, `completed`, `failed`, `stopped`, `queued` |
 | `OutputMode` | `workflow`, `raw` |
 | `TaskStatus` | `pending`, `running`, `completed`, `failed` |
+| `ConcurrencyPolicy` | `sequential`, `parallel`, `auto` |
 | `LogLevel` | `debug`, `info`, `success`, `warning`, `error` |
 | `EventCategory` | `lifecycle`, `pipeline`, `git`, `junie`, `prompt`, `system` |
+
+### Scheduling types
+
+The codebase currently has two scheduling representations:
+
+- `concurrency.py` provides the runtime planner used by `app.py`, where an
+  `ExecutionGroup` contains the actual `WorkerSession` objects to launch.
+- `state.py` and `orchestrator.py` still carry an older index-based
+  `ExecutionGroup` shape used by legacy helpers and tests.
+
+Both paths ultimately rely on the same ownership-overlap heuristics in
+`file_lock.py`, but the live TUI pipeline advances through `concurrency.py`.
 
 ## Request flow
 
