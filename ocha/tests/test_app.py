@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 from app.app import OchaApp
+from app.file_lock import acquire_lock, load_locks
 from app.notifications import NotificationLevel
 from app.state import AppState, OchaTask, WorkerRole, WorkerSession, WorkerStatus
 from textual.widgets import ListView, Static, TextArea
@@ -648,4 +652,67 @@ class AppNotificationIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(first)
         self.assertFalse(second)
         self.assertEqual(len(dispatched), 1)
+
+
+class AppLockLifecycleTests(unittest.TestCase):
+    def _task(self, task_id: str, status: WorkerStatus = WorkerStatus.RUNNING) -> OchaTask:
+        worker = WorkerSession(
+            session_id=f"S-{task_id[2:]}-01",
+            task_id=task_id,
+            title=f"Worker for {task_id}",
+            role=WorkerRole.COORDINATOR,
+            status=status,
+            branch="agent",
+            worktree_path=f"/tmp/{task_id.lower()}",
+            owned_directory="docs/",
+            summary="summary",
+            task_prompt="prompt",
+            role_prompt_path="app/roles/coordinator.md",
+            latest_event="done",
+        )
+        return OchaTask(
+            task_id=task_id,
+            title=f"Task {task_id}",
+            user_task=f"Task {task_id}",
+            branch="agent",
+            workers=[worker],
+        )
+
+    @patch("app.app.Path.cwd")
+    def test_on_mount_releases_locks_for_inactive_sessions(self, mock_cwd) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            mock_cwd.return_value = project_root
+            acquire_lock(project_root, "stale-session", "T-999", "coord", ["docs/"])
+
+            app = OchaApp()
+
+            with patch.object(app, "_ensure_ocha_branch"), patch.object(app, "refresh_from_state"), patch.object(
+                app, "action_focus_agents",
+            ), patch.object(app, "set_interval"):
+                app.on_mount()
+
+            locks = load_locks(project_root)
+            self.assertEqual(len(locks), 1)
+            self.assertTrue(locks[0].released)
+
+    @patch("app.app.Path.cwd")
+    def test_handle_kill_releases_task_locks(self, mock_cwd) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            mock_cwd.return_value = project_root
+            task = self._task("T-001", status=WorkerStatus.RUNNING)
+            worker = task.workers[0]
+            acquire_lock(project_root, worker.session_id, task.task_id, worker.role, [worker.owned_directory])
+
+            app = OchaApp()
+            app.state = AppState(tasks=[task])
+            app._notify = lambda *args, **kwargs: True
+
+            app._handle_kill(True)
+
+            locks = load_locks(project_root)
+            self.assertEqual(len(locks), 1)
+            self.assertTrue(locks[0].released)
+            self.assertEqual(worker.status, WorkerStatus.STOPPED)
 

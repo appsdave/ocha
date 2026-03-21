@@ -15,6 +15,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, ListView, Static, TextArea
 
 from .concurrency import ConcurrencyPolicy, compute_execution_plan
+from .file_lock import release_all_for_task, release_inactive_locks
 from .git_utils import commit_worktree_changes, ensure_pr_title, format_pr_title, merge_worktree_commits
 from .notifications import NotificationCenter, NotificationEvent, NotificationLevel
 from .orchestrator import build_role_prompt, launch_task, load_role_definitions
@@ -440,12 +441,32 @@ class OchaApp(App[None]):
             except Exception:
                 pass
         self._running_procs.clear()
+        for task in self.state.tasks:
+            self._release_task_locks(task)
 
     def on_mount(self) -> None:
         self._ensure_ocha_branch()
+        self._reconcile_locks()
         self.refresh_from_state()
         self.action_focus_agents()
         self.set_interval(1.0, self._tick)
+
+    def _project_root(self) -> Path:
+        return Path.cwd().resolve()
+
+    def _active_session_ids(self) -> set[str]:
+        return {
+            worker.session_id
+            for task in self.state.tasks
+            for worker in task.workers
+            if worker.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED)
+        }
+
+    def _reconcile_locks(self) -> int:
+        return release_inactive_locks(self._project_root(), self._active_session_ids())
+
+    def _release_task_locks(self, task_obj) -> int:
+        return release_all_for_task(self._project_root(), task_obj.task_id)
 
     def _dispatch_notification(self, event: NotificationEvent) -> None:
         self._refresh_notifications()
@@ -662,11 +683,14 @@ class OchaApp(App[None]):
                 )
                 worker.summary = "Killed by operator."
                 killed_count += 1
+        released_locks = self._release_task_locks(task)
         self.refresh_from_state()
-        self._notify(
-            f"Killed task {task.task_id} — {killed_count} worker{'s' if killed_count != 1 else ''} stopped.",
-            level=NotificationLevel.WARNING,
+        message = (
+            f"Killed task {task.task_id} — {killed_count} worker{'s' if killed_count != 1 else ''} stopped."
         )
+        if released_locks:
+            message += f" Released {released_locks} lock{'s' if released_locks != 1 else ''}."
+        self._notify(message, level=NotificationLevel.WARNING)
 
     def _launch_task_from_prompt(self, task: str | None) -> None:
         if task is None:
@@ -1042,6 +1066,8 @@ class OchaApp(App[None]):
             cleanup_results = cleanup_worktrees(wt_paths, prune=True, timeout=15)
             cleaned = sum(1 for r in cleanup_results if r.success)
             messages.append((LogLevel.DEBUG, f"Cleaned up {cleaned}/{len(wt_paths)} worktrees."))
+            released_locks = release_all_for_task(Path.cwd().resolve(), task_obj.task_id)
+            messages.append((LogLevel.DEBUG, f"Released {released_locks} lock{'s' if released_locks != 1 else ''}."))
             return messages
 
         try:
