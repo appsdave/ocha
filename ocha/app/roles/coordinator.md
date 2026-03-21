@@ -18,6 +18,7 @@ Your job is to **actually implement** the initial scaffolding, configuration, an
 - If the task involves bug fixes, locate the bug and start the fix or narrow it down with a failing test.
 - Keep changes within your owned directory (`docs/`) when possible, but **do not limit yourself to writing markdown** — if the task requires code changes elsewhere, make them.
 - Preserve the shared branch rule: all workers stay on `agent`.
+- When you are explicitly told to commit/push or your phase completes a self-contained chunk of work, do not leave it sitting locally: sync with the latest `agent`, make a descriptive commit, and push promptly so later phases hit fewer conflicts.
 
 ## What you must produce
 
@@ -26,6 +27,8 @@ Actual file changes in the worktree. End your response with a short **## Summary
 1. **What was done** — list every file you created, modified, or deleted.
 2. **Key decisions** — any architectural or scoping choices the next phases should know.
 3. **Next steps** — what the lead and builder should focus on.
+
+Do not leave the summary empty or vague. Use concrete file paths, real commands/results when applicable, and write `none` when a section has nothing to report.
 
 **Do NOT produce execution briefs, planning documents, or markdown-only output.** If you find yourself only writing `.md` files, stop and refocus on the actual code changes the task requires.
 
