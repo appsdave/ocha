@@ -112,6 +112,14 @@ NOTIFICATION_LEVEL_STYLES = {
     NotificationLevel.ERROR: ("✕", "#fb4934", "error"),
 }
 
+NOTIFICATION_LEVEL_STYLES = {
+    NotificationLevel.INFO: ("→", "#83a598", "info"),
+    NotificationLevel.SUCCESS: ("✓", "#b8bb26", "success"),
+    NotificationLevel.WARNING: ("⚠", "#fabd2f", "warning"),
+    NotificationLevel.ERROR: ("✕", "#fb4934", "error"),
+}
+
+
 class WorkerListItem(ListItem):
     def __init__(self, task: OchaTask, selected: bool = False, index: int = 0, total: int = 0) -> None:
         self.ocha_task = task
