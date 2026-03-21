@@ -6,9 +6,9 @@ This directory contains the long-lived documentation for the ocha project: archi
 
 | Document | Description |
 |----------|-------------|
-| [architecture.md](architecture.md) | Current application structure, task artifact model, pipeline advancement flow, CLI surface, and runtime behavior |
+| [architecture.md](architecture.md) | Current application structure, including notifications UI, worktree lifecycle helpers, task artifact model, pipeline advancement flow, CLI surface, and runtime behavior |
 | [merge-conflict-prevention.md](merge-conflict-prevention.md) | Shared-branch conflict-avoidance model: lock registry, execution grouping, scope checks, and role ownership |
-| [`../ocha/README.md`](../ocha/README.md) | Operator-facing install guide, command reference, orchestration pipeline, and git workflow |
+| [`../ocha/README.md`](../ocha/README.md) | Operator-facing install guide, command reference, updated project layout, orchestration pipeline, and shared-branch git workflow |
 | [`../ocha/junie-headless-sessions.md`](../ocha/junie-headless-sessions.md) | Headless Junie session design notes and runtime constraints |
 | [`../ocha/python-textual-rebuild.md`](../ocha/python-textual-rebuild.md) | Background notes for the Python/Textual rebuild |
 
