@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -715,4 +716,42 @@ class AppLockLifecycleTests(unittest.TestCase):
             self.assertEqual(len(locks), 1)
             self.assertTrue(locks[0].released)
             self.assertEqual(worker.status, WorkerStatus.STOPPED)
+
+
+class AppArtifactPersistenceTests(unittest.TestCase):
+    @patch("app.app.Path.cwd")
+    def test_write_prompt_file_persists_session_prompt_and_manifest(self, mock_cwd) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            mock_cwd.return_value = project_root
+            worker = WorkerSession(
+                session_id="S-001-01",
+                task_id="T-001",
+                title="Test",
+                role=WorkerRole.BUILDER,
+                status=WorkerStatus.RUNNING,
+                branch="agent",
+                worktree_path=str(project_root / ".worktrees" / "t-001-builder"),
+                owned_directory="app/",
+                summary="",
+                task_prompt="Build the API\n\nHandle edge cases.",
+                role_prompt_path="app/roles/builder.md",
+            )
+
+            app = OchaApp()
+            prompt_path = app._write_prompt_file(worker)
+
+            expected_session_dir = project_root / ".ocha" / "tasks" / "T-001" / "sessions" / "S-001-01"
+            self.assertEqual(prompt_path, expected_session_dir / "prompt.md")
+            self.assertEqual(prompt_path.read_text(encoding="utf-8"), worker.task_prompt)
+
+            manifest_path = expected_session_dir / "session.json"
+            self.assertTrue(manifest_path.exists())
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["task_id"], worker.task_id)
+            self.assertEqual(manifest["session_id"], worker.session_id)
+            self.assertEqual(manifest["role"], worker.role.value)
+            self.assertEqual(manifest["owned_directory"], worker.owned_directory)
+            self.assertEqual(manifest["worktree_path"], worker.worktree_path)
+            self.assertEqual(manifest["role_prompt_path"], worker.role_prompt_path)
 
