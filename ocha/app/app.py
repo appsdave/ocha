@@ -855,7 +855,7 @@ class OchaApp(App[None]):
             return
 
         first_group = plan[0]
-        workers_to_launch = [queued_sessions[idx] for idx in first_group.worker_indices]
+        workers_to_launch = list(first_group.workers)
 
         junie_bin = shutil.which("junie")
         if not junie_bin:
