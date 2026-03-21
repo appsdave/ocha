@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive
 from textual.widget import Widget
@@ -34,6 +36,74 @@ STATUS_CSS_CLASS = {
     WorkerStatus.QUEUED: "--status-queued",
 }
 
+TASK_TITLE_MAX_WIDTH = 38
+TASK_POSITION_BULLET = "[#665c54]•[/]"
+TASK_HEADER_ARROW = "[#504945]→[/]"
+
+
+def _truncate_task_title(title: str, limit: int = TASK_TITLE_MAX_WIDTH) -> str:
+    return title if len(title) <= limit else title[: limit - 3] + "..."
+
+
+def _task_position(index: int, total: int) -> str:
+    return f"{index + 1}/{total}" if total > 0 else ""
+
+
+@dataclass(frozen=True, slots=True)
+class TaskRowHighlight:
+    pointer: str
+    id_label: str
+    position_label: str
+    title_color: str
+    meta_color: str
+    branch_color: str
+    status_label: str
+
+    @classmethod
+    def build(cls, task: OchaTask, *, selected: bool, position: str) -> TaskRowHighlight:
+        color = STATUS_LABEL_COLOR[task.status]
+        if selected:
+            return cls(
+                pointer=f"[{color}]▶[/] ",
+                id_label=f"[b][{color}]{task.task_id}[/][/b]",
+                position_label=f" [#bdae93]•[/] [{color}]{position}[/]" if position else "",
+                title_color="#fbf1c7",
+                meta_color="#d5c4a1",
+                branch_color="#d3869b",
+                status_label=f"[b][on #3c3836][{color}] {task.status.value.upper()} [/][/b]",
+            )
+        return cls(
+            pointer="  ",
+            id_label=f"[#928374]{task.task_id}[/]",
+            position_label=f" [#665c54]• {position}[/]" if position else "",
+            title_color="#bdae93",
+            meta_color="#7c6f64",
+            branch_color="#928374",
+            status_label=f"[#7c6f64]{task.status.value}[/]",
+        )
+
+
+def _format_pipeline(task: OchaTask) -> str:
+    pipeline_parts = []
+    for worker in sorted(task.workers, key=lambda item: item.role.value):
+        worker_color = STATUS_LABEL_COLOR[worker.status]
+        worker_icon = STATUS_ICON[worker.status]
+        pipeline_parts.append(
+            f"{worker_icon} [{worker_color}]{worker.role}[/] [{worker_color}]{worker.status.value}[/]"
+        )
+    return f"  {TASK_HEADER_ARROW}  ".join(pipeline_parts)
+
+
+def _format_active_task_banner(task: OchaTask, *, position: str) -> str:
+    color = STATUS_LABEL_COLOR[task.status]
+    icon = STATUS_ICON[task.status]
+    position_label = f"  [#928374]([/][#b8bb26]{position}[/][#928374])[/]" if position else ""
+    status_chip = f"[b][on #3c3836][{color}] {task.status.value.upper()} [/][/b]"
+    return (
+        f"  [b][on #504945] {icon} {task.task_id} [/][/b]  "
+        f"[b][#fbf1c7]{task.title}[/][/b]{position_label}  {status_chip}"
+    )
+
 
 class WorkerListItem(ListItem):
     def __init__(self, task: OchaTask, selected: bool = False, index: int = 0, total: int = 0) -> None:
@@ -48,6 +118,7 @@ class WorkerListItem(ListItem):
     @staticmethod
     def _format_task(task: OchaTask, selected: bool = False, index: int = 0, total: int = 0) -> str:
         icon = STATUS_ICON[task.status]
+<<<<<<< HEAD
         color = STATUS_LABEL_COLOR[task.status]
         elapsed = task.elapsed
         title = task.title if len(task.title) <= 32 else task.title[:29] + "..."
@@ -68,6 +139,15 @@ class WorkerListItem(ListItem):
             f"{pointer}{icon} {id_label}{pos_label}\n"
             f"    [{title_color}]{title}[/]\n"
             f"    [{meta_color}]{task.branch}[/] · [{color}]{task.status.value}[/] · [{meta_color}]{elapsed}[/]"
+=======
+        position = _task_position(index, total)
+        highlight = TaskRowHighlight.build(task, selected=selected, position=position)
+        return (
+            f"{highlight.pointer}{icon} {highlight.id_label}{highlight.position_label}\n"
+            f"    [{highlight.title_color}]{_truncate_task_title(task.title)}[/]\n"
+            f"    [{highlight.branch_color}]{task.branch}[/] {TASK_POSITION_BULLET} "
+            f"{highlight.status_label} {TASK_POSITION_BULLET} [{highlight.meta_color}]{task.elapsed}[/]"
+>>>>>>> 2215eac (ocha: coordinator S-002-01)
         )
 
 
@@ -164,6 +244,7 @@ class TaskHeader(Static):
             return
         worker = task.primary_worker
         color = STATUS_LABEL_COLOR[task.status]
+<<<<<<< HEAD
         icon = STATUS_ICON[task.status]
 
         # Build pipeline visualization with arrow connectors
@@ -179,6 +260,10 @@ class TaskHeader(Static):
 
         # Active task banner — makes it very clear which task is selected
         banner_line = f"  [b][on #3c3836] {icon} {task.task_id} [/][/b]  [b]{task.title}[/b]{pos_label}"
+=======
+        pipeline = _format_pipeline(task)
+        banner_line = _format_active_task_banner(task, position=position)
+>>>>>>> 2215eac (ocha: coordinator S-002-01)
 
         new_text = (
             f"[b][#b8bb26]▸ Active Task[/][/b]\n\n"

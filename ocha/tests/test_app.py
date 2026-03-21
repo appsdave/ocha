@@ -151,28 +151,45 @@ class OchaAppTests(unittest.IsolatedAsyncioTestCase):
 class SelectedTaskIndicatorTests(unittest.TestCase):
     """Verify the ▶ arrow and --selected CSS class for the active task."""
 
-    def _task(self, task_id: str, status: WorkerStatus = WorkerStatus.RUNNING) -> OchaTask:
+    def _worker(
+        self,
+        task_id: str,
+        role: WorkerRole = WorkerRole.COORDINATOR,
+        status: WorkerStatus = WorkerStatus.RUNNING,
+        summary: str = "summary",
+    ) -> WorkerSession:
+        return WorkerSession(
+            session_id=f"S-{task_id[2:]}-{role.value[:2].upper()}",
+            task_id=task_id,
+            title=f"Worker for {task_id}",
+            role=role,
+            status=status,
+            branch="agent",
+            worktree_path=f"/tmp/{task_id.lower()}-{role.value}",
+            owned_directory="docs/",
+            summary=summary,
+            workflow_log=["workflow"],
+            raw_log=["raw"],
+            task_prompt="prompt",
+            role_prompt_path=f"app/roles/{role.value}.md",
+            latest_event="done",
+        )
+
+    def _task(
+        self,
+        task_id: str,
+        status: WorkerStatus = WorkerStatus.RUNNING,
+        *,
+        title: str | None = None,
+        workers: list[WorkerSession] | None = None,
+    ) -> OchaTask:
+        task_title = title or f"Task {task_id}"
         return OchaTask(
             task_id=task_id,
-            title=f"Task {task_id}",
-            user_task=f"Task {task_id}",
+            title=task_title,
+            user_task=task_title,
             branch="agent",
-            workers=[WorkerSession(
-                session_id=f"S-{task_id[2:]}-01",
-                task_id=task_id,
-                title=f"Worker for {task_id}",
-                role=WorkerRole.COORDINATOR,
-                status=status,
-                branch="agent",
-                worktree_path=f"/tmp/{task_id.lower()}",
-                owned_directory="docs/",
-                summary="summary",
-                workflow_log=["workflow"],
-                raw_log=["raw"],
-                task_prompt="prompt",
-                role_prompt_path="app/roles/coordinator.md",
-                latest_event="done",
-            )],
+            workers=workers or [self._worker(task_id, status=status)],
         )
 
     def test_format_task_selected_has_arrow(self) -> None:
@@ -234,6 +251,53 @@ class SelectedTaskIndicatorTests(unittest.TestCase):
     def test_css_hover_has_subtle_background(self) -> None:
         from app.app import CSS
         self.assertIn("#32302f", CSS, "Hover state should use subtle background highlight")
+
+    def test_format_task_truncates_long_titles(self) -> None:
+        from app.widgets import WorkerListItem
+
+        task = self._task("T-001", title="A very long task title that should be truncated in the sidebar highlight row")
+
+        text = WorkerListItem._format_task(task, selected=True)
+
+        self.assertIn("...", text)
+        self.assertNotIn(task.title, text)
+
+    def test_format_task_shows_position_in_both_states(self) -> None:
+        from app.widgets import WorkerListItem
+
+        task = self._task("T-001")
+
+        selected_text = WorkerListItem._format_task(task, selected=True, index=1, total=5)
+        unselected_text = WorkerListItem._format_task(task, selected=False, index=1, total=5)
+
+        self.assertIn("2/5", selected_text)
+        self.assertIn("2/5", unselected_text)
+
+    def test_task_header_highlights_banner_and_pipeline(self) -> None:
+        builder = self._worker("T-001", role=WorkerRole.BUILDER, status=WorkerStatus.RUNNING, summary="builder")
+        coordinator = self._worker(
+            "T-001",
+            role=WorkerRole.COORDINATOR,
+            status=WorkerStatus.COMPLETED,
+            summary="coordinator",
+        )
+        task = self._task(
+            "T-001",
+            title="Refine task highlighting",
+            workers=[coordinator, builder],
+        )
+        header = TaskHeader()
+
+        header.update_task(task, position="2/5")
+        text = str(header.render())
+
+        self.assertIn("▸ Active Task", text)
+        self.assertIn("Refine task highlighting", text)
+        self.assertIn("2/5", text)
+        self.assertIn(" RUNNING ", text)
+        self.assertIn("coordinator", text)
+        self.assertIn("builder", text)
+        self.assertIn("→", text)
 
 
 class SelectedTaskIndicatorAsyncTests(unittest.IsolatedAsyncioTestCase):

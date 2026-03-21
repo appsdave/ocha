@@ -2,131 +2,168 @@
 
 from __future__ import annotations
 
-import subprocess
+import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from app.worktree_manager import (
-    OCHA_BRANCH,
+    DEFAULT_BRANCH,
+    WorktreeResult,
     cleanup_worktrees,
     ensure_worktree,
+    list_worktrees,
     remove_worktree,
 )
 
 
 class TestEnsureWorktree(unittest.TestCase):
-    """Test ensure_worktree with mocked subprocess calls."""
-
     @patch("app.worktree_manager.subprocess.run")
-    def test_creates_worktree_on_branch(self, mock_run: MagicMock, tmp_path: Path = None):
-        """Successful creation on the target branch."""
-        import tempfile
-        tmp = Path(tempfile.mkdtemp())
-        wt_path = tmp / "worktrees" / "t-001-builder"
+    def test_creates_worktree_on_branch(self, mock_run: MagicMock):
+        with tempfile.TemporaryDirectory() as tmp:
+            wt_path = Path(tmp) / "worktrees" / "t-001-builder"
+            mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
 
-        mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+            result = ensure_worktree(wt_path, branch=DEFAULT_BRANCH)
 
-        ok, msg = ensure_worktree(wt_path, OCHA_BRANCH)
-        self.assertTrue(ok)
-        self.assertIn("Created worktree", msg)
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args[0][0]
-        self.assertIn("worktree", call_args)
-        self.assertIn(str(wt_path), call_args)
+            self.assertTrue(result.success)
+            self.assertEqual(result.path, wt_path)
+            self.assertIn("Created worktree", result.message)
+            mock_run.assert_called_once_with(
+                ["git", "worktree", "add", str(wt_path), DEFAULT_BRANCH],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
 
     @patch("app.worktree_manager.subprocess.run")
     def test_falls_back_to_detach(self, mock_run: MagicMock):
-        """When branch is already checked out, falls back to --detach."""
-        import tempfile
-        tmp = Path(tempfile.mkdtemp())
-        wt_path = tmp / "worktrees" / "t-001-builder"
+        with tempfile.TemporaryDirectory() as tmp:
+            wt_path = Path(tmp) / "worktrees" / "t-001-builder"
+            mock_run.side_effect = [
+                MagicMock(returncode=1, stderr="already checked out", stdout=""),
+                MagicMock(returncode=0, stderr="", stdout=""),
+            ]
 
-        # First call fails (branch checked out), second succeeds (detach)
-        mock_run.side_effect = [
-            MagicMock(returncode=1, stderr="already checked out", stdout=""),
-            MagicMock(returncode=0, stderr="", stdout=""),
-        ]
+            result = ensure_worktree(wt_path)
 
-        ok, msg = ensure_worktree(wt_path)
-        self.assertTrue(ok)
-        self.assertIn("detached", msg)
-        self.assertEqual(mock_run.call_count, 2)
+            self.assertTrue(result.success)
+            self.assertIn("detached", result.message)
+            self.assertEqual(mock_run.call_count, 2)
 
     @patch("app.worktree_manager.subprocess.run")
-    def test_returns_false_on_failure(self, mock_run: MagicMock):
-        """When both attempts fail, returns (False, error message)."""
-        import tempfile
-        tmp = Path(tempfile.mkdtemp())
-        wt_path = tmp / "worktrees" / "t-001-builder"
+    def test_returns_failure_on_git_error(self, mock_run: MagicMock):
+        with tempfile.TemporaryDirectory() as tmp:
+            wt_path = Path(tmp) / "worktrees" / "t-001-builder"
+            mock_run.return_value = MagicMock(returncode=1, stderr="fatal error", stdout="")
 
-        mock_run.return_value = MagicMock(returncode=1, stderr="fatal error", stdout="")
+            result = ensure_worktree(wt_path)
 
-        ok, msg = ensure_worktree(wt_path)
-        self.assertFalse(ok)
-        self.assertIn("failed", msg.lower())
+            self.assertFalse(result.success)
+            self.assertIn("failed", result.message.lower())
 
-    def test_existing_worktree_is_idempotent(self):
-        """If the directory already has a .git, returns success immediately."""
-        import tempfile
-        tmp = Path(tempfile.mkdtemp())
-        wt_path = tmp / "worktrees" / "t-001-builder"
-        wt_path.mkdir(parents=True)
-        (wt_path / ".git").touch()
+    @patch("app.worktree_manager.subprocess.run")
+    def test_existing_worktree_is_idempotent(self, mock_run: MagicMock):
+        with tempfile.TemporaryDirectory() as tmp:
+            wt_path = Path(tmp) / "worktrees" / "t-001-builder"
+            wt_path.mkdir(parents=True)
 
-        ok, msg = ensure_worktree(wt_path)
-        self.assertTrue(ok)
-        self.assertIn("already exists", msg)
+            result = ensure_worktree(wt_path)
+
+            self.assertTrue(result.success)
+            self.assertIn("already exists", result.message)
+            mock_run.assert_not_called()
 
 
 class TestRemoveWorktree(unittest.TestCase):
     @patch("app.worktree_manager.subprocess.run")
     def test_removes_existing_worktree(self, mock_run: MagicMock):
-        import tempfile
-        tmp = Path(tempfile.mkdtemp())
-        wt_path = tmp / "wt"
-        wt_path.mkdir()
+        with tempfile.TemporaryDirectory() as tmp:
+            wt_path = Path(tmp) / "wt"
+            wt_path.mkdir()
+            mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
 
-        mock_run.return_value = MagicMock(returncode=0)
+            result = remove_worktree(wt_path)
 
-        ok, msg = remove_worktree(wt_path)
-        self.assertTrue(ok)
-        self.assertIn("Removed", msg)
+            self.assertTrue(result.success)
+            self.assertIn("removed", result.message.lower())
+            mock_run.assert_called_once_with(
+                ["git", "worktree", "remove", "--force", str(wt_path)],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
 
-    def test_nonexistent_worktree_returns_success(self):
-        ok, msg = remove_worktree("/nonexistent/path/wt-xyz")
-        self.assertTrue(ok)
-        self.assertIn("already gone", msg)
+    @patch("app.worktree_manager.subprocess.run")
+    def test_nonexistent_worktree_returns_success(self, mock_run: MagicMock):
+        result = remove_worktree("/nonexistent/path/wt-xyz")
+        self.assertTrue(result.success)
+        self.assertIn("already removed", result.message)
+        mock_run.assert_not_called()
 
 
 class TestCleanupWorktrees(unittest.TestCase):
     @patch("app.worktree_manager.subprocess.run")
     @patch("app.worktree_manager.remove_worktree")
     def test_cleans_existing_worktrees(self, mock_remove: MagicMock, mock_run: MagicMock):
-        import tempfile
-        tmp = Path(tempfile.mkdtemp())
+        with tempfile.TemporaryDirectory() as tmp:
+            wt1 = Path(tmp) / "wt1"
+            wt2 = Path(tmp) / "wt2"
+            expected = [
+                WorktreeResult(wt1, True, "Worktree removed."),
+                WorktreeResult(wt2, True, "Worktree removed."),
+            ]
+            mock_remove.side_effect = expected
+            mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
 
-        # Create fake worktree dirs
-        wt1 = tmp / "wt1"
-        wt1.mkdir()
-        wt2 = tmp / "wt2"
-        wt2.mkdir()
+            results = cleanup_worktrees([wt1, wt2])
 
-        workers = [
-            SimpleNamespace(worktree_path=str(wt1)),
-            SimpleNamespace(worktree_path=str(wt2)),
-        ]
-        mock_remove.return_value = (True, "Removed")
-        mock_run.return_value = MagicMock(returncode=0)
-
-        msgs = cleanup_worktrees(workers)
-        self.assertEqual(mock_remove.call_count, 2)
-        self.assertTrue(any("Pruned" in m for m in msgs))
+            self.assertEqual(results, expected)
+            mock_remove.assert_has_calls([call(wt1, timeout=15), call(wt2, timeout=15)])
+            mock_run.assert_called_once_with(
+                ["git", "worktree", "prune"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
 
     @patch("app.worktree_manager.subprocess.run")
-    def test_empty_workers_just_prunes(self, mock_run: MagicMock):
-        mock_run.return_value = MagicMock(returncode=0)
-        msgs = cleanup_worktrees([])
-        self.assertEqual(len(msgs), 1)
-        self.assertIn("Pruned", msgs[0])
+    @patch("app.worktree_manager.remove_worktree")
+    def test_prune_can_be_disabled(self, mock_remove: MagicMock, mock_run: MagicMock):
+        with tempfile.TemporaryDirectory() as tmp:
+            wt_path = Path(tmp) / "wt1"
+            result = WorktreeResult(wt_path, True, "Worktree removed.")
+            mock_remove.return_value = result
+
+            results = cleanup_worktrees([wt_path], prune=False)
+
+            self.assertEqual(results, [result])
+            mock_run.assert_not_called()
+
+
+class TestListWorktrees(unittest.TestCase):
+    @patch("app.worktree_manager.subprocess.run")
+    def test_parses_porcelain_output(self, mock_run: MagicMock):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=(
+                "worktree /repo\n"
+                "branch refs/heads/main\n\n"
+                "worktree /repo/.worktrees/t-001\n"
+                "detached\n\n"
+            ),
+            stderr="",
+        )
+
+        self.assertEqual(
+            list_worktrees(),
+            [
+                {"path": "/repo", "branch": "refs/heads/main"},
+                {"path": "/repo/.worktrees/t-001", "branch": "(detached)"},
+            ],
+        )
+
+    @patch("app.worktree_manager.subprocess.run")
+    def test_returns_empty_on_git_failure(self, mock_run: MagicMock):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="fatal")
+        self.assertEqual(list_worktrees(), [])
