@@ -459,17 +459,19 @@ class OchaApp(App[None]):
         self.set_interval(1.0, self._tick)
 
     def _project_root(self) -> Path:
+        cwd = Path.cwd().resolve()
         top = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
+            cwd=cwd,
             timeout=5,
         )
         if top.returncode == 0:
             resolved = top.stdout.strip()
             if resolved:
                 return Path(resolved).resolve()
-        return Path.cwd().resolve()
+        return cwd
 
     def _active_session_ids(self) -> set[str]:
         return {
