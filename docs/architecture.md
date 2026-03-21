@@ -18,8 +18,9 @@ app.py (OchaApp)
   ├── notifications.py (NotificationCenter, NotificationEvent)
   ├── state.py         (AppState, OchaTask, WorkerSession, enums)
   ├── task_files.py    (write_session_manifest, write_session_prompt)
-  ├── widgets.py       (AgentsPane, TaskHeader, OutputPane, StatusBar, MainLayout)
-  └── workflow_logger.py (WorkflowLogger, make_logger, LogLevel, EventCategory)
+  ├── widgets.py       (AgentsPane, TaskHeader, OutputPane, NotificationPane, StatusBar, MainLayout)
+  ├── workflow_logger.py (WorkflowLogger, make_logger, LogLevel, EventCategory)
+  └── worktree_manager.py (ensure_worktree, cleanup_worktrees)
 
 orchestrator.py
   ├── file_lock.py     (acquire_lock, release_lock, validate_commit_scope)
@@ -30,6 +31,9 @@ orchestrator.py
 concurrency.py
   ├── file_lock.py     (_patterns_overlap)
   └── state.py         (WorkerSession, WorkerStatus)
+
+worktree_manager.py
+  └── subprocess       (git worktree add/remove/list/prune wrappers)
 
 state.py
   └── workflow_logger.py (WorkflowLogger — type hint only)
@@ -158,12 +162,12 @@ All workers done
     → git fetch + rebase on origin/agent
     → git push
     → ensure_pr_title(branch, title)         # gh pr create/edit
-    → cleanup worktrees
+    → cleanup_worktrees(paths)               # worktree_manager.py
 ```
 
 ## Junie process lifecycle
 
-1. **Worktree creation** — `git worktree add <path> agent` (falls back to `--detach`)
+1. **Worktree creation** — `worktree_manager.ensure_worktree()` runs `git worktree add <path> agent` and falls back to `--detach`
 2. **Prompt persistence** — session prompts are written under `.ocha/tasks/<task_id>/sessions/<session_id>/prompt.md`
 3. **Truncation** — prompts > 32 KB are trimmed at a line boundary
 4. **Spawn** — `asyncio.create_subprocess_exec` with `start_new_session=True`
@@ -172,7 +176,8 @@ All workers done
 7. **Streaming** — stdout read line-by-line into `raw_log` and `workflow_log`
 8. **Manifest persistence** — per-session metadata is written to `.ocha/tasks/<task_id>/sessions/<session_id>/session.json`
 9. **Completion** — exit code checked; changes committed inside worktree
-10. **Kill** — `os.killpg(pgid, SIGKILL)` kills entire process tree (including Java)
+10. **Kill** — `os.killpg(pgid, SIGKILL)` kills the entire process tree (including Java)
+11. **Cleanup** — `worktree_manager.cleanup_worktrees()` removes task worktrees and prunes stale metadata after post-pipeline sync
 
 ## Widget hierarchy
 
@@ -187,8 +192,10 @@ OchaApp
         │     │                 └── Static.worker-row
         │     └── Vertical#detail-pane
         │           ├── TaskHeader#task-header (Static)
-        │           └── OutputPane#output-pane (VerticalScroll)
-        │                 └── Static#output-content
+        │           ├── OutputPane#output-pane (VerticalScroll)
+        │           │     └── Static#output-content
+        │           └── NotificationPane#notifications-pane (Widget)
+        │                 └── Static#notifications-content
         ├── HelpBar#help-bar (Static)
         └── StatusBar#status-bar (Static)
 
@@ -214,6 +221,15 @@ OchaApp
 | `merge_worktree_commits(shas, branch)` | Cherry-pick SHAs onto branch; falls back to `git apply --3way` |
 | `format_pr_title(task_id, title)` | Clean PR title: `[T-001] Capitalised description` (max 72 chars) |
 | `ensure_pr_title(branch, title)` | Create or update PR via `gh` CLI |
+
+## Worktree lifecycle (worktree_manager.py)
+
+| Function | Purpose |
+|----------|---------|
+| `ensure_worktree(path, branch)` | Idempotently create a worker worktree; falls back to detached mode when `agent` is already checked out elsewhere |
+| `remove_worktree(path)` | Remove a single worker worktree, usually during cleanup |
+| `cleanup_worktrees(paths)` | Remove all worktrees for a completed task and run `git worktree prune` |
+| `list_worktrees()` | Return the active git worktree inventory for diagnostics and UI use |
 
 ## Install lifecycle (install.py)
 

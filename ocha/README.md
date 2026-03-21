@@ -124,14 +124,19 @@ ocha/
 │   │                           #   Junie process spawning, pipeline advancement,
 │   │                           #   post-pipeline git flow (commit/rebase/push/PR)
 │   ├── cli.py                  # CLI argument parser and command dispatch
+│   ├── concurrency.py          # Conflict-aware execution grouping for queued workers
+│   ├── file_lock.py            # Advisory ownership locks and commit-scope validation
 │   ├── git_utils.py            # Worktree commit, cherry-pick/merge, PR title formatting
 │   ├── install.py              # Clone, update, bootstrap, and venv management
+│   ├── notifications.py        # NotificationCenter primitives for in-app warnings/errors
 │   ├── orchestrator.py         # Role prompt loading, launch spec building, task creation
 │   ├── task_files.py           # Structured task/session artifact paths and writers
+│   ├── update_log.py           # Human-readable changelog formatting for `ocha update`
 │   ├── state.py                # Data models: AppState, OchaTask, WorkerSession, enums
 │   ├── widgets.py              # TUI widgets: AgentsPane, TaskHeader, OutputPane,
-│   │                           #   StatusBar, HelpBar, MainLayout
+│   │                           #   NotificationPane, StatusBar, HelpBar, MainLayout
 │   ├── workflow_logger.py      # Structured logging: LogEntry, WorkflowLogger, levels/categories
+│   ├── worktree_manager.py     # Centralised git-worktree create/list/cleanup helpers
 │   └── roles/
 │       ├── coordinator.md      # Coordinator role prompt
 │       ├── lead.md             # Lead role prompt
@@ -140,33 +145,42 @@ ocha/
 ├── tests/
 │   ├── test_app.py
 │   ├── test_cli.py
+│   ├── test_concurrency.py
+│   ├── test_file_lock.py
 │   ├── test_git_utils.py
 │   ├── test_install.py
+│   ├── test_notifications.py
 │   ├── test_orchestrator.py
 │   ├── test_performance.py
-│   └── test_workflow_logger.py
+│   ├── test_update_log.py
+│   ├── test_workflow_logger.py
+│   └── test_worktree_manager.py
 ├── python-textual-rebuild.md   # Design notes for the Python/Textual rebuild
 └── junie-headless-sessions.md  # Design notes for headless Junie session management
 ```
 
 ## TUI layout
 
-The dashboard is a keyboard-first operations console split into four areas:
+The dashboard is a keyboard-first operations console split into five areas:
 
 ```
-┌──────────────────┬─────────────────────────────────────┐
-│  Agents sidebar   │  Task header                        │
-│  (task list with  │  (selected task ID, status, branch, │
-│   status badges)  │   elapsed, pipeline visualization)  │
-│                   ├─────────────────────────────────────┤
-│                   │  Output pane                        │
-│                   │  (workflow log or raw log view,     │
-│                   │   color-coded by role)              │
-├───────────────────┴─────────────────────────────────────┤
-│  Help bar (keybindings)                                 │
-├─────────────────────────────────────────────────────────┤
-│  Status bar (counts, selected task, branch, view mode)  │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────┬──────────────────────────────────────┐
+│  Agents sidebar   │  Task header                         │
+│  (task list with  │  (selected task ID, status, branch,  │
+│   status badges)  │   elapsed, pipeline visualization)   │
+│                   ├──────────────────────────────────────┤
+│                   │  Output pane                         │
+│                   │  (workflow log or raw log view,      │
+│                   │   color-coded by role)               │
+│                   ├──────────────────────────────────────┤
+│                   │  Notifications pane                  │
+│                   │  (launch feedback, warnings, errors, │
+│                   │   duplicate-suppressed notices)      │
+├───────────────────┴──────────────────────────────────────┤
+│  Help bar (keybindings)                                  │
+├──────────────────────────────────────────────────────────┤
+│  Status bar (counts, selected task, branch, view mode)   │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ### Keybindings
@@ -227,7 +241,9 @@ Each task moves through a fixed four-phase pipeline:
 - When a phase completes, the orchestrator captures its output summary and injects it into the next phase's prompt as `upstream_output`
 - Upstream output is capped at 20 lines / 4 KB to stay within Junie's parser limits
 - Queued workers are grouped by owned-directory overlap so non-conflicting phases can run in parallel when safe
+- Advisory file-ownership locks and commit-scope validation reduce merge conflicts while preserving the shared `agent` branch model
 - Prompts exceeding 32 KB are truncated before being sent to Junie
+- Worktree creation and cleanup are handled through `app/worktree_manager.py` so every worker has a tracked, isolated checkout
 
 ### Junie invocation
 
@@ -281,6 +297,13 @@ After all workers finish, ocha runs an automated git flow:
 4. **Push** — the branch is pushed to origin
 5. **PR** — a pull request is created or updated via `gh` CLI with a formatted title `[T-001] Task description`
 6. **Cleanup** — worktrees are removed and pruned
+
+### Conflict prevention
+
+- Worker scopes are declared up front (`docs/`, `planning/`, `app/`) and recorded in an advisory lock registry
+- `ConcurrencyPolicy.AUTO` batches only non-overlapping workers together; today that means coordinator + lead + builder can run before reviewer
+- Merge-time scope validation warns when a worker changes files outside its declared ownership
+- See [`../docs/architecture.md`](../docs/architecture.md) and [`../docs/merge-conflict-prevention.md`](../docs/merge-conflict-prevention.md) for the long-form technical references
 
 ## Structured workflow logging
 
