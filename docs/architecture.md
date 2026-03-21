@@ -21,9 +21,9 @@ app.py (OchaApp)
   └── workflow_logger.py (WorkflowLogger, make_logger, LogLevel, EventCategory)
 
 orchestrator.py
-  ├── file_lock.py     (acquire_lock, release_lock, validate_commit_scope)
-  ├── state.py         (AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession)
+  ├── file_lock.py     (acquire_lock, release_inactive_locks, cleanup_stale_locks)
   ├── task_files.py    (ensure_task_artifacts, write_session_manifest, write_session_prompt, write_task_prompt)
+  ├── state.py         (AppState, OchaTask, TaskStatus, WorkerRole, WorkerSession)
   └── workflow_logger.py (make_logger, LogLevel, EventCategory)
 
 concurrency.py
@@ -137,7 +137,7 @@ ocha task "Fix the bug"
     → _next_task_number(repo_root)         # scan .ocha/tasks/ dirs
     → persist_task_prompt(task_id, prompt)
     → build_launch_specs(prompt)
-    → write per-session prompt files
+    → write per-session prompt files + session manifests
     → write status.json marker
     → return TaskCreationResult
   → print summary or JSON
@@ -150,10 +150,10 @@ Worker completes (exit code 0)
   → commit_worktree_changes(worktree_path)  # git add + commit inside worktree
   → OchaApp._advance_pipeline(task)
     → collect upstream output (capped 20 lines / 4 KB)
-    → find next QUEUED worker
-    → _rebuild_prompt_with_upstream()        # inject prior phase output
-    → set worker to RUNNING
-    → _run_junie_for_worker(next_worker)
+    → compute_execution_plan(queued_workers, AUTO)
+    → rebuild prompts for the first non-conflicting execution group
+    → set each group member to RUNNING
+    → _run_junie_for_worker(worker) for each launched worker
 
 All workers done
   → _post_pipeline_git_flow(task)            # async, runs in background thread
@@ -167,7 +167,7 @@ All workers done
 ## Junie process lifecycle
 
 1. **Worktree creation** — `git worktree add <path> agent` (falls back to `--detach`)
-2. **Prompt file** — written to `.ocha/tasks/<task_id>/<session_id>-prompt.md`
+2. **Prompt artifacts** — written to `.ocha/tasks/<task_id>/sessions/<session_id>/prompt.md` plus `session.json`
 3. **Truncation** — prompts > 32 KB are trimmed at a line boundary
 4. **Spawn** — `asyncio.create_subprocess_exec` with `start_new_session=True`
 5. **Stdin feed** — prompt text piped via stdin (avoids arg-length limits)
