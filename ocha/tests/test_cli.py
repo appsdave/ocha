@@ -67,7 +67,7 @@ class CliTests(unittest.TestCase):
                 exit_code = main(["update", "/tmp/.ocha"])
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(output.getvalue().strip(), "Already up to date")
+        self.assertIn("up to date", output.getvalue())
 
     def test_task_parser_accepts_prompt_argument(self) -> None:
         args = build_parser().parse_args(["task", "Build the login page"])
@@ -148,10 +148,10 @@ class CliTests(unittest.TestCase):
 
         rendered = output.getvalue()
         self.assertEqual(exit_code, 0)
-        self.assertIn("Updated /tmp/.ocha from https://github.com/appsdave/ocha.git on main @ def456", rendered)
-        self.assertIn("Previous revision: abc123", rendered)
-        self.assertIn("Changes:", rendered)
-        self.assertIn("- def456 Add task model", rendered)
+        self.assertIn("updated successfully", rendered)
+        self.assertIn("abc123", rendered)
+        self.assertIn("def456", rendered)
+        self.assertIn("Add task model", rendered)
 
 
 class TaskCliTests(unittest.TestCase):

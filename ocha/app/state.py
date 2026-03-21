@@ -42,6 +42,20 @@ class TaskStatus(StrEnum):
     FAILED = "failed"
 
 
+class ConcurrencyPolicy(StrEnum):
+    """Controls how the orchestrator schedules workers within a task.
+
+    - ``SEQUENTIAL`` — one worker at a time (safe, current default).
+    - ``PARALLEL`` — all workers at once (fast, risk of conflicts).
+    - ``AUTO`` — non-conflicting workers run in parallel; conflicting
+      workers are serialised into later execution groups.
+    """
+
+    SEQUENTIAL = "sequential"
+    PARALLEL = "parallel"
+    AUTO = "auto"
+
+
 STATUS_PRIORITY = {
     WorkerStatus.RUNNING: 0,
     WorkerStatus.FAILED: 1,
@@ -49,6 +63,19 @@ STATUS_PRIORITY = {
     WorkerStatus.COMPLETED: 3,
     WorkerStatus.STOPPED: 4,
 }
+
+
+@dataclass(slots=True, frozen=True)
+class ExecutionGroup:
+    """A batch of worker indices that can execute concurrently.
+
+    Produced by :func:`orchestrator.compute_execution_plan`.  Groups are
+    executed in order of ``group_index``; workers within a group run in
+    parallel because their owned directories do not overlap.
+    """
+
+    group_index: int
+    worker_indices: list[int] = field(default_factory=list)
 
 
 @dataclass(slots=True)

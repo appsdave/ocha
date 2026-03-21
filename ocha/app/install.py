@@ -20,6 +20,27 @@ class InstallError(RuntimeError):
 
 
 @dataclass(slots=True)
+class FileChangeStat:
+    """Per-file change statistics from a git diff."""
+    path: str
+    insertions: int
+    deletions: int
+    status: str  # 'A' added, 'M' modified, 'D' deleted, 'R' renamed
+
+
+@dataclass(slots=True)
+class UpdateChangelog:
+    """Rich changelog details between two revisions."""
+    commits: list[str]          # "<hash> <subject>" lines
+    file_stats: list[FileChangeStat]
+    files_added: int
+    files_modified: int
+    files_deleted: int
+    total_insertions: int
+    total_deletions: int
+
+
+@dataclass(slots=True)
 class InstallResult:
     action: str
     target: Path
@@ -29,6 +50,7 @@ class InstallResult:
     previous_revision: str | None = None
     changed: bool = True
     change_summary: list[str] = None
+    changelog: UpdateChangelog | None = None
 
 
 @dataclass(slots=True)
@@ -102,6 +124,101 @@ def summarize_revision_range(target: Path, previous_revision: str, revision: str
         cwd=target,
     )
     return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def _parse_numstat_line(line: str) -> tuple[int, int, str]:
+    """Parse a single line from git diff --numstat output."""
+    parts = line.split("\t", 2)
+    if len(parts) != 3:
+        return 0, 0, line.strip()
+    ins_str, del_str, path = parts
+    ins = int(ins_str) if ins_str != "-" else 0
+    dels = int(del_str) if del_str != "-" else 0
+    return ins, dels, path.strip()
+
+
+def _parse_name_status_line(line: str) -> tuple[str, str]:
+    """Parse a single line from git diff --name-status output."""
+    parts = line.split("\t", 1)
+    if len(parts) < 2:
+        return "M", line.strip()
+    status = parts[0].strip()
+    path = parts[1].strip()
+    # Normalize rename statuses (R100, R090, etc.) to just 'R'
+    if status.startswith("R"):
+        status = "R"
+    return status, path
+
+
+def build_update_changelog(
+    target: Path, previous_revision: str, revision: str, *, commit_limit: int = 20
+) -> UpdateChangelog:
+    """Build a rich changelog between two revisions."""
+    if previous_revision == revision:
+        return UpdateChangelog(
+            commits=[], file_stats=[], files_added=0, files_modified=0,
+            files_deleted=0, total_insertions=0, total_deletions=0,
+        )
+
+    rev_range = f"{previous_revision}..{revision}"
+
+    # Get commit log
+    log_result = run_git(
+        ["log", "--format=%h %s", rev_range, f"-n{commit_limit}"],
+        cwd=target,
+    )
+    commits = [l for l in log_result.stdout.splitlines() if l.strip()]
+
+    # Get per-file numstat
+    numstat_result = run_git(
+        ["diff", "--numstat", rev_range],
+        cwd=target,
+    )
+
+    # Get per-file status (A/M/D/R)
+    name_status_result = run_git(
+        ["diff", "--name-status", rev_range],
+        cwd=target,
+    )
+
+    # Build status lookup
+    status_map: dict[str, str] = {}
+    for line in name_status_result.stdout.splitlines():
+        if not line.strip():
+            continue
+        status, path = _parse_name_status_line(line)
+        status_map[path] = status
+
+    # Build file stats
+    file_stats: list[FileChangeStat] = []
+    total_ins = 0
+    total_dels = 0
+    counts = {"A": 0, "M": 0, "D": 0}
+
+    for line in numstat_result.stdout.splitlines():
+        if not line.strip():
+            continue
+        ins, dels, path = _parse_numstat_line(line)
+        status = status_map.get(path, "M")
+        file_stats.append(FileChangeStat(path=path, insertions=ins, deletions=dels, status=status))
+        total_ins += ins
+        total_dels += dels
+        if status == "A":
+            counts["A"] += 1
+        elif status == "D":
+            counts["D"] += 1
+        else:
+            counts["M"] += 1
+
+    return UpdateChangelog(
+        commits=commits,
+        file_stats=file_stats,
+        files_added=counts["A"],
+        files_modified=counts["M"],
+        files_deleted=counts["D"],
+        total_insertions=total_ins,
+        total_deletions=total_dels,
+    )
 
 
 def ensure_bootstrap(target: Path) -> BootstrapResult:
@@ -189,6 +306,7 @@ def update_repo(target: Path, branch: str = DEFAULT_BRANCH, *, bootstrap: bool =
     remote_url = run_git(["remote", "get-url", "origin"], cwd=target).stdout.strip()
     revision = resolve_revision(target)
     change_summary = summarize_revision_range(target, previous_revision, revision)
+    changelog = build_update_changelog(target, previous_revision, revision)
     return InstallResult(
         action="updated" if revision != previous_revision else "already-latest",
         target=target,
@@ -198,4 +316,5 @@ def update_repo(target: Path, branch: str = DEFAULT_BRANCH, *, bootstrap: bool =
         previous_revision=previous_revision,
         changed=revision != previous_revision,
         change_summary=change_summary,
+        changelog=changelog,
     )

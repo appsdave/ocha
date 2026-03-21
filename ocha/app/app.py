@@ -16,8 +16,9 @@ from textual.widgets import Button, Input, ListView, Static, TextArea
 
 from .concurrency import ConcurrencyPolicy, compute_execution_plan
 from .git_utils import commit_worktree_changes, ensure_pr_title, format_pr_title, merge_worktree_commits
-from .orchestrator import build_role_prompt, launch_task, load_role_definitions
-from .state import AppState, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
+from .orchestrator import build_role_prompt, compute_execution_plan, launch_task, load_role_definitions
+from .state import AppState, ConcurrencyPolicy, OutputMode, WorkerRole, WorkerStatus, clear_finished_tasks, sample_state
+from .worktree_manager import ensure_worktree as wt_ensure, cleanup_worktrees
 from .widgets import AgentsPane, MainLayout, OutputPane, StatusBar, TaskHeader
 from .workflow_logger import EventCategory, LogLevel, WorkflowLogger, make_logger
 from .worktree_manager import ensure_worktree as wt_ensure, cleanup_worktrees
@@ -659,6 +660,7 @@ class OchaApp(App[None]):
 
         Returns True on success, False on failure.
         """
+<<<<<<< ours
         try:
             ok, msg = wt_ensure(worker.worktree_path, OCHA_BRANCH)
             level = LogLevel.SUCCESS if ok else LogLevel.ERROR
@@ -667,6 +669,15 @@ class OchaApp(App[None]):
         except Exception as exc:
             _wlog(worker).git(f"Worktree error: {exc}", LogLevel.ERROR)
             return False
+=======
+        result = wt_ensure(worker.worktree_path, branch=OCHA_BRANCH)
+        wl = _wlog(worker)
+        if result.success:
+            wl.git(f"Worktree ready: {result.message}", LogLevel.SUCCESS)
+            return True
+        wl.git(f"Worktree failed: {result.message}", LogLevel.ERROR)
+        return False
+>>>>>>> theirs
 
     def _write_prompt_file(self, worker) -> Path:
         """Write the worker's prompt to a file and return the path."""
@@ -802,6 +813,7 @@ class OchaApp(App[None]):
             self._advance_pipeline(task_obj)
 
     def _advance_pipeline(self, task_obj) -> None:
+<<<<<<< ours
         """Start the next queued worker(s) in the pipeline after one finishes.
 
         Uses :func:`compute_execution_plan` to determine which queued
@@ -811,6 +823,17 @@ class OchaApp(App[None]):
         Captures the most recently completed worker's summary and injects
         it as ``upstream_output`` into each next worker's prompt so every
         phase receives the prior phase's artifact.
+=======
+        """Start the next execution group in the pipeline after one finishes.
+
+        Uses :func:`compute_execution_plan` to determine which workers
+        can run concurrently (non-overlapping owned directories) and
+        launches them together via parallel ``run_worker`` calls.
+
+        Captures the most recently completed worker's summary and injects
+        it as ``upstream_output`` into every worker in the next group so
+        each phase receives the prior phase's artifact.
+>>>>>>> theirs
         """
         # Check if any worker is still running
         still_running = any(w.status == WorkerStatus.RUNNING for w in task_obj.workers)
@@ -818,8 +841,6 @@ class OchaApp(App[None]):
             return
 
         # Collect the last completed worker's output for handoff.
-        # Cap at 20 lines / 4 KB to keep downstream prompts within Junie's
-        # internal issue-parser limits and avoid 'Failed to build' errors.
         MAX_UPSTREAM_LINES = 20
         MAX_UPSTREAM_CHARS = 4_000
         upstream = ""
@@ -833,9 +854,18 @@ class OchaApp(App[None]):
                     upstream = upstream[:MAX_UPSTREAM_CHARS].rsplit("\n", 1)[0]
                 break
 
+<<<<<<< ours
         # Compute which queued workers can run concurrently
         plan = compute_execution_plan(task_obj.workers, ConcurrencyPolicy.AUTO)
         if not plan:
+=======
+        # Compute execution groups from queued workers only
+        queued_workers = [
+            (i, w) for i, w in enumerate(task_obj.workers)
+            if w.status == WorkerStatus.QUEUED
+        ]
+        if not queued_workers:
+>>>>>>> theirs
             # All done — summarize
             completed = sum(1 for w in task_obj.workers if w.status == WorkerStatus.COMPLETED)
             failed = sum(1 for w in task_obj.workers if w.status == WorkerStatus.FAILED)
@@ -848,17 +878,36 @@ class OchaApp(App[None]):
             self.run_worker(self._post_pipeline_git_flow(task_obj))
             return
 
+<<<<<<< ours
         # Launch the first execution group (non-conflicting workers)
         group = plan[0]
         junie_bin = shutil.which("junie")
         if not junie_bin:
             for w in group.workers:
+=======
+        # Use compute_execution_plan on queued workers to find the next
+        # parallel group.  Only launch the first group; subsequent groups
+        # will be launched when this group completes.
+        queued_sessions = [w for _, w in queued_workers]
+        plan = compute_execution_plan(queued_sessions, ConcurrencyPolicy.AUTO)
+
+        if not plan:
+            return
+
+        first_group = plan[0]
+        workers_to_launch = [queued_sessions[idx] for idx in first_group.worker_indices]
+
+        junie_bin = shutil.which("junie")
+        if not junie_bin:
+            for w in workers_to_launch:
+>>>>>>> theirs
                 w.status = WorkerStatus.FAILED
                 w.summary = "junie CLI not found"
                 _wlog(w).junie("junie CLI not found on PATH.", LogLevel.ERROR)
             return
 
         api_key = self._load_junie_api_key()
+<<<<<<< ours
         for next_worker in group.workers:
             # Inject upstream output into the worker's prompt
             nwl = _wlog(next_worker)
@@ -866,15 +915,37 @@ class OchaApp(App[None]):
                 next_worker.upstream_summary = upstream
                 next_worker.task_prompt = self._rebuild_prompt_with_upstream(
                     next_worker, task_obj, upstream,
+=======
+
+        for w in workers_to_launch:
+            nwl = _wlog(w)
+            if upstream:
+                w.upstream_summary = upstream
+                w.task_prompt = self._rebuild_prompt_with_upstream(
+                    w, task_obj, upstream,
+>>>>>>> theirs
                 )
                 nwl.pipeline(
                     f"Received upstream output from prior phase ({len(upstream)} chars).",
                 )
 
+<<<<<<< ours
             # Advance this worker to running and spawn junie
             next_worker.status = WorkerStatus.RUNNING
             nwl.pipeline(f"Pipeline advanced — starting {next_worker.role}.")
             self.run_worker(self._run_junie_for_worker(next_worker, task_obj, api_key))
+=======
+            w.status = WorkerStatus.RUNNING
+            group_size = len(workers_to_launch)
+            if group_size > 1:
+                nwl.pipeline(
+                    f"Pipeline advanced — starting {w.role} "
+                    f"(parallel group of {group_size}).",
+                )
+            else:
+                nwl.pipeline(f"Pipeline advanced — starting {w.role}.")
+            self.run_worker(self._run_junie_for_worker(w, task_obj, api_key))
+>>>>>>> theirs
 
     def _rebuild_prompt_with_upstream(
         self, worker, task_obj, upstream_output: str,
@@ -970,9 +1041,17 @@ class OchaApp(App[None]):
 
             messages.append((LogLevel.INFO, f"Staying on shared branch {branch_name}."))
 
+<<<<<<< ours
             cleanup_msgs = cleanup_worktrees(task_obj.workers)
             for cm in cleanup_msgs:
                 messages.append((LogLevel.DEBUG, cm))
+=======
+            # Use centralised worktree cleanup
+            wt_paths = [w.worktree_path for w in task_obj.workers]
+            cleanup_results = cleanup_worktrees(wt_paths, prune=True, timeout=15)
+            cleaned = sum(1 for r in cleanup_results if r.success)
+            messages.append((LogLevel.DEBUG, f"Cleaned up {cleaned}/{len(wt_paths)} worktrees."))
+>>>>>>> theirs
             return messages
 
         try:
