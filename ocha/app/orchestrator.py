@@ -9,7 +9,14 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Any
 
-from .file_lock import acquire_lock, can_run_parallel, release_lock, validate_commit_scope
+from .file_lock import (
+    acquire_lock,
+    can_run_parallel,
+    cleanup_stale_locks,
+    release_inactive_locks,
+    release_lock,
+    validate_commit_scope,
+)
 from .state import AppState, ConcurrencyPolicy, ExecutionGroup, OchaTask, TaskStatus, WorkerRole, WorkerSession, WorkerStatus
 from .workflow_logger import EventCategory, LogLevel, make_logger
 
@@ -208,6 +215,18 @@ def launch_task(state: AppState, user_task: str, *, project_path: Path | None = 
     specs = build_launch_specs(user_task, title=title, project_path=project_path, task_number=next_number)
     task_id = f"T-{next_number:03d}"
     repo_root = (project_path or Path.cwd()).resolve()
+
+    # Reconcile persisted lock registry with currently active workers in UI
+    # state to avoid stale historical entries causing false conflict warnings.
+    active_sessions = {
+        worker.session_id
+        for task in state.tasks
+        for worker in task.workers
+        if worker.status in (WorkerStatus.RUNNING, WorkerStatus.QUEUED)
+    }
+    release_inactive_locks(repo_root, active_sessions)
+    cleanup_stale_locks(repo_root)
+
     persist_task_prompt(task_id, user_task, repo_root)
     tasks = list(state.tasks)
     task_workers: list[WorkerSession] = []

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from app.file_lock import FileLockEntry, load_locks, save_locks
 from app.orchestrator import build_launch_specs, build_role_prompt, create_task_from_prompt, launch_task, load_role_definitions, persist_task_prompt, summarize_task, _next_task_number
 from app.state import TaskStatus, WorkerRole, sample_state
 
@@ -47,6 +48,33 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(launched_workers[0].role_prompt_path, "app/roles/coordinator.md")
         self.assertIn("junie_command=junie --project", launched_workers[0].raw_log[1])
         self.assertEqual(state.selected_worker.session_id, launched_workers[0].session_id)
+
+    def test_launch_task_releases_stale_locks_before_acquiring_new_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            save_locks(
+                root,
+                [
+                    FileLockEntry(
+                        session_id="S-099-03",
+                        task_id="T-099",
+                        role="builder",
+                        owned_patterns=["app/"],
+                    ),
+                ],
+            )
+
+            state = launch_task(sample_state(), "Fix stale lock noise", project_path=root)
+
+            locks = load_locks(root)
+            stale = [l for l in locks if l.session_id == "S-099-03"]
+            self.assertEqual(len(stale), 1)
+            self.assertTrue(stale[0].released)
+
+            new_worker_ids = {w.session_id for w in state.selected_task.workers}
+            new_locks = [l for l in locks if l.session_id in new_worker_ids]
+            self.assertEqual(len(new_locks), 4)
+            self.assertTrue(all(not l.released for l in new_locks))
 
     def test_build_role_prompt_without_upstream_output(self) -> None:
         definitions = load_role_definitions()

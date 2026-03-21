@@ -20,6 +20,7 @@ from app.file_lock import (
     detect_conflicts,
     load_locks,
     release_all_for_task,
+    release_inactive_locks,
     release_lock,
     save_locks,
     validate_commit_scope,
@@ -225,6 +226,17 @@ class TestCleanupStaleLocks:
         save_locks(tmp_path, [fresh])
         count = cleanup_stale_locks(tmp_path, max_age_seconds=3600)
         assert count == 0
+
+
+class TestReleaseInactiveLocks:
+    def test_releases_untracked_sessions(self, tmp_path: Path):
+        acquire_lock(tmp_path, "s1", "t1", "coord", ["docs/"])
+        acquire_lock(tmp_path, "s2", "t1", "builder", ["app/"])
+        count = release_inactive_locks(tmp_path, {"s2"})
+        assert count == 1
+        locks = load_locks(tmp_path)
+        assert locks[0].released is True
+        assert locks[1].released is False
 
 
 # ── Commit scope validation ──────────────────────────────────────────

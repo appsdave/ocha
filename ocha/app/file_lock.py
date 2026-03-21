@@ -278,6 +278,25 @@ def cleanup_stale_locks(project_path: Path, max_age_seconds: float = 3600) -> in
     return count
 
 
+def release_inactive_locks(project_path: Path, active_session_ids: set[str]) -> int:
+    """Release unreleased locks whose session is not active anymore.
+
+    This reconciles persisted ``locks.json`` with the live in-memory worker
+    state, preventing stale historical entries from generating false conflict
+    warnings for newly launched tasks.
+    """
+    with _atomic_lock_file(project_path) as lf:
+        locks = _load_locks_unsafe(lf)
+        count = 0
+        for lock in locks:
+            if not lock.released and lock.session_id not in active_session_ids:
+                lock.released = True
+                count += 1
+        if count:
+            _save_locks_unsafe(lf, locks)
+    return count
+
+
 def can_run_parallel(
     workers: Sequence[tuple[str, str, Sequence[str]]],
 ) -> list[list[int]]:
